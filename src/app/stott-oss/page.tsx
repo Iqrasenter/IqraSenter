@@ -59,7 +59,7 @@ export default function StottOssPage() {
                   </p>
                 </div>
                 <div className="text-center lg:text-right">
-                  <p className="font-heading text-5xl lg:text-6xl font-extrabold text-primary">
+                  <p className="font-heading text-5xl lg:text-6xl font-extrabold text-primary tabular-nums">
                     21490
                   </p>
                 </div>
@@ -122,7 +122,7 @@ export default function StottOssPage() {
             {IMPACT_STATS.map((stat, index) => (
               <FadeIn key={stat.label} delay={index * 0.1}>
                 <div className="text-center lg:text-left">
-                  <p className="font-heading text-6xl lg:text-7xl font-extrabold text-text">
+                  <p className="font-heading text-6xl lg:text-7xl font-extrabold text-text tabular-nums">
                     {stat.value}
                   </p>
                   <p className="mt-2 text-sm uppercase tracking-wider text-text-muted font-semibold">
@@ -149,7 +149,7 @@ export default function StottOssPage() {
             <div className="mt-8">
               <Link
                 href="/kontakt"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl cursor-pointer text-base"
+                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-[background-color,box-shadow] duration-200 shadow-lg hover:shadow-xl cursor-pointer text-base"
               >
                 Kontakt oss for mer informasjon
                 <ArrowRight size={18} />

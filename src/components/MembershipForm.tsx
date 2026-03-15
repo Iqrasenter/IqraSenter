@@ -70,7 +70,8 @@ export function MembershipForm() {
           id="member-name"
           name="name"
           required
-          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors shadow-sm"
+          autoComplete="name"
+          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors shadow-sm"
           placeholder="Ditt fulle navn"
         />
       </div>
@@ -88,7 +89,9 @@ export function MembershipForm() {
             id="member-email"
             name="email"
             required
-            className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors shadow-sm"
+            autoComplete="email"
+            spellCheck={false}
+            className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors shadow-sm"
             placeholder="din@epost.no"
           />
         </div>
@@ -104,7 +107,8 @@ export function MembershipForm() {
             id="member-phone"
             name="phone"
             required
-            className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors shadow-sm"
+            autoComplete="tel"
+            className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors shadow-sm"
             placeholder="+47 XXX XX XXX"
           />
         </div>
@@ -122,7 +126,8 @@ export function MembershipForm() {
           id="member-address"
           name="address"
           required
-          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors shadow-sm"
+          autoComplete="street-address"
+          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors shadow-sm"
           placeholder="Gateadresse, postnummer og sted"
         />
       </div>
@@ -141,7 +146,7 @@ export function MembershipForm() {
           required
           min={1}
           max={20}
-          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors shadow-sm"
+          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors shadow-sm"
           placeholder="F.eks. 4"
         />
       </div>
@@ -157,7 +162,7 @@ export function MembershipForm() {
           id="member-message"
           name="message"
           rows={3}
-          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors shadow-sm resize-none"
+          className="w-full px-3 lg:px-4 py-2 lg:py-3 rounded-xl border border-border bg-white text-sm lg:text-base text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors shadow-sm resize-none"
           placeholder="Er det noe du vil fortelle oss?"
         />
       </div>
@@ -169,7 +174,7 @@ export function MembershipForm() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
+        <div aria-live="polite" className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
           <AlertCircle size={16} className="shrink-0" />
           {error}
         </div>
@@ -178,7 +183,7 @@ export function MembershipForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 px-5 lg:px-6 py-2.5 lg:py-3.5 text-sm lg:text-base bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="w-full flex items-center justify-center gap-2 px-5 lg:px-6 py-2.5 lg:py-3.5 text-sm lg:text-base bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-[background-color,box-shadow] duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {loading ? (
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

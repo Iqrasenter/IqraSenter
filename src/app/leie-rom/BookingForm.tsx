@@ -45,7 +45,8 @@ export function BookingForm() {
             id="booking-name"
             name="name"
             required
-            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+            autoComplete="name"
+            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors"
             placeholder="Ditt fulle navn"
           />
         </div>
@@ -61,7 +62,9 @@ export function BookingForm() {
             id="booking-email"
             name="email"
             required
-            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+            autoComplete="email"
+            spellCheck={false}
+            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors"
             placeholder="din@epost.no"
           />
         </div>
@@ -79,7 +82,8 @@ export function BookingForm() {
             type="tel"
             id="booking-phone"
             name="phone"
-            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+            autoComplete="tel"
+            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors"
             placeholder="+47 000 00 000"
           />
         </div>
@@ -97,7 +101,7 @@ export function BookingForm() {
             required
             min={1}
             max={120}
-            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors"
             placeholder="f.eks. 30"
           />
         </div>
@@ -113,7 +117,7 @@ export function BookingForm() {
             id="booking-date"
             name="date"
             required
-            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+            className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors"
           />
         </div>
       </div>
@@ -131,15 +135,15 @@ export function BookingForm() {
           name="purpose"
           required
           rows={4}
-          className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors resize-none"
-          placeholder="Beskriv hva lokalet skal brukes til, f.eks. bursdag, seminar, kurs..."
+          className="w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors resize-none"
+          placeholder="Beskriv hva lokalet skal brukes til, f.eks. bursdag, seminar, kurs\u2026"
         />
       </div>
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-accent hover:bg-accent-light text-white font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-accent hover:bg-accent-light text-white font-semibold rounded-xl transition-[background-color,box-shadow] duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {loading ? (
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

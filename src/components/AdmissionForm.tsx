@@ -69,7 +69,7 @@ export function AdmissionForm() {
   }
 
   const inputClass =
-    "w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors";
+    "w-full px-4 py-3 rounded-xl border border-border bg-white text-text placeholder:text-text-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-colors";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -86,6 +86,7 @@ export function AdmissionForm() {
           id="admission-child-name"
           name="child_name"
           required
+          autoComplete="name"
           className={inputClass}
           placeholder="Barnets fulle navn"
         />
@@ -139,6 +140,8 @@ export function AdmissionForm() {
             id="admission-email"
             name="parent_email"
             required
+            autoComplete="email"
+            spellCheck={false}
             className={inputClass}
             placeholder="forelder@epost.no"
           />
@@ -152,6 +155,7 @@ export function AdmissionForm() {
             id="admission-phone"
             name="parent_phone"
             required
+            autoComplete="tel"
             className={inputClass}
             placeholder="+47 XXX XX XXX"
           />
@@ -168,6 +172,7 @@ export function AdmissionForm() {
           id="admission-address"
           name="address"
           required
+          autoComplete="street-address"
           className={inputClass}
           placeholder="Gateadresse, postnummer og sted"
         />
@@ -234,7 +239,8 @@ export function AdmissionForm() {
             name="special_needs_details"
             rows={3}
             className={`${inputClass} mt-3 resize-none`}
-            placeholder="Beskriv eventuelle behov her..."
+            placeholder="Beskriv eventuelle behov her\u2026"
+            aria-label="Beskriv spesielle behov"
           />
         )}
       </fieldset>
@@ -300,14 +306,15 @@ export function AdmissionForm() {
             type="text"
             name="mother_tongue_other"
             className={`${inputClass} mt-3`}
-            placeholder="Skriv morsmålet her..."
+            placeholder="Skriv morsmålet her\u2026"
+            aria-label="Annet morsmål"
           />
         )}
       </fieldset>
 
       {/* Error message */}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
+        <div aria-live="polite" className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
           <AlertCircle size={16} className="shrink-0" />
           {error}
         </div>
@@ -317,7 +324,7 @@ export function AdmissionForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-[background-color,box-shadow] duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {loading ? (
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

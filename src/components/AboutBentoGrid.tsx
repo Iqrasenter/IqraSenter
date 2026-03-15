@@ -55,7 +55,7 @@ function AnimatedStat({ value, label }: { value: string; label: string }) {
     <div className="flex flex-col items-center gap-0 md:gap-1 py-2 md:py-3 px-2">
       <span
         ref={ref}
-        className="font-heading text-lg md:text-2xl lg:text-3xl font-extrabold gradient-text"
+        className="font-heading text-lg md:text-2xl lg:text-3xl font-extrabold gradient-text tabular-nums"
       >
         0{suffix}
       </span>
@@ -137,8 +137,8 @@ export default function AboutBentoGrid() {
         <div className="relative flex items-center justify-around mt-3 md:mt-4 pt-2 md:pt-3 border-t border-primary/10">
           {coreValues.map(({ icon: Icon, label }) => (
             <div key={label} className="flex flex-col items-center gap-0.5">
-              <Icon size={13} className="text-primary md:hidden" strokeWidth={1.8} />
-              <Icon size={15} className="text-primary hidden md:block" strokeWidth={1.8} />
+              <Icon size={13} className="text-primary md:hidden" strokeWidth={1.8} aria-hidden="true" />
+              <Icon size={15} className="text-primary hidden md:block" strokeWidth={1.8} aria-hidden="true" />
               <span className="text-[8px] md:text-[9px] lg:text-[10px] text-text-muted font-medium">
                 {label}
               </span>
@@ -149,7 +149,7 @@ export default function AboutBentoGrid() {
         {/* location + CTA */}
         <div className="relative flex items-center justify-between mt-2 md:mt-3 pt-2 md:pt-3 border-t border-primary/10">
           <div className="flex items-center gap-1.5 text-text-muted">
-            <MapPin size={13} strokeWidth={2} />
+            <MapPin size={13} strokeWidth={2} aria-hidden="true" />
             <span className="text-[10px] md:text-[11px] lg:text-xs">
               Ryenstubben 2, Oslo
             </span>
@@ -157,7 +157,7 @@ export default function AboutBentoGrid() {
           <Link
             href="/om-oss"
             className="inline-flex items-center gap-1 text-primary text-xs font-semibold
-                       hover:gap-2 transition-all duration-200 cursor-pointer btn-magnetic"
+                       hover:gap-2 transition-[gap] duration-200 cursor-pointer btn-magnetic"
           >
             Les mer
             <ArrowRight size={13} />

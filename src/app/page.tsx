@@ -84,7 +84,7 @@ export default function HomePage() {
           >
             <Link
               href="/sistenytt"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-white text-accent font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm border-2 border-accent/25 hover:border-accent"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-white text-accent font-heading font-medium rounded-full transition-[border-color] duration-300 btn-magnetic text-sm border-2 border-accent/25 hover:border-accent"
             >
               Se siste nytt
               <ArrowRight size={16} />
@@ -192,14 +192,14 @@ export default function HomePage() {
             >
               <Link
                 href="/bli-medlem"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-primary hover:bg-primary-light text-white font-bold rounded-container transition-all duration-300 shadow-xl btn-magnetic text-sm md:text-base"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-primary hover:bg-primary-light text-white font-bold rounded-container transition-[background-color,box-shadow] duration-300 shadow-xl btn-magnetic text-sm md:text-base"
               >
                 Bli medlem
                 <ArrowRight size={16} />
               </Link>
               <Link
                 href="/kontakt"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-white hover:border-accent text-accent font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm md:text-base border-2 border-accent/25"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-white hover:border-accent text-accent font-heading font-medium rounded-full transition-[border-color] duration-300 btn-magnetic text-sm md:text-base border-2 border-accent/25"
               >
                 Kontakt oss
               </Link>

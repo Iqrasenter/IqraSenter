@@ -61,9 +61,15 @@ export default function RootLayout({
       <body
         className="antialiased selection:bg-accent/20 selection:text-accent"
       >
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold"
+        >
+          Gå til innhold
+        </a>
         <NoiseOverlay />
         <Navbar />
-        <main>{children}</main>
+        <main id="main">{children}</main>
       </body>
     </html>
   );
@@ -72,7 +78,7 @@ export default function RootLayout({
 function NoiseOverlay() {
   return (
     <div className="pointer-events-none fixed inset-0 z-40 h-[100dvh] w-screen opacity-[0.05]">
-      <svg className="h-full w-full" style={{ pointerEvents: "none" }}>
+      <svg className="h-full w-full" aria-hidden="true" style={{ pointerEvents: "none" }}>
         <filter id="noiseFilter">
           <feTurbulence
             type="fractalNoise"

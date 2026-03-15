@@ -11,12 +11,12 @@ interface NewsCardProps {
 }
 
 function formatDate(dateStr: string): string {
-  const months = [
-    "januar","februar","mars","april","mai","juni",
-    "juli","august","september","oktober","november","desember",
-  ];
   const d = new Date(dateStr);
-  return `${d.getDate()}. ${months[d.getMonth()]} ${d.getFullYear()}`;
+  return new Intl.DateTimeFormat("nb-NO", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(d);
 }
 
 export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: NewsCardProps) {

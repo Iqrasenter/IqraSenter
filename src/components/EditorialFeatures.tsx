@@ -63,7 +63,7 @@ function EditorialRow({
 
         <Link
           href={linkMap[service.title]}
-          className="group inline-flex items-center gap-2 w-fit px-6 py-3 mt-1 bg-white text-accent font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm border-2 border-accent/25 hover:border-accent"
+          className="group inline-flex items-center gap-2 w-fit px-6 py-3 mt-1 bg-white text-accent font-heading font-medium rounded-full transition-[border-color] duration-300 btn-magnetic text-sm border-2 border-accent/25 hover:border-accent"
         >
           Les mer
           <ArrowRight
