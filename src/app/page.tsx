@@ -5,15 +5,14 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Hero } from "@/components/Hero";
 
-// Existing Components
 import { SectionHeading } from "@/components/SectionHeading";
 import { EditorialFeatures } from "@/components/EditorialFeatures";
 import AboutBentoGrid from "@/components/AboutBentoGrid";
-import { AnimatedTestimonials } from "@/components/ui/animated-testimonials";
 import { TestimonialCarousel } from "@/components/TestimonialCarousel";
 import { Footer } from "@/components/Footer";
+import { NewsCard } from "@/components/NewsCard";
 
-import { TEACHERS } from "@/lib/constants";
+import { NEWS } from "@/lib/constants";
 
 export default function HomePage() {
   const fadeUp = {
@@ -24,6 +23,8 @@ export default function HomePage() {
       transition: { duration: 0.5, ease: 'easeOut' as const, delay },
     }),
   }
+
+  const latestNews = NEWS.slice(0, 3);
 
   return (
     <>
@@ -42,8 +43,8 @@ export default function HomePage() {
         <AboutBentoGrid />
       </section>
 
-      {/* ===== TEACHERS ===== */}
-      <section id="larere" className="bg-bg py-16 md:py-24">
+      {/* ===== AKTUELT — LATEST ARTICLES ===== */}
+      <section id="aktuelt" className="bg-bg py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full">
           <motion.div
             variants={fadeUp}
@@ -53,17 +54,45 @@ export default function HomePage() {
             viewport={{ once: true, amount: 0.3 }}
           >
             <SectionHeading
-              title="Våre Lærere"
+              title="Aktuelt"
+              subtitle="Nyheter og arrangementer"
             />
           </motion.div>
+
           <motion.div
+            className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 mt-10 md:mt-14"
             variants={fadeUp}
             initial="hidden"
             whileInView="visible"
             custom={0.15}
+            viewport={{ once: true, amount: 0.2 }}
+          >
+            {latestNews.map((item) => (
+              <NewsCard
+                key={item.title}
+                title={item.title}
+                excerpt={item.excerpt}
+                date={item.date}
+                image={item.image}
+              />
+            ))}
+          </motion.div>
+
+          <motion.div
+            className="mt-8 md:mt-12 text-center"
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="visible"
+            custom={0.25}
             viewport={{ once: true, amount: 0.3 }}
           >
-            <AnimatedTestimonials testimonials={TEACHERS as unknown as { quote: string; name: string; designation: string; src: string }[]} autoplay />
+            <Link
+              href="/aktuelt"
+              className="inline-flex items-center gap-2 text-primary font-heading font-semibold hover:text-primary-light transition-colors duration-200"
+            >
+              Se alle nyheter
+              <ArrowRight size={16} />
+            </Link>
           </motion.div>
         </div>
       </section>
