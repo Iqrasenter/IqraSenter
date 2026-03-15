@@ -47,7 +47,7 @@ export function TestimonialCarousel() {
       onMouseLeave={() => setPaused(false)}
     >
       {/* Blockquote slide area */}
-      <div className="relative min-h-[330px] sm:min-h-[300px]">
+      <div className="relative min-h-[240px] sm:min-h-[300px]">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.blockquote
             key={active}
@@ -58,7 +58,7 @@ export function TestimonialCarousel() {
             transition={{ duration: 0.4, ease: "easeInOut" }}
             className="relative max-w-4xl mx-auto pl-8 before:absolute before:inset-y-0 before:left-0 before:w-1.5 before:rounded-full before:bg-primary"
           >
-            <p className="text-2xl sm:text-3xl text-text leading-relaxed">
+            <p className="text-lg sm:text-2xl md:text-3xl text-text leading-relaxed">
               &ldquo;{t.quote}&rdquo;
             </p>
 
@@ -84,7 +84,7 @@ export function TestimonialCarousel() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-6 mt-10">
+      <div className="flex items-center justify-center gap-6 mt-6 md:mt-10">
         <button
           onClick={() => { goPrev(); setResetKey((k) => k + 1); }}
           className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center hover:bg-accent text-accent hover:text-white transition-colors cursor-pointer shadow-sm btn-magnetic"
@@ -99,8 +99,8 @@ export function TestimonialCarousel() {
               key={i}
               onClick={() => { goTo(i, i > active ? 1 : -1); setResetKey((k) => k + 1); }}
               className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${i === active
-                  ? "bg-primary w-8"
-                  : "bg-border w-2 hover:bg-text-muted"
+                ? "bg-primary w-8"
+                : "bg-border w-2 hover:bg-text-muted"
                 }`}
               aria-label={`Gå til tilbakemelding ${i + 1}`}
             />

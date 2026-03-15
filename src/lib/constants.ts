@@ -78,6 +78,13 @@ export const TESTIMONIALS = [
 
 export const NEWS = [
   {
+    title: "Nye utgivelser: To nye islamske barnebøker",
+    excerpt:
+      "Vi har gleden av å presentere to nye barnebøker med fokus på islamsk barneoppdragelse. Bøkene er nå til salgs i vår nettbutikk og hos våre utsalgssteder.",
+    date: "2026-02-26",
+    image: "/images/books-combined.png",
+  },
+  {
     title: "Foreldremøte — Viktig beskjed til alle foreldre",
     excerpt:
       "Ledelsen i Iqra kaller inn alle foreldre til foreldremøte. Søndag 09.02.2025 kl. 15:30 i Iqra sine lokaler.",

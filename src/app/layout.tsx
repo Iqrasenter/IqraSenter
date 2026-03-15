@@ -1,23 +1,32 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Inter } from "next/font/google";
+import { Sora, Instrument_Serif, Fira_Code } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
+import { ScrollProvider } from "@/lib/scroll-context";
 
-const plusJakarta = Plus_Jakarta_Sans({
-  variable: "--font-plus-jakarta",
+
+const sora = Sora({
+  variable: "--font-sora",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
   display: "swap",
 });
 
-const inter = Inter({
-  variable: "--font-inter",
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  weight: "400",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  style: ["italic", "normal"],
+  display: "swap",
+});
+
+const firaCode = Fira_Code({
+  variable: "--font-fira-code",
+  subsets: ["latin"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.iqrasenter.net"),
   title: {
     default: "Iqra Læring og Aktivitetssenter — Læring for hele familien",
     template: "%s | Iqra Senter",
@@ -37,6 +46,9 @@ export const metadata: Metadata = {
     "unge",
     "familier",
   ],
+  other: {
+    "theme-color": "#FFFFFF",
+  },
   openGraph: {
     title: "Iqra Læring og Aktivitetssenter",
     description:
@@ -56,11 +68,32 @@ export default function RootLayout({
   return (
     <html lang="nb">
       <body
-        className={`${plusJakarta.variable} ${inter.variable} antialiased`}
+        className={`${sora.variable} ${instrumentSerif.variable} ${firaCode.variable} antialiased selection:bg-accent/20 selection:text-accent`}
       >
-        <Navbar />
-        <main>{children}</main>
+        <ScrollProvider>
+          <NoiseOverlay />
+          <Navbar />
+          <main>{children}</main>
+        </ScrollProvider>
       </body>
     </html>
+  );
+}
+
+function NoiseOverlay() {
+  return (
+    <div className="pointer-events-none fixed inset-0 z-40 h-[100dvh] w-screen opacity-[0.05]">
+      <svg className="h-full w-full" style={{ pointerEvents: "none" }}>
+        <filter id="noiseFilter">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.65"
+            numOctaves="3"
+            stitchTiles="stitch"
+          />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#noiseFilter)" style={{ pointerEvents: "none" }} />
+      </svg>
+    </div>
   );
 }

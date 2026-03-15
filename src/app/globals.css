@@ -1,41 +1,68 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-primary: #047857;
-  --color-primary-light: #10B981;
-  --color-primary-dark: #064E3B;
-  --color-accent: #D97706;
-  --color-accent-light: #F59E0B;
-  --color-bg: #FAFAF9;
-  --color-bg-warm: #F5F0EB;
+  --color-primary: #2E4036;
+  --color-primary-light: #3F574A;
+  --color-primary-dark: #1E2B24;
+  --color-accent: #CC5833;
+  --color-accent-light: #E0673C;
+  --color-bg: #FFFFFF;
+  --color-bg-warm: #FFFFFF;
   --color-card: #FFFFFF;
-  --color-text: #1C1917;
-  --color-text-muted: #57534E;
-  --color-border: #E7E5E4;
+  --color-text: #1A1A1A;
+  --color-text-muted: #4A4A4A;
+  --color-border: #D6D3CD;
 
-  --font-heading: var(--font-plus-jakarta);
-  --font-body: var(--font-inter);
+  --font-heading: var(--font-sora), system-ui, sans-serif;
+  --font-drama: var(--font-instrument-serif), system-ui, sans-serif;
+  --font-data: var(--font-fira-code), monospace;
+  --font-body: var(--font-sora), system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+  background-color: #FFFFFF;
 }
 
 body {
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-body), system-ui, sans-serif;
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  min-height: 100vh;
+  -webkit-overflow-scrolling: touch;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading), system-ui, sans-serif;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
 }
 
-/* Smooth scroll */
-html {
-  scroll-behavior: smooth;
+:root {
+  --navbar-h: 80px;
 }
 
-/* Islamic geometric pattern (subtle decorative SVG) */
-.pattern-islamic {
-  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0L60 30L30 60L0 30Z' fill='none' stroke='%23047857' stroke-width='0.5' opacity='0.06'/%3E%3C/svg%3E");
-  background-size: 60px 60px;
+/* Base utility overrides requested by Preset */
+.rounded-container {
+  border-radius: 2rem;
+}
+
+.rounded-container-lg {
+  border-radius: 3rem;
+}
+
+/* Magnetic button base */
+.btn-magnetic {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.btn-magnetic:hover {
+  transform: scale(1.03);
 }
 
 /* Glassmorphism utility */
@@ -45,9 +72,15 @@ html {
   -webkit-backdrop-filter: blur(12px);
 }
 
+.glass-dark {
+  background: rgba(26, 26, 26, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 60%, var(--color-accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -63,7 +96,7 @@ html {
   }
 }
 
-/* Full-page scroll snap */
+/* Full-page scroll snap — desktop only */
 .snap-container {
   height: 100dvh;
   overflow-y: scroll;
@@ -80,12 +113,55 @@ html {
   flex-direction: column;
 }
 
-.pt-navbar {
-  padding-top: 64px; /* fixed navbar height */
+/* Disable snap on mobile — let sections flow naturally */
+@media (max-width: 768px) {
+  .snap-container {
+    height: auto;
+    scroll-snap-type: none;
+    overflow-y: auto;
+  }
+
+  .snap-section {
+    height: auto;
+    min-height: auto;
+    scroll-snap-align: none;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  /* Hero keeps shortened viewport height */
+  .snap-section:first-child {
+    min-height: 80dvh;
+    padding-bottom: 0;
+  }
+
+  .rounded-container {
+    border-radius: 1.25rem;
+  }
+
+  .rounded-container-lg {
+    border-radius: 1.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .snap-container {
     scroll-behavior: auto;
   }
+}
+
+/* Islamic pattern for bg texture (recolored) */
+.pattern-islamic {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0L60 30L30 60L0 30Z' fill='none' stroke='%232E4036' stroke-width='0.5' opacity='0.08'/%3E%3C/svg%3E");
+  background-size: 60px 60px;
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

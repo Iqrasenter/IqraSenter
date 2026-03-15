@@ -1,14 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface ScrollDotsProps {
   sectionIds: string[]
   containerRef: React.RefObject<HTMLDivElement | null>
+  onNavigate?: (index: number) => void
+  onActiveChange?: (index: number) => void
 }
 
-export default function ScrollDots({ sectionIds, containerRef }: ScrollDotsProps) {
+export default function ScrollDots({ sectionIds, containerRef, onNavigate, onActiveChange }: ScrollDotsProps) {
   const [activeIndex, setActiveIndex] = useState(0)
+
+  // Use ref to avoid resubscribing the observer when callback changes
+  const onActiveChangeRef = useRef(onActiveChange)
+  onActiveChangeRef.current = onActiveChange
 
   useEffect(() => {
     const container = containerRef.current
@@ -23,7 +29,10 @@ export default function ScrollDots({ sectionIds, containerRef }: ScrollDotsProps
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const index = sections.indexOf(entry.target as HTMLElement)
-            if (index !== -1) setActiveIndex(index)
+            if (index !== -1) {
+              setActiveIndex(index)
+              onActiveChangeRef.current?.(index)
+            }
           }
         })
       },
@@ -35,8 +44,12 @@ export default function ScrollDots({ sectionIds, containerRef }: ScrollDotsProps
   }, [sectionIds, containerRef])
 
   const scrollTo = (index: number) => {
-    const section = document.getElementById(sectionIds[index])
-    section?.scrollIntoView({ behavior: 'smooth' })
+    if (onNavigate) {
+      onNavigate(index)
+    } else {
+      const section = document.getElementById(sectionIds[index])
+      section?.scrollIntoView({ behavior: 'smooth' })
+    }
   }
 
   return (

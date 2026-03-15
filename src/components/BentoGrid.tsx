@@ -11,14 +11,12 @@ const linkMap: Record<ServiceTitle, string> = {
   Helgeskole: "/om-oss",
   Fritidsaktiviteter: "/om-oss",
   "Kurs og opplæring": "/om-oss",
-  "Leie rom": "/leie-rom",
 };
 
 const categoryMap: Record<ServiceTitle, string> = {
   Helgeskole: "Utdanning",
   Fritidsaktiviteter: "Aktiviteter",
   "Kurs og opplæring": "Kurs",
-  "Leie rom": "Lokaler",
 };
 
 export function BentoGrid() {
