@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Nettbutikk - Iqra Senter",
     description: "Kjøp islamske barnebøker og læringsmateriell fra Iqra Læring og Aktivitetssenter.",
-    url: "https://www.iqrasenter.net/netbutikk",
+    url: "https://www.iqrasenter.net/nettbutikk",
   }
 };
 
@@ -19,8 +19,9 @@ export default function NetbutikkPage() {
   return (
     <>
       <EditorialPageHeader
-        label="Netbutikk"
-        title="Vår nettbutikk"
+        label=""
+        title="Vår"
+        highlight="nettbutikk"
         subtitle="Utforsk vårt utvalg av islamske barnebøker — vakre illustrasjoner og inspirerende fortellinger for de minste."
       />
 

@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { EditorialPageHeader } from "@/components/EditorialPageHeader";
-import { EditorialLabel } from "@/components/EditorialLabel";
+import { SectionHeading } from "@/components/SectionHeading";
 import { PullQuote } from "@/components/PullQuote";
 import { FadeIn } from "@/components/FadeIn";
 
@@ -67,129 +67,154 @@ export default function OmOssPage() {
   return (
     <>
       <EditorialPageHeader
-        label="Om oss"
-        title="Om Iqra Senter"
+        title="Om"
+        highlight="oss"
         subtitle="Et samlingspunkt for hele familien — med kunnskap, kultur og fellesskap i hjertet av Oslo."
       />
 
-      {/* ===== STORY — 60/40 Split ===== */}
-      <section className="py-6 lg:py-16">
+      {/* ===== INTRO — Bento Grid ===== */}
+      <section className="py-4 lg:py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-16">
-            <div className="lg:col-span-3">
-              <FadeIn>
-                <div className="space-y-3 lg:space-y-6 text-text-muted text-xs lg:text-lg leading-relaxed">
-                  <p>
-                    Iqra læring og aktivitetssenter er mer enn bare en
-                    utdanningsinstitusjon; det er et samlingspunkt for hele
-                    familien. Vi ligger sentralt i Oslo, i Ryenstubben 2, og
-                    tilbyr et unikt læringsmiljø der islamske studier,
-                    språkopplæring og kulturelle aktiviteter står i sentrum.
-                  </p>
-                  <p>
-                    Vår helgeskole gir barn og unge muligheten til å lære om
-                    språk, kultur og tradisjon på en engasjerende måte. I
-                    tillegg arrangerer vi kurs, seminarer og fritidsaktiviteter
-                    som utflukter, sosiale samlinger og familievennlige
-                    arrangementer gjennom hele året.
-                  </p>
-                  <p>
-                    Vårt mål er å bygge et sterkt, inkluderende fellesskap der
-                    alle føler seg velkomne — uansett bakgrunn og alder. Vi tror
-                    på kraften i læring, samhold og glede, og jobber hver dag
-                    for å gi familier i Oslo et sted de kan kalle sitt eget.
-                  </p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
+            {/* Card A — Intro text + PullQuote */}
+            <FadeIn className="lg:col-span-2">
+              <div className="relative rounded-2xl bg-white overflow-hidden p-5 lg:p-8 card-pop h-full flex flex-col">
+                <div className="pattern-islamic absolute inset-0" />
+                <p className="relative text-text-muted text-xs lg:text-lg leading-relaxed">
+                  Iqra læring og aktivitetssenter er et samlingspunkt for hele
+                  familien, sentralt i Oslo. Vi tilbyr helgeskole med språk,
+                  kultur og tradisjon, samt kurs, seminarer og
+                  fritidsaktiviteter gjennom hele året. Vårt mål er å bygge et
+                  sterkt, inkluderende fellesskap der alle føler seg velkomne —
+                  uansett bakgrunn og alder.
+                </p>
+                <div className="relative mt-4 lg:mt-6">
+                  <PullQuote text="Vi tror på kraften i læring, samhold og glede." />
                 </div>
-              </FadeIn>
-            </div>
-            <div className="lg:col-span-2 flex items-center">
-              <FadeIn delay={0.15} direction="right">
-                <PullQuote text="Vi tror på kraften i læring, samhold og glede." />
-              </FadeIn>
-            </div>
+              </div>
+            </FadeIn>
+
+            {/* Card B — Image */}
+            <FadeIn delay={0.1} className="lg:col-span-1">
+              <div className="relative rounded-2xl overflow-hidden aspect-[4/3] lg:aspect-auto lg:h-full min-h-[180px]">
+                <Image
+                  src="/images/helgeskole.jpg"
+                  alt="Helgeskole hos Iqra Senter"
+                  fill
+                  className="object-cover"
+                  quality={85}
+                  sizes="(max-width: 1024px) 100vw, 33vw"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+              </div>
+            </FadeIn>
           </div>
         </div>
       </section>
 
-      {/* ===== FULL-BLEED IMAGE BREAK ===== */}
-      <FadeIn>
-        <section className="relative h-[25vh] lg:h-[50vh]">
-          <Image
-            src="/images/helgeskole.jpg"
-            alt="Helgeskole hos Iqra Senter"
-            fill
-            className="object-cover"
-            quality={90}
-            sizes="100vw"
-          />
-        </section>
-      </FadeIn>
-
-      {/* ===== VALUES — Staggered Offset Grid ===== */}
-      <section className="py-6 lg:py-16 border-t border-border/50">
+      {/* ===== VALUES — Compact Icon Cards ===== */}
+      <section className="py-6 lg:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <FadeIn>
-            <EditorialLabel>Våre verdier</EditorialLabel>
-            <h2 className="font-heading text-2xl lg:text-4xl font-bold text-text mb-4 lg:mb-10">
-              Det vi står for
-            </h2>
+            <SectionHeading
+              title="Det vi"
+              highlight="står for"
+              centered={false}
+            />
           </FadeIn>
 
-          <div className="grid grid-cols-2 md:grid-cols-2 gap-3 lg:gap-x-16 lg:gap-y-12">
-            {VALUES.map((value, index) => (
-              <FadeIn
-                key={value.title}
-                delay={index * 0.1}
-                className={index % 2 === 1 ? "lg:mt-12" : ""}
-              >
-                <span className="text-2xl lg:text-5xl font-heading font-extrabold text-border/60">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <h3 className="mt-1 lg:mt-3 font-heading text-sm lg:text-xl font-bold text-text">
-                  {value.title}
-                </h3>
-                <p className="mt-1 lg:mt-2 text-[10px] lg:text-base text-text-muted leading-relaxed">
-                  {value.description}
-                </p>
-              </FadeIn>
-            ))}
+          <div className="mt-5 lg:mt-8 grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            {VALUES.map((value, index) => {
+              return (
+                <FadeIn key={value.title} delay={index * 0.05}>
+                  <div className="rounded-2xl bg-white card-pop p-4 lg:p-6 h-full">
+                    <h3 className="font-heading text-xs lg:text-lg font-bold text-text">
+                      {value.title}
+                    </h3>
+                    <p className="mt-1 lg:mt-2 text-[10px] lg:text-sm text-text-muted leading-relaxed">
+                      {value.description}
+                    </p>
+                  </div>
+                </FadeIn>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* ===== TIMELINE — Horizontal Grid ===== */}
-      <section className="py-6 lg:py-16 border-t border-border/50">
+      {/* ===== TIMELINE — Connected Milestones ===== */}
+      <section className="py-6 lg:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <FadeIn>
-            <EditorialLabel>Milepæler</EditorialLabel>
-            <h2 className="font-heading text-2xl lg:text-4xl font-bold text-text mb-4 lg:mb-10">
+            <h2 className="font-heading text-2xl lg:text-4xl font-bold text-text mb-6 lg:mb-10">
               Vår reise
             </h2>
           </FadeIn>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-8">
-            {MILESTONES.map((milestone, index) => (
-              <FadeIn key={milestone.label} delay={index * 0.1}>
-                <div className="border-t border-border pt-3 lg:pt-6">
-                  <span className="text-[10px] lg:text-xs font-semibold uppercase tracking-wider text-accent">
-                    Steg {index + 1}
-                  </span>
-                  <h3 className="mt-1 lg:mt-3 font-heading text-xs lg:text-lg font-bold text-text">
-                    {milestone.label}
-                  </h3>
-                  <p className="mt-1 lg:mt-2 text-[10px] lg:text-sm text-text-muted leading-relaxed">
-                    {milestone.description}
-                  </p>
-                </div>
-              </FadeIn>
-            ))}
+          {/* Desktop — horizontal timeline */}
+          <div className="hidden lg:block">
+            <div className="relative">
+              <div className="absolute top-4 left-0 right-0 h-[2px] bg-border" />
+              <div className="grid grid-cols-4 gap-6">
+                {MILESTONES.map((milestone, index) => (
+                  <FadeIn key={milestone.label} delay={index * 0.1}>
+                    <div>
+                      <div className="relative z-10 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold mb-4 shadow-md">
+                        {index + 1}
+                      </div>
+                      <div className="rounded-2xl bg-white card-pop p-5">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-accent">
+                          Steg {index + 1}
+                        </span>
+                        <h3 className="mt-2 font-heading text-lg font-bold text-text">
+                          {milestone.label}
+                        </h3>
+                        <p className="mt-2 text-sm text-text-muted leading-relaxed">
+                          {milestone.description}
+                        </p>
+                      </div>
+                    </div>
+                  </FadeIn>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile — vertical timeline */}
+          <div className="lg:hidden">
+            <div className="relative pl-8">
+              <div className="absolute left-[13px] top-0 bottom-0 w-[2px] bg-border" />
+              <div className="space-y-3">
+                {MILESTONES.map((milestone, index) => (
+                  <FadeIn key={milestone.label} delay={index * 0.08}>
+                    <div className="relative">
+                      <div className="absolute -left-8 top-3 z-10 w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold shadow-md">
+                        {index + 1}
+                      </div>
+                      <div className="rounded-xl bg-white card-pop p-3">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-accent">
+                          Steg {index + 1}
+                        </span>
+                        <h3 className="mt-1 font-heading text-xs font-bold text-text">
+                          {milestone.label}
+                        </h3>
+                        <p className="mt-1 text-[10px] text-text-muted leading-relaxed">
+                          {milestone.description}
+                        </p>
+                      </div>
+                    </div>
+                  </FadeIn>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ===== CTA — Light ===== */}
-      <section className="py-6 lg:py-16 border-t border-border/50">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
+      {/* ===== CTA ===== */}
+      <section className="py-6 lg:py-12 relative">
+        <div className="pattern-islamic absolute inset-0 pointer-events-none" />
+        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
           <FadeIn>
             <h2 className="font-heading text-2xl lg:text-5xl font-bold text-text">
               Bli en del av fellesskapet

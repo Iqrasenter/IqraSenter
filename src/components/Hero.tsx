@@ -40,10 +40,6 @@ export function Hero() {
     >
       {/* Text side */}
       <div className="flex flex-col justify-center md:w-[55%] lg:w-[55%] max-w-2xl">
-        <span className="hero-element inline-block text-xs tracking-[0.2em] uppercase text-text-muted font-medium font-body">
-          Iqra Læring & Aktivitetssenter
-        </span>
-
         <h1 className="hero-element font-heading font-[900] text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-text mt-5 leading-[1.05] tracking-tight">
           Læring for{' '}
           <em className="text-primary font-[300] not-italic">hele</em>
@@ -66,7 +62,7 @@ export function Hero() {
 
           <Link
             href="/kontakt"
-            className="inline-flex items-center gap-2 px-7 py-3.5 border-2 border-primary/25 hover:border-primary text-primary font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm md:text-base"
+            className="inline-flex items-center gap-2 px-7 py-3.5 border-2 border-accent/25 hover:border-accent text-accent font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm md:text-base"
           >
             Kontakt oss
           </Link>

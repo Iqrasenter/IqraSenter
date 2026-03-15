@@ -71,8 +71,8 @@ export default function BliMedlemPage() {
   return (
     <>
       <EditorialPageHeader
-        label="Bli medlem / Opptak"
-        title="Bli medlem / Opptak"
+        title="Bli medlem /"
+        highlight="Opptak"
         subtitle="Læring, fellesskap og muligheter for hele familien"
       />
 
@@ -80,9 +80,8 @@ export default function BliMedlemPage() {
       <section className="py-6 lg:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <FadeIn>
-            <EditorialLabel>Fordeler</EditorialLabel>
             <h2 className="font-heading text-2xl lg:text-4xl font-bold text-text mb-4 lg:mb-10">
-              Hva kan Iqra Senter tilby?
+              Hva kan <span className="text-primary">Iqra Senter</span> tilby?
             </h2>
           </FadeIn>
 
@@ -257,7 +256,7 @@ export default function BliMedlemPage() {
       </section>
 
       {/* ===== REGISTRATION FORM ===== */}
-      <section className="py-6 lg:py-16 bg-primary/5">
+      <section className="py-6 lg:py-16 bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-16">
             {/* Left — Form */}
@@ -279,7 +278,7 @@ export default function BliMedlemPage() {
             {/* Right — Contact Info */}
             <div className="lg:col-span-5">
               <FadeIn delay={0.15}>
-                <div className="rounded-2xl border border-border bg-white p-4 lg:p-8">
+                <div className="rounded-2xl border border-border bg-white p-4 lg:p-8 shadow-md">
                   <h3 className="font-heading text-sm lg:text-xl font-bold text-text mb-3 lg:mb-6">
                     Foretrekker du å kontakte oss direkte?
                   </h3>

@@ -18,10 +18,10 @@ export const SITE = {
 } as const;
 
 export const NAV_ITEMS = [
-  { label: "Om oss", href: "/om-oss" },
-  { label: "Aktuelt", href: "/aktuelt" },
-  { label: "Nettbutikk", href: "/netbutikk" },
+  { label: "Siste Nytt", href: "/sistenytt" },
+  { label: "Nettbutikk", href: "/nettbutikk" },
   { label: "Bli medlem / Opptak", href: "/bli-medlem" },
+  { label: "Om oss", href: "/om-oss" },
   { label: "Kontakt oss", href: "/kontakt" },
 ] as const;
 
@@ -71,7 +71,7 @@ export const TESTIMONIALS = [
     name: "Hussein",
     age: 24,
     quote:
-      "Tusen takk for en fantastisk helg på hyttetur! Jeg lærte mye nytt og fikk nye venner, og det setter jeg stor pris på. Dere har virkelig gjort en flott jobb med å organisere alt, og det var en perfekt blanding av aktiviteter og avslapning.",
+      "Tusen takk for en fantastisk helg på hyttetur! Jeg lærte mye nytt og fikk nye venner. Dere har gjort en flott jobb med å organisere alt!",
     initials: "H",
   },
 ] as const;
@@ -142,7 +142,6 @@ export const STATS = [
   { value: "200+", label: "Medlemmer" },
   { value: "5+", label: "År aktive" },
   { value: "50+", label: "Arrangementer i året" },
-  { value: "8", label: "Rom tilgjengelig" },
 ] as const;
 
 export interface Product {

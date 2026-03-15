@@ -5,7 +5,7 @@ import type { Product } from "@/lib/constants";
 export function ProductCard({ product }: { product: Product }) {
   return (
     <Link
-      href={`/netbutikk/${product.slug}`}
+      href={`/nettbutikk/${product.slug}`}
       className="group block rounded-2xl border border-border/50 overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer"
     >
       <div className="relative aspect-square bg-white p-8">

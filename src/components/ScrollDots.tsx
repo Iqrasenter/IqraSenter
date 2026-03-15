@@ -63,8 +63,8 @@ export default function ScrollDots({ sectionIds, containerRef, onNavigate, onAct
           style={{
             width: activeIndex === i ? 10 : 7,
             height: activeIndex === i ? 10 : 7,
-            backgroundColor: activeIndex === i ? '#D97706' : 'transparent',
-            borderColor: '#D97706',
+            backgroundColor: activeIndex === i ? '#C8973E' : 'transparent',
+            borderColor: '#C8973E',
             opacity: activeIndex === i ? 1 : 0.5,
           }}
         />

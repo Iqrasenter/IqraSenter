@@ -8,12 +8,12 @@ import { FadeIn } from "@/components/FadeIn";
 import { NEWS } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Aktuelt",
+  title: "Siste Nytt",
   description: "Hold deg oppdatert med siste nyheter, arrangementer og aktiviteter fra Iqra Læring og Aktivitetssenter i Oslo.",
   openGraph: {
-    title: "Aktuelt hos Iqra Senter",
+    title: "Siste Nytt hos Iqra Senter",
     description: "Hold deg oppdatert med siste nyheter, arrangementer og aktiviteter fra Iqra Læring og Aktivitetssenter i Oslo.",
-    url: "https://www.iqrasenter.net/aktuelt",
+    url: "https://www.iqrasenter.net/sistenytt",
   }
 };
 
@@ -32,8 +32,9 @@ export default function AktueltPage() {
   return (
     <>
       <EditorialPageHeader
-        label="Aktuelt"
-        title="Aktuelt"
+        label="Siste Nytt"
+        title="Siste"
+        highlight="Nytt"
         subtitle="Nyheter og arrangementer fra Iqra Senter"
       />
 
@@ -92,7 +93,7 @@ export default function AktueltPage() {
                   className={`lg:col-span-7 ${i % 2 === 1 ? "lg:order-1" : ""
                     }`}
                 >
-                  <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-accent">
                     {formatDate(item.date)}
                   </span>
                   <h3 className="mt-2 font-heading text-2xl font-bold text-text leading-snug">

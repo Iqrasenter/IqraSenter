@@ -37,7 +37,7 @@ export default async function ProductPage({ params }: Props) {
           {/* Back link */}
           <FadeIn>
             <Link
-              href="/netbutikk"
+              href="/nettbutikk"
               className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-primary transition-colors mb-8 cursor-pointer"
             >
               <ArrowLeft size={16} />

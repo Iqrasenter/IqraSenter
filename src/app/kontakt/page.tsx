@@ -28,8 +28,8 @@ export default function KontaktPage() {
   return (
     <>
       <EditorialPageHeader
-        label="Kontakt"
-        title="Kontakt oss"
+        title="Kontakt"
+        highlight="oss"
         subtitle="Vi svarer gjerne på dine spørsmål!"
       />
 
@@ -40,13 +40,14 @@ export default function KontaktPage() {
             {/* Left — Form */}
             <div className="lg:col-span-7">
               <FadeIn>
-                <EditorialLabel>Send melding</EditorialLabel>
                 <h2 className="font-heading text-xl lg:text-2xl font-bold text-text mb-4 lg:mb-8">
                   Har du spørsmål?
                 </h2>
               </FadeIn>
               <FadeIn delay={0.1}>
-                <ContactForm />
+                <div className="border border-border/60 bg-white/60 rounded-xl p-4 lg:p-6 shadow-sm">
+                  <ContactForm />
+                </div>
               </FadeIn>
             </div>
 
@@ -54,9 +55,9 @@ export default function KontaktPage() {
             <div className="lg:col-span-5">
               {/* Mobile: compact 2-col grid | Desktop: stacked list */}
               <FadeIn delay={0.15}>
-                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0">
+                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2.5 lg:gap-3">
                   {/* Address */}
-                  <div className="border border-border lg:border-t lg:border-x-0 lg:border-b-0 rounded-lg lg:rounded-none p-2 lg:pt-6 lg:p-0 lg:pb-0">
+                  <div className="border border-border/60 bg-white/60 rounded-xl p-3 lg:p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200">
                     <p className="text-[9px] lg:text-xs font-semibold uppercase tracking-wider text-text-muted mb-0.5 lg:mb-2">
                       Adresse
                     </p>
@@ -68,7 +69,7 @@ export default function KontaktPage() {
                   </div>
 
                   {/* Email */}
-                  <div className="border border-border lg:border-t lg:border-x-0 lg:border-b-0 rounded-lg lg:rounded-none p-2 lg:pt-6 lg:p-0 lg:mt-6 lg:pb-0">
+                  <div className="border border-border/60 bg-white/60 rounded-xl p-3 lg:p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200">
                     <p className="text-[9px] lg:text-xs font-semibold uppercase tracking-wider text-text-muted mb-0.5 lg:mb-2">
                       E-post
                     </p>
@@ -83,7 +84,7 @@ export default function KontaktPage() {
                   </div>
 
                   {/* Phone */}
-                  <div className="border border-border lg:border-t lg:border-x-0 lg:border-b-0 rounded-lg lg:rounded-none p-2 lg:pt-6 lg:p-0 lg:mt-6 lg:pb-0">
+                  <div className="border border-border/60 bg-white/60 rounded-xl p-3 lg:p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200">
                     <p className="text-[9px] lg:text-xs font-semibold uppercase tracking-wider text-text-muted mb-0.5 lg:mb-2">
                       Telefon
                     </p>
@@ -98,7 +99,7 @@ export default function KontaktPage() {
                   </div>
 
                   {/* WhatsApp */}
-                  <div className="border border-border lg:border-t lg:border-x-0 lg:border-b-0 rounded-lg lg:rounded-none p-2 lg:pt-6 lg:p-0 lg:mt-6 lg:pb-0">
+                  <div className="border border-border/60 bg-white/60 rounded-xl p-3 lg:p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200">
                     <p className="text-[9px] lg:text-xs font-semibold uppercase tracking-wider text-text-muted mb-0.5 lg:mb-2">
                       WhatsApp
                     </p>
@@ -115,7 +116,7 @@ export default function KontaktPage() {
                   </div>
 
                   {/* Social — spans full width on mobile */}
-                  <div className="col-span-2 lg:col-span-1 border border-border lg:border-t lg:border-x-0 lg:border-b-0 rounded-lg lg:rounded-none p-2 lg:pt-6 lg:p-0 lg:mt-6 lg:pb-0 flex items-center gap-2 lg:block">
+                  <div className="col-span-2 lg:col-span-1 border border-border/60 bg-white/60 rounded-xl p-3 lg:p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200 flex items-center gap-2 lg:block">
                     <p className="text-[9px] lg:text-xs font-semibold uppercase tracking-wider text-text-muted mb-0 lg:mb-3">
                       Følg oss
                     </p>

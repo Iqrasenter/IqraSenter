@@ -19,10 +19,10 @@ function formatDate(dateStr: string): string {
   return `${d.getDate()}. ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-export function NewsCard({ title, excerpt, date, image, href = "/aktuelt" }: NewsCardProps) {
+export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: NewsCardProps) {
   return (
     <Link href={href} className="group">
-      <article className="bg-card rounded-3xl overflow-hidden shadow-sm border border-border/50 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col h-full">
+      <article className="bg-card rounded-3xl overflow-hidden card-pop flex flex-col h-full">
         {/* Image */}
         <div className="relative aspect-[3/2] overflow-hidden">
           <Image
@@ -33,11 +33,6 @@ export function NewsCard({ title, excerpt, date, image, href = "/aktuelt" }: New
             quality={90}
             sizes="(max-width: 768px) 100vw, 33vw"
           />
-          <div className="absolute top-4 left-4">
-            <span className="px-3 py-1 rounded-full bg-accent text-white text-xs font-bold shadow-md">
-              Nyhet
-            </span>
-          </div>
         </div>
 
         {/* Content */}

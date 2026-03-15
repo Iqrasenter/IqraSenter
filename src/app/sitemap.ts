@@ -35,13 +35,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
             priority: 0.8,
         },
         {
-            url: `${baseUrl}/netbutikk`,
+            url: `${baseUrl}/nettbutikk`,
             lastModified: new Date(),
             changeFrequency: "weekly",
             priority: 0.9,
         },
         {
-            url: `${baseUrl}/aktuelt`,
+            url: `${baseUrl}/sistenytt`,
             lastModified: new Date(),
             changeFrequency: "weekly",
             priority: 0.9,

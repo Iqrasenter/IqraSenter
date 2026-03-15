@@ -1,27 +1,29 @@
 import { FadeIn } from "./FadeIn";
 
 interface EditorialPageHeaderProps {
-  label: string;
+  label?: string;
   title: string;
+  highlight?: string;
   subtitle?: string;
 }
 
 export function EditorialPageHeader({
   label,
   title,
+  highlight,
   subtitle,
 }: EditorialPageHeaderProps) {
   return (
     <section className="pt-24 pb-3 lg:pt-44 lg:pb-8">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <FadeIn>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted mb-5">
+          {label && <p className="text-xs font-semibold uppercase tracking-[0.2em] text-text-muted mb-5">
             {label}
-          </p>
+          </p>}
         </FadeIn>
         <FadeIn delay={0.05}>
           <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold text-text leading-[0.92] tracking-tight">
-            {title}
+            {title}{highlight && <>{' '}<span className="text-primary">{highlight}</span></>}
           </h1>
         </FadeIn>
         <FadeIn delay={0.1}>

@@ -1,26 +1,17 @@
 import type { Metadata } from "next";
-import { Sora, Instrument_Serif, Fira_Code } from "next/font/google";
+import { Fraunces, Outfit } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
-import { ScrollProvider } from "@/lib/scroll-context";
 
-
-const sora = Sora({
-  variable: "--font-sora",
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
   display: "swap",
+  axes: ["opsz"],
 });
 
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-instrument-serif",
-  weight: "400",
-  subsets: ["latin"],
-  style: ["italic", "normal"],
-  display: "swap",
-});
-
-const firaCode = Fira_Code({
-  variable: "--font-fira-code",
+const outfit = Outfit({
+  variable: "--font-outfit",
   subsets: ["latin"],
   display: "swap",
 });
@@ -66,15 +57,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="nb">
+    <html lang="nb" className={`${fraunces.variable} ${outfit.variable}`}>
       <body
-        className={`${sora.variable} ${instrumentSerif.variable} ${firaCode.variable} antialiased selection:bg-accent/20 selection:text-accent`}
+        className="antialiased selection:bg-accent/20 selection:text-accent"
       >
-        <ScrollProvider>
-          <NoiseOverlay />
-          <Navbar />
-          <main>{children}</main>
-        </ScrollProvider>
+        <NoiseOverlay />
+        <Navbar />
+        <main>{children}</main>
       </body>
     </html>
   );

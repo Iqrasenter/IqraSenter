@@ -1,6 +1,7 @@
 interface SectionHeadingProps {
   badge?: string;
   title: string;
+  highlight?: string;
   subtitle?: string;
   centered?: boolean;
   light?: boolean;
@@ -9,6 +10,7 @@ interface SectionHeadingProps {
 export function SectionHeading({
   badge,
   title,
+  highlight,
   subtitle,
   centered = true,
   light = false,
@@ -31,7 +33,7 @@ export function SectionHeading({
           light ? "text-white" : "text-text"
         }`}
       >
-        {title}
+        {title}{highlight && <>{' '}<em className="text-primary not-italic">{highlight}</em></>}
       </h2>
       {subtitle && (
         <p

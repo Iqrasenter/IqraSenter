@@ -18,7 +18,7 @@ const slides: SlideData[] = [
     subtitle: 'Autumn / Winter Collection',
     description:
       'Where ancient architecture meets the dying light — a palette drawn from terracotta, aged stone, and the shimmering canals of Venice at twilight.',
-    accent: '#047857',
+    accent: '#1B6B4A',
     imageUrl: '/images/hero-children.jpg',
   },
   {
@@ -26,7 +26,7 @@ const slides: SlideData[] = [
     subtitle: 'Spring / Summer Collection',
     description:
       'Inspired by the vast stillness of Scandinavian fjords — clean lines, muted tones, and the quiet power of unadorned beauty.',
-    accent: '#D97706',
+    accent: '#C8973E',
     imageUrl: '/images/bok1.png',
   },
   {

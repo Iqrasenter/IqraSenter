@@ -8,11 +8,11 @@ import { Hero } from "@/components/Hero";
 import { SectionHeading } from "@/components/SectionHeading";
 import { EditorialFeatures } from "@/components/EditorialFeatures";
 import AboutBentoGrid from "@/components/AboutBentoGrid";
-import { TestimonialCarousel } from "@/components/TestimonialCarousel";
+import { TestimonialCard } from "@/components/ui/testimonial-card";
 import { Footer } from "@/components/Footer";
 import { NewsCard } from "@/components/NewsCard";
 
-import { NEWS } from "@/lib/constants";
+import { NEWS, TESTIMONIALS } from "@/lib/constants";
 
 export default function HomePage() {
   const fadeUp = {
@@ -38,13 +38,8 @@ export default function HomePage() {
         <EditorialFeatures />
       </section>
 
-      {/* ===== OM OSS — BENTO GRID ===== */}
-      <section id="om-oss" className="bg-bg-warm py-16 md:py-24">
-        <AboutBentoGrid />
-      </section>
-
       {/* ===== AKTUELT — LATEST ARTICLES ===== */}
-      <section id="aktuelt" className="bg-bg py-16 md:py-24">
+      <section id="aktuelt" className="bg-white py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full">
           <motion.div
             variants={fadeUp}
@@ -54,7 +49,8 @@ export default function HomePage() {
             viewport={{ once: true, amount: 0.3 }}
           >
             <SectionHeading
-              title="Aktuelt"
+              title="Siste"
+              highlight="Nytt"
               subtitle="Nyheter og arrangementer"
             />
           </motion.div>
@@ -87,52 +83,96 @@ export default function HomePage() {
             viewport={{ once: true, amount: 0.3 }}
           >
             <Link
-              href="/aktuelt"
-              className="inline-flex items-center gap-2 text-primary font-heading font-semibold hover:text-primary-light transition-colors duration-200"
+              href="/sistenytt"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-white text-accent font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm border-2 border-accent/25 hover:border-accent"
             >
-              Se alle nyheter
+              Se siste nytt
               <ArrowRight size={16} />
             </Link>
           </motion.div>
         </div>
       </section>
 
-      {/* ===== TESTIMONIALS ===== */}
-      <section id="testimonials" className="bg-bg-warm py-16 md:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full">
+      {/* ===== OM OSS — BENTO + TESTIMONIALS ===== */}
+      <section id="om-oss" className="bg-white py-16 md:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <motion.div
             variants={fadeUp}
             initial="hidden"
             whileInView="visible"
-            custom={0.15}
+            custom={0}
             viewport={{ once: true, amount: 0.3 }}
           >
-            <TestimonialCarousel />
+            <SectionHeading
+              title="Om"
+              highlight="Oss"
+              subtitle="Hvem vi er og hva andre sier"
+            />
           </motion.div>
+
+          <div className="mt-10 md:mt-14 grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6 items-stretch">
+            {/* Left — bento grid (60%) */}
+            <div className="lg:col-span-3">
+              <AboutBentoGrid />
+            </div>
+
+            {/* Right — testimonials stacked (40%) */}
+            <motion.div
+              className="lg:col-span-2 flex flex-col gap-3"
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.2 }}
+              variants={{
+                hidden: {},
+                visible: { transition: { staggerChildren: 0.12 } },
+              }}
+            >
+              {TESTIMONIALS.map((t) => (
+                <motion.div
+                  key={t.name}
+                  className="flex-1 flex"
+                  variants={{
+                    hidden: { opacity: 0, y: 16 },
+                    visible: {
+                      opacity: 1,
+                      y: 0,
+                      transition: { duration: 0.4, ease: "easeOut" },
+                    },
+                  }}
+                >
+                  <TestimonialCard
+                    author={{
+                      name: t.name,
+                      handle: `${t.age} år`,
+                      initials: t.initials,
+                    }}
+                    text={t.quote}
+                    className="!max-w-none w-full"
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
+          </div>
         </div>
       </section>
 
       {/* ===== CTA BANNER & FOOTER ===== */}
-      <section id="cta" className="bg-primary-dark py-20 md:py-28">
-        <div className="relative flex flex-col items-center justify-center overflow-hidden">
-          <div className="absolute inset-0 pattern-islamic opacity-20" />
-
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-accent/10 blur-[120px] rounded-full pointer-events-none" />
-
-          <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center">
+      <section id="cta" className="bg-white py-20 md:py-28">
+        <div className="flex flex-col items-center justify-center">
+          <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center">
             <motion.h2
-              className="font-drama italic text-3xl md:text-4xl lg:text-5xl text-white leading-tight"
+              className="font-drama italic text-3xl md:text-4xl lg:text-5xl text-text leading-tight"
               variants={fadeUp}
               initial="hidden"
               whileInView="visible"
               custom={0.1}
               viewport={{ once: true, amount: 0.3 }}
             >
-              Fokuser på det viktigste. <span className="text-accent">Bli med i Iqra i dag.</span>
+              Fokuser på det viktigste. <span className="text-primary">Bli med i Iqra i dag.</span>
             </motion.h2>
 
             <motion.p
-              className="mt-4 md:mt-8 text-sm md:text-2xl text-white/70 max-w-2xl mx-auto font-body"
+              className="mt-4 md:mt-8 text-sm md:text-2xl text-text-muted max-w-2xl mx-auto font-body"
               variants={fadeUp}
               initial="hidden"
               whileInView="visible"
@@ -152,14 +192,14 @@ export default function HomePage() {
             >
               <Link
                 href="/bli-medlem"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-accent hover:bg-accent-light text-white font-bold rounded-container transition-all duration-300 shadow-xl btn-magnetic text-sm md:text-base"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-primary hover:bg-primary-light text-white font-bold rounded-container transition-all duration-300 shadow-xl btn-magnetic text-sm md:text-base"
               >
                 Bli medlem
                 <ArrowRight size={16} />
               </Link>
               <Link
                 href="/kontakt"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-container backdrop-blur-sm transition-all duration-300 btn-magnetic text-sm md:text-base border border-white/10"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-white hover:border-accent text-accent font-heading font-medium rounded-full transition-all duration-300 btn-magnetic text-sm md:text-base border-2 border-accent/25"
               >
                 Kontakt oss
               </Link>
