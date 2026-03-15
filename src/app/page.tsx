@@ -39,7 +39,7 @@ export default function HomePage() {
       </section>
 
       {/* ===== AKTUELT — LATEST ARTICLES ===== */}
-      <section id="aktuelt" className="bg-white py-16 md:py-24">
+      <section id="aktuelt" className="bg-white py-10 md:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full">
           <motion.div
             variants={fadeUp}
@@ -56,7 +56,7 @@ export default function HomePage() {
           </motion.div>
 
           <motion.div
-            className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 mt-10 md:mt-14"
+            className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mt-8 md:mt-10"
             variants={fadeUp}
             initial="hidden"
             whileInView="visible"
@@ -75,7 +75,7 @@ export default function HomePage() {
           </motion.div>
 
           <motion.div
-            className="mt-8 md:mt-12 text-center"
+            className="mt-6 md:mt-8 text-center"
             variants={fadeUp}
             initial="hidden"
             whileInView="visible"
@@ -94,7 +94,7 @@ export default function HomePage() {
       </section>
 
       {/* ===== OM OSS — BENTO + TESTIMONIALS ===== */}
-      <section id="om-oss" className="bg-white py-16 md:py-24">
+      <section id="om-oss" className="bg-white py-10 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <motion.div
             variants={fadeUp}
@@ -110,15 +110,15 @@ export default function HomePage() {
             />
           </motion.div>
 
-          <div className="mt-10 md:mt-14 grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6 items-stretch">
+          <div className="mt-8 md:mt-14 grid grid-cols-1 lg:grid-cols-5 gap-3 md:gap-6 items-stretch">
             {/* Left — bento grid (60%) */}
             <div className="lg:col-span-3">
               <AboutBentoGrid />
             </div>
 
-            {/* Right — testimonials stacked (40%) */}
+            {/* Right — testimonials: horizontal scroll on mobile, stacked on desktop */}
             <motion.div
-              className="lg:col-span-2 flex flex-col gap-3"
+              className="lg:col-span-2 flex flex-row lg:flex-col gap-3 overflow-x-auto lg:overflow-x-visible snap-x snap-mandatory no-scrollbar -mx-4 px-4 lg:mx-0 lg:px-0 pb-2 lg:pb-0"
               initial="hidden"
               whileInView="visible"
               viewport={{ once: true, amount: 0.2 }}
@@ -130,7 +130,7 @@ export default function HomePage() {
               {TESTIMONIALS.map((t) => (
                 <motion.div
                   key={t.name}
-                  className="flex-1 flex"
+                  className="min-w-[280px] max-w-[85vw] lg:min-w-0 lg:max-w-none flex-shrink-0 lg:flex-shrink lg:flex-1 flex snap-start"
                   variants={{
                     hidden: { opacity: 0, y: 16 },
                     visible: {

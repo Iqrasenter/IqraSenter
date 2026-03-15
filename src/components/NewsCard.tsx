@@ -22,9 +22,9 @@ function formatDate(dateStr: string): string {
 export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: NewsCardProps) {
   return (
     <Link href={href} className="group">
-      <article className="bg-card rounded-3xl overflow-hidden card-pop flex flex-col h-full">
+      <article className="bg-card rounded-2xl overflow-hidden card-pop flex flex-col h-full">
         {/* Image */}
-        <div className="relative aspect-[3/2] overflow-hidden">
+        <div className="relative aspect-[16/10] overflow-hidden">
           <Image
             src={image}
             alt={title}
@@ -36,7 +36,7 @@ export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: N
         </div>
 
         {/* Content */}
-        <div className="p-6 flex flex-col flex-1">
+        <div className="p-4 sm:p-5 flex flex-col flex-1">
           <time className="text-xs font-medium text-text-muted uppercase tracking-wider">
             {formatDate(date)}
           </time>
