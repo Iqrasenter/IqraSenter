@@ -74,7 +74,7 @@ export function Hero() {
       </div>
 
       {/* Image side */}
-      <div className="hero-image md:w-[45%] lg:w-[45%] w-full max-h-[35vh] md:max-h-none md:h-[calc(100svh-6rem)] relative rounded-2xl md:rounded-3xl overflow-hidden">
+      <div className="hero-image md:w-[45%] lg:w-[45%] w-full aspect-[4/3] max-h-[35vh] md:aspect-auto md:max-h-none md:h-[calc(100svh-6rem)] relative rounded-2xl md:rounded-3xl overflow-hidden">
         <Image
           src="/images/hero-children.jpg"
           alt="Barn og familier på utflukt med Iqra Senter"
