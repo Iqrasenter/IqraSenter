@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Outfit } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
+import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/JsonLd";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -15,6 +16,12 @@ const outfit = Outfit({
   subsets: ["latin"],
   display: "swap",
 });
+
+export const viewport: Viewport = {
+  themeColor: "#1B6B4A",
+  width: "device-width",
+  initialScale: 1,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.iqrasenter.net"),
@@ -36,9 +43,17 @@ export const metadata: Metadata = {
     "barn",
     "unge",
     "familier",
+    "islamsk utdanning",
+    "arabisk",
+    "koranskole",
   ],
-  other: {
-    "theme-color": "#FFFFFF",
+  authors: [{ name: "Iqra Læring og Aktivitetssenter" }],
+  creator: "Iqra Senter",
+  publisher: "Iqra Læring og Aktivitetssenter",
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
   },
   openGraph: {
     title: "Iqra Læring og Aktivitetssenter",
@@ -48,6 +63,35 @@ export const metadata: Metadata = {
     siteName: "Iqra Senter",
     locale: "nb_NO",
     type: "website",
+    images: [
+      {
+        url: "/images/hero-children.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Barn og familier hos Iqra Senter i Oslo",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Iqra Læring og Aktivitetssenter",
+    description:
+      "Læring, fellesskap og muligheter — for hele familien i Oslo.",
+    images: ["/images/hero-children.jpg"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  alternates: {
+    canonical: "https://www.iqrasenter.net",
   },
 };
 
@@ -58,9 +102,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="nb" className={`${fraunces.variable} ${outfit.variable}`}>
-      <body
-        className="antialiased selection:bg-accent/20 selection:text-accent"
-      >
+      <body className="antialiased selection:bg-accent/20 selection:text-accent">
+        <OrganizationJsonLd />
+        <WebSiteJsonLd />
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold"
@@ -77,8 +121,11 @@ export default function RootLayout({
 
 function NoiseOverlay() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-40 h-[100dvh] w-screen opacity-[0.05]">
-      <svg className="h-full w-full" aria-hidden="true" style={{ pointerEvents: "none" }}>
+    <div
+      className="pointer-events-none fixed inset-0 z-40 h-[100dvh] w-screen opacity-[0.05]"
+      aria-hidden="true"
+    >
+      <svg className="h-full w-full" style={{ pointerEvents: "none" }}>
         <filter id="noiseFilter">
           <feTurbulence
             type="fractalNoise"
@@ -87,7 +134,12 @@ function NoiseOverlay() {
             stitchTiles="stitch"
           />
         </filter>
-        <rect width="100%" height="100%" filter="url(#noiseFilter)" style={{ pointerEvents: "none" }} />
+        <rect
+          width="100%"
+          height="100%"
+          filter="url(#noiseFilter)"
+          style={{ pointerEvents: "none" }}
+        />
       </svg>
     </div>
   );

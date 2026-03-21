@@ -30,7 +30,7 @@ export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: N
             alt={title}
             fill
             className="object-cover transition-transform duration-500 group-hover:scale-105"
-            quality={90}
+            quality={75}
             sizes="(max-width: 768px) 100vw, 33vw"
           />
         </div>

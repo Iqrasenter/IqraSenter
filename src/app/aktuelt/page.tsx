@@ -10,6 +10,9 @@ import { NEWS } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "Aktuelt",
   description: "Hold deg oppdatert med siste nyheter, arrangementer og aktiviteter fra Iqra Læring og Aktivitetssenter i Oslo.",
+  alternates: {
+    canonical: "https://www.iqrasenter.net/aktuelt",
+  },
   openGraph: {
     title: "Aktuelt hos Iqra Senter",
     description: "Hold deg oppdatert med siste nyheter, arrangementer og aktiviteter fra Iqra Læring og Aktivitetssenter i Oslo.",

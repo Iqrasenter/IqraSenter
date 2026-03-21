@@ -43,7 +43,7 @@ function EditorialRow({
           fill
           className="object-cover"
           sizes="(max-width: 1024px) 100vw, 50vw"
-          quality={90}
+          quality={75}
         />
       </div>
 

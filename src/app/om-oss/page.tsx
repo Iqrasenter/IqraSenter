@@ -10,6 +10,9 @@ import { FadeIn } from "@/components/FadeIn";
 export const metadata: Metadata = {
   title: "Om oss",
   description: "Lær mer om Iqra Læring og Aktivitetssenter — et samlingspunkt for hele familien med islamske studier, språkopplæring, kulturelle aktiviteter og fellesskap i Oslo.",
+  alternates: {
+    canonical: "https://www.iqrasenter.net/om-oss",
+  },
   openGraph: {
     title: "Om Iqra Senter",
     description: "Lær mer om Iqra Læring og Aktivitetssenter — et samlingspunkt for hele familien i Oslo.",

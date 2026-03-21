@@ -17,6 +17,9 @@ import { SITE } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "Kontakt",
   description: "Ta kontakt med Iqra Læring og Aktivitetssenter. Vi svarer gjerne på dine spørsmål om våre tilbud, aktiviteter og medlemskap.",
+  alternates: {
+    canonical: "https://www.iqrasenter.net/kontakt",
+  },
   openGraph: {
     title: "Kontakt Iqra Senter",
     description: "Ta kontakt med Iqra Læring og Aktivitetssenter. Vi svarer gjerne på dine spørsmål om våre tilbud.",

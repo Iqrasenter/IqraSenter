@@ -18,6 +18,9 @@ import { BookingForm } from "./BookingForm";
 export const metadata: Metadata = {
   title: "Leie rom",
   description: "Lei rom hos Iqra Læring og Aktivitetssenter. Vi har åtte rom med plass til 12–120 personer, perfekt for møter, undervisning og arrangementer.",
+  alternates: {
+    canonical: "https://www.iqrasenter.net/leie-rom",
+  },
   openGraph: {
     title: "Leie rom - Iqra Senter",
     description: "Lei rom hos Iqra Læring og Aktivitetssenter. Vi har åtte rom med plass til 12–120 personer.",

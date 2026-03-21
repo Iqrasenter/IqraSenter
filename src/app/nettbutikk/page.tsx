@@ -8,6 +8,9 @@ import { Footer } from "@/components/Footer";
 export const metadata: Metadata = {
   title: "Nettbutikk",
   description: "Kjøp islamske barnebøker og læringsmateriell fra Iqra Læring og Aktivitetssenter. Vakre illustrasjoner og inspirerende fortellinger.",
+  alternates: {
+    canonical: "https://www.iqrasenter.net/nettbutikk",
+  },
   openGraph: {
     title: "Nettbutikk - Iqra Senter",
     description: "Kjøp islamske barnebøker og læringsmateriell fra Iqra Læring og Aktivitetssenter.",
