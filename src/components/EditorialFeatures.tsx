@@ -14,6 +14,12 @@ const linkMap: Record<ServiceTitle, string> = {
   'Kurs og opplæring': '/om-oss',
 };
 
+const imagePositionMap: Record<ServiceTitle, string> = {
+  Helgeskole: 'center center',
+  Fritidsaktiviteter: 'center 100%',
+  'Kurs og opplæring': 'center center',
+};
+
 function EditorialRow({
   service,
   index,
@@ -42,6 +48,7 @@ function EditorialRow({
           alt={service.title}
           fill
           className="object-cover"
+          style={{ objectPosition: imagePositionMap[service.title] }}
           sizes="(max-width: 1024px) 100vw, 50vw"
           quality={75}
         />

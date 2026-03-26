@@ -101,10 +101,11 @@ export default function OmOssPage() {
             <FadeIn delay={0.1} className="lg:col-span-1">
               <div className="relative rounded-2xl overflow-hidden aspect-[4/3] lg:aspect-auto lg:h-full min-h-[180px]">
                 <Image
-                  src="/images/helgeskole.jpg"
-                  alt="Helgeskole hos Iqra Senter"
+                  src="/images/iqrany3.jpg"
+                  alt="Fellesskap hos Iqra Senter"
                   fill
                   className="object-cover"
+                  style={{ objectPosition: 'center 30%' }}
                   quality={85}
                   sizes="(max-width: 1024px) 100vw, 33vw"
                 />

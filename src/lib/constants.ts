@@ -30,7 +30,7 @@ export const SERVICES = [
     title: "Helgeskole",
     description:
       "Vi tilbyr helgeskole der barn og unge kan lære språk, kultur og tradisjon på en engasjerende og praktisk måte. Helgeskolen er en flott måte å utvikle både faglige ferdigheter og sosiale nettverk på!",
-    image: "/images/helgeskole.jpg",
+    image: "/images/fritid.jpg",
     icon: "BookOpen" as const,
     size: "large" as const,
   },
@@ -38,7 +38,7 @@ export const SERVICES = [
     title: "Fritidsaktiviteter",
     description:
       "Medlemmene får muligheten til delta i spennende utflukter og sosiale aktiviteter. Dette gir dem unik mulighet til å både lære og knytte bånd med andre.",
-    image: "/images/fritid.jpg",
+    image: "/images/iqrany1.jpg",
     icon: "Users" as const,
     size: "large" as const,
   },
@@ -46,7 +46,7 @@ export const SERVICES = [
     title: "Kurs og opplæring",
     description:
       "Vi tilbyr en rekke spesialiserte kurs og seminarer innenfor språk, kultur, barneoppdragelse, personlig utvikling, etc.",
-    image: "/images/kurs.png",
+    image: "/images/iqrany2.jpg",
     icon: "GraduationCap" as const,
     size: "small" as const,
   },
