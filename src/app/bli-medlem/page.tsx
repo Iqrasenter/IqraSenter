@@ -10,7 +10,6 @@ import {
   Mail,
   ArrowRight,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { EditorialPageHeader } from "@/components/EditorialPageHeader";
 import { EditorialLabel } from "@/components/EditorialLabel";
@@ -74,39 +73,11 @@ const BENEFITS = [
 export default function BliMedlemPage() {
   return (
     <>
-      {/* ===== HEADER WITH SMALL IMAGE ===== */}
-      <section className="pt-24 pb-3 lg:pt-44 lg:pb-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4 lg:gap-8">
-            <div className="flex-1">
-              <FadeIn delay={0.05}>
-                <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-extrabold text-text leading-[0.92] tracking-tight">
-                  Bli medlem /{' '}<span className="text-primary">Opptak</span>
-                </h1>
-              </FadeIn>
-              <FadeIn delay={0.1}>
-                <div className="mt-5 w-16 h-px bg-border" />
-              </FadeIn>
-              <FadeIn delay={0.15}>
-                <p className="mt-4 text-lg lg:text-xl text-text-muted leading-relaxed max-w-xl">
-                  Læring, fellesskap og muligheter for hele familien
-                </p>
-              </FadeIn>
-            </div>
-            <FadeIn delay={0.2}>
-              <Image
-                src="/images/iqrany5.jpg"
-                alt="Barn hos Iqra Senter"
-                width={240}
-                height={320}
-                className="object-cover rounded-xl w-[80px] h-[100px] lg:w-[140px] lg:h-[180px] shrink-0"
-                style={{ objectPosition: 'center 90%' }}
-                quality={75}
-              />
-            </FadeIn>
-          </div>
-        </div>
-      </section>
+      <EditorialPageHeader
+        title="Bli medlem /"
+        highlight="Opptak"
+        subtitle="Læring, fellesskap og muligheter for hele familien"
+      />
 
       {/* ===== BENEFITS — Alternating Width Rows ===== */}
       <section className="py-6 lg:py-16">
@@ -242,28 +213,16 @@ export default function BliMedlemPage() {
               </h2>
             </FadeIn>
             <FadeIn delay={0.15}>
-              <div className="flex items-start gap-3 lg:gap-6">
-                <div className="flex-1">
-                  <p className="text-xs lg:text-lg text-text-muted leading-relaxed">
-                    Hos Iqra Senter kan hele familien bli medlem. Med ett
-                    familiemedlemskap får alle i husstanden tilgang til våre
-                    aktiviteter, kurs og arrangementer. Vi tror på at læring og
-                    fellesskap er noe man opplever best sammen.
-                  </p>
-                  <div className="mt-3 lg:mt-8 inline-flex items-center gap-2 lg:gap-3 px-4 lg:px-6 py-2 lg:py-3 bg-primary/5 rounded-lg">
-                    <span className="font-heading text-xs lg:text-lg font-bold text-primary">
-                      [Kontakt oss for priser]
-                    </span>
-                  </div>
-                </div>
-                <Image
-                  src="/images/iqrany4.jpg"
-                  alt="Barn med diplomer hos Iqra Senter"
-                  width={120}
-                  height={160}
-                  className="object-cover rounded-xl w-[60px] h-[80px] lg:w-[120px] lg:h-[160px] shrink-0"
-                  quality={75}
-                />
+              <p className="text-xs lg:text-lg text-text-muted leading-relaxed">
+                Hos Iqra Senter kan hele familien bli medlem. Med ett
+                familiemedlemskap får alle i husstanden tilgang til våre
+                aktiviteter, kurs og arrangementer. Vi tror på at læring og
+                fellesskap er noe man opplever best sammen.
+              </p>
+              <div className="mt-3 lg:mt-8 inline-flex items-center gap-2 lg:gap-3 px-4 lg:px-6 py-2 lg:py-3 bg-primary/5 rounded-lg">
+                <span className="font-heading text-xs lg:text-lg font-bold text-primary">
+                  [Kontakt oss for priser]
+                </span>
               </div>
             </FadeIn>
           </div>
