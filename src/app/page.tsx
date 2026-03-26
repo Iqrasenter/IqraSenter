@@ -67,6 +67,7 @@ export default function HomePage() {
                   excerpt={item.excerpt}
                   date={item.date}
                   image={item.image}
+                  imagePosition={"imagePosition" in item ? (item.imagePosition as string) : undefined}
                 />
               ))}
             </div>

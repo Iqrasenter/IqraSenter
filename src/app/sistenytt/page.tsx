@@ -52,6 +52,7 @@ export default function AktueltPage() {
                   alt={featured.title}
                   fill
                   className="object-cover"
+                  style={"imagePosition" in featured ? { objectPosition: featured.imagePosition as string } : undefined}
                   quality={90}
                   sizes="(max-width: 1024px) 100vw, 58vw"
                 />
@@ -88,6 +89,7 @@ export default function AktueltPage() {
                     alt={item.title}
                     fill
                     className="object-cover"
+                    style={"imagePosition" in item ? { objectPosition: item.imagePosition as string } : undefined}
                     quality={90}
                     sizes="(max-width: 1024px) 100vw, 42vw"
                   />

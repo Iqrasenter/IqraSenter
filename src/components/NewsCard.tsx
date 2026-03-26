@@ -7,6 +7,7 @@ interface NewsCardProps {
   excerpt: string;
   date: string;
   image: string;
+  imagePosition?: string;
   href?: string;
 }
 
@@ -19,7 +20,7 @@ function formatDate(dateStr: string): string {
   }).format(d);
 }
 
-export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: NewsCardProps) {
+export function NewsCard({ title, excerpt, date, image, imagePosition, href = "/sistenytt" }: NewsCardProps) {
   return (
     <Link href={href} className="group">
       <article className="bg-card rounded-2xl overflow-hidden card-pop flex flex-col h-full">
@@ -30,6 +31,7 @@ export function NewsCard({ title, excerpt, date, image, href = "/sistenytt" }: N
             alt={title}
             fill
             className="object-cover transition-transform duration-500 group-hover:scale-105"
+            style={imagePosition ? { objectPosition: imagePosition } : undefined}
             quality={75}
             sizes="(max-width: 768px) 100vw, 33vw"
           />

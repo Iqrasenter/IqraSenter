@@ -89,14 +89,16 @@ export const NEWS = [
     excerpt:
       "Ledelsen i Iqra kaller inn alle foreldre til foreldremøte. Søndag 09.02.2025 kl. 15:30 i Iqra sine lokaler.",
     date: "2025-02-05",
-    image: "/images/lokale.jpg",
+    image: "/images/iqrany5.jpg",
+    imagePosition: "center 20%",
   },
   {
     title: "Intern Koran-konkurranse avsluttet",
     excerpt:
       "Alle deltakerne har gjort en fantastisk innsats. Gratulerer til alle som har deltatt!",
     date: "2025-01-20",
-    image: "/images/koran-konkurranse.jpg",
+    image: "/images/iqrany4.jpg",
+    imagePosition: "center 20%",
   },
   {
     title: "Refleksjonskveld med imam Abdifataah",
