@@ -101,7 +101,7 @@ export default function StottOssPage() {
           </p>
           <h1 className="font-heading text-4xl sm:text-5xl lg:text-7xl font-extrabold leading-[0.92] tracking-tight max-w-4xl" style={{ color: "#fff" }}>
             Sammen bygger vi{" "}
-            <span style={{ color: "#2A9D6E" }}>fremtiden</span>
+            <span>fremtiden</span>
           </h1>
           <p className="mt-6 text-lg lg:text-xl max-w-2xl leading-relaxed" style={{ color: "rgba(255,255,255,0.85)" }}>
             Din støtte gjør det mulig å bevare islamske verdier, styrke
