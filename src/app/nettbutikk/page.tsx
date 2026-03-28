@@ -4,7 +4,8 @@ import { EditorialPageHeader } from "@/components/EditorialPageHeader";
 import { FadeIn } from "@/components/FadeIn";
 import { ProductCard } from "@/components/ProductCard";
 import { Footer } from "@/components/Footer";
-import { NettbutikkQRToggle } from "@/components/NettbutikkQRToggle";
+import { NettbutikkVippsAction } from "@/components/NettbutikkQRToggle";
+import { Search, BookOpen, MessageSquareText } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Nettbutikk",
@@ -19,6 +20,36 @@ export const metadata: Metadata = {
   }
 };
 
+const STEPS = [
+  {
+    number: "1",
+    icon: Search,
+    title: "Finn oss i Vipps",
+    description: (
+      <>
+        Åpne <span className="font-semibold text-accent">Vipps-appen</span> og søk opp nummer{" "}
+        <span className="font-data font-bold text-accent">21490</span>
+      </>
+    ),
+  },
+  {
+    number: "2",
+    icon: BookOpen,
+    title: "Velg bok",
+    description: "Skriv hvilken bok du ønsker å bestille",
+  },
+  {
+    number: "3",
+    icon: MessageSquareText,
+    title: "Oppgi leveringssted",
+    description: (
+      <>
+        Skriv i meldingsfeltet <span className="font-semibold text-text">hvor du vil ha den levert</span>
+      </>
+    ),
+  },
+];
+
 export default function NetbutikkPage() {
   return (
     <>
@@ -31,7 +62,7 @@ export default function NetbutikkPage() {
 
       <section className="py-12 lg:py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-5xl mx-auto space-y-8">
+          <div className="max-w-5xl mx-auto space-y-10">
             {/* Books grid */}
             <div className="grid grid-cols-2 gap-8">
               {PRODUCTS.map((product, index) => (
@@ -41,31 +72,52 @@ export default function NetbutikkPage() {
               ))}
             </div>
 
-            {/* Vipps "how to buy" — full width, 2x2 step grid */}
+            {/* Redesigned Vipps ordering section */}
             <FadeIn delay={0.2}>
-              <div className="rounded-2xl border border-border/50 p-6 md:p-8">
-                <h3 className="font-heading text-lg font-bold text-text mb-5">
-                  Slik bestiller du
-                </h3>
-                <ol className="grid grid-cols-2 gap-4 text-sm text-text-muted list-none">
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center mt-0.5">1</span>
-                    <span>Gå til <span className="font-semibold text-accent">Vipps-appen</span></span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
-                    <span>Søk opp Vipps-nummer <span className="font-data font-bold text-accent">21490</span></span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
-                    <span>Velg hvilken bok du ønsker</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center mt-0.5">4</span>
-                    <span>Skriv i teksten <span className="font-semibold text-text">stedet du vil ha den sendt til</span></span>
-                  </li>
-                </ol>
-                <NettbutikkQRToggle />
+              <div
+                className="relative overflow-hidden rounded-2xl border border-primary/10 p-6 md:p-10"
+                style={{ background: "linear-gradient(to bottom right, #F4F7F2, #FFFFFF, #F4F7F2)" }}
+              >
+                {/* Subtle decorative pattern */}
+                <div className="absolute inset-0 pattern-islamic opacity-30 pointer-events-none" />
+
+                <div className="relative">
+                  <h3 className="font-heading text-xl md:text-2xl font-bold text-text mb-2 text-center">
+                    Slik bestiller du
+                  </h3>
+                  <p className="text-sm text-text-muted text-center mb-8 max-w-md mx-auto">
+                    Tre enkle steg via Vipps — raskt og trygt
+                  </p>
+
+                  {/* Steps — vertical on mobile, horizontal on desktop */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                    {STEPS.map((step) => (
+                      <div key={step.number} className="flex md:flex-col items-start md:items-center gap-4 md:gap-3 text-left md:text-center">
+                        {/* Step number badge */}
+                        <div className="relative flex-shrink-0">
+                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                            <step.icon size={22} className="text-primary" />
+                          </div>
+                          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
+                            {step.number}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="font-heading font-bold text-text text-sm mb-1">
+                            {step.title}
+                          </h4>
+                          <p className="text-sm text-text-muted leading-relaxed">
+                            {step.description}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* QR (desktop) / Vipps link (mobile) */}
+                  <NettbutikkVippsAction />
+                </div>
               </div>
             </FadeIn>
           </div>

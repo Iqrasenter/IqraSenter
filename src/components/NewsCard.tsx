@@ -39,16 +39,16 @@ export function NewsCard({ title, excerpt, date, image, imagePosition, href = "/
 
         {/* Content */}
         <div className="p-4 sm:p-5 flex flex-col flex-1">
-          <time className="text-xs font-medium text-text-muted uppercase tracking-wider">
+          <time className="hidden md:block text-xs font-medium text-text-muted uppercase tracking-wider">
             {formatDate(date)}
           </time>
           <h3 className="mt-2 font-heading text-base font-bold text-text leading-snug group-hover:text-primary transition-colors duration-200 line-clamp-2">
             {title}
           </h3>
-          <p className="mt-2 text-sm text-text-muted leading-relaxed line-clamp-3 flex-1">
+          <p className="hidden md:block mt-2 text-sm text-text-muted leading-relaxed line-clamp-3 flex-1">
             {excerpt}
           </p>
-          <div className="mt-4 flex items-center gap-1 text-primary font-semibold text-sm">
+          <div className="mt-3 md:mt-4 flex items-center gap-1 text-primary font-semibold text-sm">
             Les mer
             <ArrowRight size={14} className="transition-transform duration-200 group-hover:translate-x-1" />
           </div>

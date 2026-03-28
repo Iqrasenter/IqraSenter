@@ -1,53 +1,38 @@
-"use client";
-
-import { useState } from "react";
 import Image from "next/image";
-import { Smartphone, ChevronDown } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { Smartphone } from "lucide-react";
 
-export function NettbutikkQRToggle() {
-  const [open, setOpen] = useState(false);
+const VIPPS_LINK = "https://qr.vipps.no/donations/21490";
 
+export function NettbutikkVippsAction() {
   return (
-    <div className="mt-5 flex flex-col items-center">
-      <button
-        onClick={() => setOpen((prev) => !prev)}
-        className="inline-flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-light text-white font-heading font-semibold rounded-container transition-colors duration-300 shadow-lg btn-magnetic text-sm"
-      >
-        <Smartphone size={16} />
-        Scan & handle i appen
-        <ChevronDown
-          size={14}
-          className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`}
-        />
-      </button>
+    <div className="mt-6 flex flex-col items-center">
+      {/* Desktop: show QR code directly */}
+      <div className="hidden md:flex flex-col items-center">
+        <div className="bg-white rounded-2xl p-5 card-pop">
+          <div className="w-[180px] h-[180px] rounded-xl border border-border/20 overflow-hidden">
+            <Image
+              src="/images/qr-nettbutikk.png"
+              alt="QR-kode — scan for å betale med Vipps"
+              width={180}
+              height={180}
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <p className="mt-3 text-center text-sm text-text-muted font-body">
+            Scan med mobilen for å åpne Vipps
+          </p>
+        </div>
+      </div>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="overflow-hidden"
-          >
-            <div className="mt-4 bg-white rounded-container-lg card-pop p-5 text-center">
-              <div className="w-[150px] h-[150px] mx-auto rounded-container border border-border/30 overflow-hidden">
-                <Image
-                  src="/images/qr-nettbutikk.png"
-                  alt="QR-kode for Iqra nettbutikk"
-                  width={150}
-                  height={150}
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              <p className="mt-3 text-sm text-text-muted">
-                Scan for å åpne nettbutikken
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Mobile: direct Vipps link */}
+      <a
+        href={VIPPS_LINK}
+        className="md:hidden inline-flex items-center gap-2.5 px-7 py-3.5 text-white font-heading font-semibold rounded-full transition-colors duration-300 shadow-lg text-base"
+        style={{ backgroundColor: "#ff5b24" }}
+      >
+        <Smartphone size={18} />
+        Åpne i Vipps
+      </a>
     </div>
   );
 }
