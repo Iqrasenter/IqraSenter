@@ -16,42 +16,42 @@ const WHAT_YOU_SUPPORT = [
     title: "Madrasa & Helgeskole",
     description:
       "Ukentlig islamsk undervisning for barn og unge — Quran, arabisk og islamsk etikk i trygge rammer.",
-    image: "/images/stottoss1.jpg",
+    image: "/images/stottoss1.webp",
   },
   {
 
     title: "Korankonkurranser",
     description:
       "Årlige konkurranser som motiverer barn til å memorere og forstå Quranens budskap.",
-    image: "/images/stottoss2.jpg",
+    image: "/images/stottoss2.webp",
   },
   {
 
     title: "Avslutninger & fester",
     description:
       "Fellesarrangementer som samler familier — Eid-feiringer, skoleavslutninger og sosiale kvelder.",
-    image: "/images/stottoss3.jpg",
+    image: "/images/stottoss3.webp",
   },
   {
 
     title: "Islam & tradisjon",
     description:
       "Bevaring av islamske verdier og norsk-muslimsk identitet — tro, moral og tilhørighet for neste generasjon.",
-    image: "/images/stottoss4.jpg",
+    image: "/images/stottoss4.webp",
   },
   {
 
     title: "Fellesskap & tilhørighet",
     description:
       "Et trygt sted der familier møtes, barn leker og vennskap bygges på tvers av bakgrunn.",
-    image: "/images/stottoss5.jpg",
+    image: "/images/stottoss5.webp",
   },
   {
 
     title: "Fritidsaktiviteter",
     description:
       "Leksehjelp, sport, turer og kreative aktiviteter som gir barn minner for livet.",
-    image: "/images/stottoss6.jpg",
+    image: "/images/stottoss6.webp",
   },
 ];
 
@@ -75,11 +75,13 @@ export default function StottOssPage() {
         {/* Background image */}
         <div className="absolute inset-0">
           <Image
-            src="/images/hero-children.jpg"
+            src="/images/hero-children.webp"
             alt="Barn på aktivitet ved Iqra Senter"
             fill
             className="object-cover"
             priority
+            placeholder="blur"
+            blurDataURL="data:image/webp;base64,UklGRoYAAABXRUJQVlA4IHoAAAAwAgCdASoKAAoAAUAmJbACdAD0pzdf4REFAAD+6bD+yOx+zxNz1EtN6raA/FaoHA34Wjko/UKkTfQb+fmCNhJ6/RCfe+rJSh+bAox2o/7JdBzzw520rrg6MmmPjddeS8Pn8C+Vo6of5P1akKvuL4PJfb8MZchP1SgAAA=="
           />
           {/* Dark overlay gradient from bottom */}
           <div

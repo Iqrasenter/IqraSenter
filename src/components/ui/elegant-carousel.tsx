@@ -19,7 +19,7 @@ const slides: SlideData[] = [
     description:
       'Where ancient architecture meets the dying light — a palette drawn from terracotta, aged stone, and the shimmering canals of Venice at twilight.',
     accent: '#1B6B4A',
-    imageUrl: '/images/hero-children.jpg',
+    imageUrl: '/images/hero-children.webp',
   },
   {
     title: 'Nordic Silence',
@@ -27,7 +27,7 @@ const slides: SlideData[] = [
     description:
       'Inspired by the vast stillness of Scandinavian fjords — clean lines, muted tones, and the quiet power of unadorned beauty.',
     accent: '#C8973E',
-    imageUrl: '/images/bok1.png',
+    imageUrl: '/images/bok1.webp',
   },
   {
     title: 'Kyoto Garden',
@@ -35,7 +35,7 @@ const slides: SlideData[] = [
     description:
       'Moss-covered pathways and paper lanterns — an ode to the meditative elegance of Japanese garden design and its timeless restraint.',
     accent: '#8BA7B8',
-    imageUrl: '/images/bok2.png',
+    imageUrl: '/images/bok2.webp',
   },
   {
     title: 'Saharan Gold',

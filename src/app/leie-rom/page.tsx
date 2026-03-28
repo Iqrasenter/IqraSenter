@@ -89,7 +89,7 @@ export default function LeieRomPage() {
             <FadeIn delay={0.1}>
               <div className="relative aspect-[4/3] rounded-lg overflow-hidden">
                 <Image
-                  src="/images/lokale.jpg"
+                  src="/images/lokale.webp"
                   alt="Lokaler hos Iqra Senter"
                   fill
                   className="object-cover"
@@ -149,7 +149,7 @@ export default function LeieRomPage() {
         <section className="py-12">
           <div className="relative w-full h-[50vh] lg:h-[60vh]">
             <Image
-              src="/images/lokale.jpg"
+              src="/images/lokale.webp"
               alt="Lokaler hos Iqra Senter"
               fill
               className="object-cover"

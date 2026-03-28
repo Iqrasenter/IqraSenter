@@ -101,13 +101,15 @@ export default function OmOssPage() {
             <FadeIn delay={0.1} className="lg:col-span-1">
               <div className="relative rounded-2xl overflow-hidden aspect-[4/3] lg:aspect-auto lg:h-full min-h-[180px]">
                 <Image
-                  src="/images/iqrany3.jpg"
+                  src="/images/iqrany3.webp"
                   alt="Fellesskap hos Iqra Senter"
                   fill
                   className="object-cover"
                   style={{ objectPosition: 'center 30%' }}
-                  quality={85}
+                  quality={80}
                   sizes="(max-width: 1024px) 100vw, 33vw"
+                  placeholder="blur"
+                  blurDataURL="data:image/webp;base64,UklGRnAAAABXRUJQVlA4IGQAAAAwAgCdASoKAAoAAUAmJagCdLoAAnPNdH2rAAD+5TVySKsrBR5Jl8G+toM2KcTmU2u7vOWCcIJWzhNie/3lxCHPrnf7GO/vwJ9qvGuGqARe9r9ykTsb2opIrxZNvYzPXoEjC4AA"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
               </div>

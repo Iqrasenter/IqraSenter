@@ -30,7 +30,7 @@ export const SERVICES = [
     title: "Helgeskole",
     description:
       "Vi tilbyr helgeskole der barn og unge kan lære språk, kultur og tradisjon på en engasjerende og praktisk måte. Helgeskolen er en flott måte å utvikle både faglige ferdigheter og sosiale nettverk på!",
-    image: "/images/fritid.jpg",
+    image: "/images/fritid.webp",
     icon: "BookOpen" as const,
     size: "large" as const,
   },
@@ -38,7 +38,7 @@ export const SERVICES = [
     title: "Fritidsaktiviteter",
     description:
       "Medlemmene får muligheten til delta i spennende utflukter og sosiale aktiviteter. Dette gir dem unik mulighet til å både lære og knytte bånd med andre.",
-    image: "/images/iqrany1.jpg",
+    image: "/images/iqrany1.webp",
     icon: "Users" as const,
     size: "large" as const,
   },
@@ -46,7 +46,7 @@ export const SERVICES = [
     title: "Kurs og opplæring",
     description:
       "Vi tilbyr en rekke spesialiserte kurs og seminarer innenfor språk, kultur, barneoppdragelse, personlig utvikling, etc.",
-    image: "/images/iqrasenter8.jpg",
+    image: "/images/iqrasenter8.webp",
     icon: "GraduationCap" as const,
     size: "small" as const,
   },
@@ -82,14 +82,14 @@ export const NEWS = [
     excerpt:
       "Vi har gleden av å presentere to nye barnebøker med fokus på islamsk barneoppdragelse. Bøkene er nå til salgs i vår nettbutikk og hos våre utsalgssteder.",
     date: "2026-02-26",
-    image: "/images/books-combined.png",
+    image: "/images/books-combined.webp",
   },
   {
     title: "Foreldremøte — Viktig beskjed til alle foreldre",
     excerpt:
       "Ledelsen i Iqra kaller inn alle foreldre til foreldremøte. Søndag 09.02.2025 kl. 15:30 i Iqra sine lokaler.",
     date: "2025-02-05",
-    image: "/images/iqrany5.jpg",
+    image: "/images/iqrany5.webp",
     imagePosition: "center 20%",
   },
   {
@@ -97,7 +97,7 @@ export const NEWS = [
     excerpt:
       "Alle deltakerne har gjort en fantastisk innsats. Gratulerer til alle som har deltatt!",
     date: "2025-01-20",
-    image: "/images/iqrany4.jpg",
+    image: "/images/iqrany4.webp",
     imagePosition: "center 20%",
   },
   {
@@ -105,7 +105,7 @@ export const NEWS = [
     excerpt:
       "En inspirerende refleksjonskveld og workshop om egenskapene som er mest elsket av Allah.",
     date: "2025-01-04",
-    image: "/images/helgeskole.jpg",
+    image: "/images/helgeskole.webp",
   },
 ] as const;
 
@@ -160,7 +160,7 @@ export const PRODUCTS: Product[] = [
     slug: "islamic-book-1",
     name: "Islamsk Bok 1",
     price: 299,
-    image: "/images/bok1.png",
+    image: "/images/bok1.webp",
     description:
       "En vakker islamsk bildebok for barn med fargerike illustrasjoner og inspirerende fortellinger.",
     stripePriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_BOOK1 || "price_placeholder_1",
@@ -169,7 +169,7 @@ export const PRODUCTS: Product[] = [
     slug: "islamic-book-2",
     name: "Islamsk Bok 2",
     price: 299,
-    image: "/images/bok2.png",
+    image: "/images/bok2.webp",
     description:
       "En vakker islamsk bildebok for barn med fargerike illustrasjoner og inspirerende fortellinger.",
     stripePriceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_BOOK2 || "price_placeholder_2",

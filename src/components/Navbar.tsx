@@ -39,7 +39,7 @@ export function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center cursor-pointer">
             <Image
-              src="/images/logo-wide.jpg"
+              src="/images/logo-wide.webp"
               alt={SITE.name}
               width={177}
               height={50}
