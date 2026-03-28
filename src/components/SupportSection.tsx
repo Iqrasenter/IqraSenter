@@ -34,7 +34,7 @@ export function SupportSection() {
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-3 items-stretch">
           {/* Vipps Card */}
           <FadeIn delay={0}>
-            <div className="bg-white rounded-container-lg card-pop px-4 py-3 text-center h-full">
+            <div className="bg-white rounded-container-lg card-pop px-5 py-4 text-center h-full">
               <div className="w-8 h-[2px] bg-gradient-to-r from-primary to-primary-light rounded-full mx-auto mb-1.5" />
               <p className="text-[10px] tracking-widest font-bold text-primary uppercase mb-0.5">
                 Vipps
@@ -42,15 +42,15 @@ export function SupportSection() {
               <p className="font-heading text-xl font-extrabold text-text mb-0.5">
                 21490
               </p>
-              <p className="text-[11px] text-text-muted leading-snug mb-2">
+              <p className="text-sm text-text-muted leading-snug mb-3">
                 Åpne Vipps-appen, søk på nummeret eller scan QR-koden.
               </p>
-              <div className="w-[56px] h-[56px] mx-auto rounded-lg border border-border/30 overflow-hidden">
+              <div className="w-[80px] h-[80px] mx-auto rounded-lg border border-border/30 overflow-hidden">
                 <Image
                   src="/images/qr-stott-oss.png"
                   alt="QR-kode for Vipps nummer 21490"
-                  width={56}
-                  height={56}
+                  width={80}
+                  height={80}
                   className="w-full h-full object-contain"
                 />
               </div>
@@ -59,7 +59,7 @@ export function SupportSection() {
 
           {/* Avtalegiro Card */}
           <FadeIn delay={0.1}>
-            <div className="bg-white rounded-container-lg card-pop px-4 py-3 text-center h-full flex flex-col">
+            <div className="bg-white rounded-container-lg card-pop px-5 py-4 text-center h-full flex flex-col">
               <div className="w-8 h-[2px] bg-gradient-to-r from-primary to-primary-light rounded-full mx-auto mb-1.5" />
               <p className="text-[10px] tracking-widest font-bold text-primary uppercase mb-0.5">
                 Avtalegiro
@@ -67,7 +67,7 @@ export function SupportSection() {
               <p className="font-heading text-lg font-extrabold text-text mb-0.5">
                 Fast støtte
               </p>
-              <p className="text-[11px] text-text-muted leading-snug mb-2 flex-1">
+              <p className="text-sm text-text-muted leading-snug mb-3 flex-1">
                 Sett opp et fast månedlig trekk — velg beløp selv.
               </p>
               <a
@@ -85,7 +85,7 @@ export function SupportSection() {
 
           {/* Bank Card */}
           <FadeIn delay={0.2}>
-            <div className="bg-white rounded-container-lg card-pop px-4 py-3 text-center h-full flex flex-col">
+            <div className="bg-white rounded-container-lg card-pop px-5 py-4 text-center h-full flex flex-col">
               <div className="w-8 h-[2px] bg-gradient-to-r from-primary to-primary-light rounded-full mx-auto mb-1.5" />
               <p className="text-[10px] tracking-widest font-bold text-primary uppercase mb-0.5">
                 Bankoverføring
@@ -93,7 +93,7 @@ export function SupportSection() {
               <p className="font-data text-base font-extrabold text-text tracking-wide mb-0.5">
                 {BANK_ACCOUNT}
               </p>
-              <p className="text-[11px] text-text-muted leading-snug mb-2 flex-1">
+              <p className="text-sm text-text-muted leading-snug mb-3 flex-1">
                 Overfør fra nettbanken. Merk med «Støtte».
               </p>
               <button
