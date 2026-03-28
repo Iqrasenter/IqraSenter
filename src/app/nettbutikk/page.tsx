@@ -5,7 +5,6 @@ import { FadeIn } from "@/components/FadeIn";
 import { ProductCard } from "@/components/ProductCard";
 import { Footer } from "@/components/Footer";
 import { NettbutikkVippsAction } from "@/components/NettbutikkQRToggle";
-import { Search, BookOpen, MessageSquareText } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Nettbutikk",
@@ -23,7 +22,6 @@ export const metadata: Metadata = {
 const STEPS = [
   {
     number: "1",
-    icon: Search,
     title: "Finn oss i Vipps",
     description: (
       <>
@@ -34,13 +32,11 @@ const STEPS = [
   },
   {
     number: "2",
-    icon: BookOpen,
     title: "Velg bok",
     description: "Skriv hvilken bok du ønsker å bestille",
   },
   {
     number: "3",
-    icon: MessageSquareText,
     title: "Oppgi leveringssted",
     description: (
       <>
@@ -74,50 +70,36 @@ export default function NetbutikkPage() {
 
             {/* Redesigned Vipps ordering section */}
             <FadeIn delay={0.2}>
-              <div
-                className="relative overflow-hidden rounded-2xl border border-primary/10 p-6 md:p-10"
-                style={{ background: "linear-gradient(to bottom right, #F4F7F2, #FFFFFF, #F4F7F2)" }}
-              >
-                {/* Subtle decorative pattern */}
-                <div className="absolute inset-0 pattern-islamic opacity-30 pointer-events-none" />
+              <div className="rounded-2xl border border-border/50 bg-white p-6 md:p-10">
+                <h3 className="font-heading text-xl md:text-2xl font-bold text-text mb-2 text-center">
+                  Slik bestiller du
+                </h3>
+                <p className="text-sm text-text-muted text-center mb-8 max-w-md mx-auto">
+                  Tre enkle steg via Vipps — raskt og trygt
+                </p>
 
-                <div className="relative">
-                  <h3 className="font-heading text-xl md:text-2xl font-bold text-text mb-2 text-center">
-                    Slik bestiller du
-                  </h3>
-                  <p className="text-sm text-text-muted text-center mb-8 max-w-md mx-auto">
-                    Tre enkle steg via Vipps — raskt og trygt
-                  </p>
+                {/* Steps — vertical on mobile, horizontal on desktop */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                  {STEPS.map((step) => (
+                    <div key={step.number} className="flex md:flex-col items-start md:items-center gap-4 md:gap-3 text-left md:text-center">
+                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-white text-sm font-bold flex items-center justify-center">
+                        {step.number}
+                      </span>
 
-                  {/* Steps — vertical on mobile, horizontal on desktop */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                    {STEPS.map((step) => (
-                      <div key={step.number} className="flex md:flex-col items-start md:items-center gap-4 md:gap-3 text-left md:text-center">
-                        {/* Step number badge */}
-                        <div className="relative flex-shrink-0">
-                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                            <step.icon size={22} className="text-primary" />
-                          </div>
-                          <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
-                            {step.number}
-                          </span>
-                        </div>
-
-                        <div>
-                          <h4 className="font-heading font-bold text-text text-sm mb-1">
-                            {step.title}
-                          </h4>
-                          <p className="text-sm text-text-muted leading-relaxed">
-                            {step.description}
-                          </p>
-                        </div>
+                      <div>
+                        <h4 className="font-heading font-bold text-text text-sm mb-1">
+                          {step.title}
+                        </h4>
+                        <p className="text-sm text-text-muted leading-relaxed">
+                          {step.description}
+                        </p>
                       </div>
-                    ))}
-                  </div>
-
-                  {/* QR (desktop) / Vipps link (mobile) */}
-                  <NettbutikkVippsAction />
+                    </div>
+                  ))}
                 </div>
+
+                {/* QR (desktop) / Vipps link (mobile) */}
+                <NettbutikkVippsAction />
               </div>
             </FadeIn>
           </div>
