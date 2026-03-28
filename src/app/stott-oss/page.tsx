@@ -7,8 +7,59 @@ import {
   ArrowRight,
   Copy,
   Check,
+  BookOpen,
+  Trophy,
+  PartyPopper,
+  Heart,
+  Users,
+  Star,
 } from "lucide-react";
 import { FadeIn } from "@/components/FadeIn";
+
+const WHAT_YOU_SUPPORT = [
+  {
+    icon: BookOpen,
+    title: "Madrasa & Helgeskole",
+    description:
+      "Ukentlig islamsk undervisning for barn og unge — Quran, arabisk og islamsk etikk i trygge rammer.",
+    image: "/images/stottoss1.jpg",
+  },
+  {
+    icon: Trophy,
+    title: "Korankonkurranser",
+    description:
+      "Årlige konkurranser som motiverer barn til å memorere og forstå Quranens budskap.",
+    image: "/images/stottoss2.jpg",
+  },
+  {
+    icon: PartyPopper,
+    title: "Avslutninger & fester",
+    description:
+      "Fellesarrangementer som samler familier — Eid-feiringer, skoleavslutninger og sosiale kvelder.",
+    image: "/images/stottoss3.jpg",
+  },
+  {
+    icon: Heart,
+    title: "Islam & tradisjon",
+    description:
+      "Bevaring av islamske verdier og norsk-muslimsk identitet — tro, moral og tilhørighet for neste generasjon.",
+    image: "/images/stottoss4.jpg",
+  },
+  {
+    icon: Users,
+    title: "Fellesskap & tilhørighet",
+    description:
+      "Et trygt sted der familier møtes, barn leker og vennskap bygges på tvers av bakgrunn.",
+    image: "/images/stottoss5.jpg",
+  },
+  {
+    icon: Star,
+    title: "Fritidsaktiviteter",
+    description:
+      "Leksehjelp, sport, turer og kreative aktiviteter som gir barn minner for livet.",
+    image: "/images/stottoss6.jpg",
+  },
+];
 
 const BANK_ACCOUNT = "1503.67.58535";
 const AVTALEGIRO_URL =
@@ -193,30 +244,53 @@ export default function StottOssPage() {
         </div>
       </section>
 
-      {/* ===== IMAGE GALLERY ===== */}
-      <section className="py-16 lg:py-24">
+      {/* ===== WHAT YOUR SUPPORT MEANS ===== */}
+      <section className="py-20 lg:py-28 bg-bg-warm relative">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <FadeIn>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-              {[
-                { src: "/images/stottoss1.jpg", alt: "Aktivitet ved Iqra Senter" },
-                { src: "/images/stottoss2.jpg", alt: "Fellesskap ved Iqra Senter" },
-                { src: "/images/stottoss3.jpg", alt: "Læring ved Iqra Senter" },
-                { src: "/images/stottoss4.jpg", alt: "Barn ved Iqra Senter" },
-                { src: "/images/stottoss5.jpg", alt: "Arrangementer ved Iqra Senter" },
-                { src: "/images/stottoss6.jpg", alt: "Samvær ved Iqra Senter" },
-              ].map((img, i) => (
-                <div key={i} className="relative aspect-[4/3] rounded-2xl overflow-hidden group">
-                  <Image
-                    src={img.src}
-                    alt={img.alt}
-                    fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                </div>
-              ))}
+            <div className="text-center mb-16">
+              <span className="inline-block px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary mb-4">
+                Hva du støtter
+              </span>
+              <h2 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-text leading-tight">
+                Din gave gir{" "}
+                <em className="text-primary not-italic">mening</em>
+              </h2>
+              <p className="mt-4 text-lg text-text-muted max-w-2xl mx-auto">
+                Hver krone går til å styrke islam, fellesskap og kunnskap
+                for barn og familier i Norge.
+              </p>
             </div>
           </FadeIn>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {WHAT_YOU_SUPPORT.map((item, i) => (
+              <FadeIn key={item.title} delay={i * 0.08}>
+                <div className="group bg-white rounded-container-lg overflow-hidden card-pop h-full flex flex-col">
+                  <div className="relative h-48 overflow-hidden">
+                    <Image
+                      src={item.image}
+                      alt={item.title}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                  </div>
+                  <div className="p-6 flex-1 flex flex-col">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center -mt-8 relative z-10 mb-3 ml-1 border-2 border-white shadow-sm">
+                      <item.icon className="text-primary" size={18} />
+                    </div>
+                    <h3 className="font-heading text-lg font-bold text-text mb-2">
+                      {item.title}
+                    </h3>
+                    <p className="text-sm text-text-muted leading-relaxed flex-1">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
         </div>
       </section>
 
