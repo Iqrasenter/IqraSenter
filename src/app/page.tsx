@@ -9,6 +9,7 @@ import { TestimonialCard } from "@/components/ui/testimonial-card";
 import { Footer } from "@/components/Footer";
 import { NewsCard } from "@/components/NewsCard";
 import { FadeIn } from "@/components/FadeIn";
+import { SupportSection } from "@/components/SupportSection";
 
 const EditorialFeatures = dynamic(
   () =>
@@ -128,6 +129,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* ===== STØTT OSS ===== */}
+      <SupportSection />
 
       {/* ===== CTA BANNER & FOOTER ===== */}
       <section id="cta" className="bg-white py-20 md:py-28">
