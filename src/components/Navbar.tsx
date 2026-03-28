@@ -92,7 +92,7 @@ export function Navbar() {
             </div>
             <Link
               href="/stott-oss"
-              className="inline-flex items-center px-6 py-2 bg-white text-accent font-heading font-medium text-sm rounded-full transition-[border-color,color] duration-200 cursor-pointer btn-magnetic border-2 border-accent/25 hover:border-accent"
+              className="inline-flex items-center px-6 py-2 bg-accent text-white font-heading font-medium text-sm rounded-full transition-all duration-200 cursor-pointer btn-magnetic hover:bg-accent-light shadow-md"
             >
               Støtt oss
             </Link>
@@ -154,7 +154,7 @@ export function Navbar() {
               <div className="flex justify-center border-t border-border/10 pt-4 mt-2">
                 <Link
                   href="/stott-oss"
-                  className="w-full text-center px-5 py-3 bg-white text-accent font-heading font-medium text-sm rounded-full transition-[border-color,color] duration-200 cursor-pointer btn-magnetic border-2 border-accent/25 hover:border-accent"
+                  className="w-full text-center px-5 py-3 bg-accent text-white font-heading font-medium text-sm rounded-full transition-all duration-200 cursor-pointer btn-magnetic hover:bg-accent-light shadow-md"
                 >
                   Støtt oss
                 </Link>
