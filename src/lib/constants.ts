@@ -46,7 +46,7 @@ export const SERVICES = [
     title: "Kurs og opplæring",
     description:
       "Vi tilbyr en rekke spesialiserte kurs og seminarer innenfor språk, kultur, barneoppdragelse, personlig utvikling, etc.",
-    image: "/images/iqrany2.jpg",
+    image: "/images/iqrasenter8.jpg",
     icon: "GraduationCap" as const,
     size: "small" as const,
   },

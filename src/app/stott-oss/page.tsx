@@ -193,6 +193,33 @@ export default function StottOssPage() {
         </div>
       </section>
 
+      {/* ===== IMAGE GALLERY ===== */}
+      <section className="py-16 lg:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <FadeIn>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+              {[
+                { src: "/images/stottoss1.jpg", alt: "Aktivitet ved Iqra Senter" },
+                { src: "/images/stottoss2.jpg", alt: "Fellesskap ved Iqra Senter" },
+                { src: "/images/stottoss3.jpg", alt: "Læring ved Iqra Senter" },
+                { src: "/images/stottoss4.jpg", alt: "Barn ved Iqra Senter" },
+                { src: "/images/stottoss5.jpg", alt: "Arrangementer ved Iqra Senter" },
+                { src: "/images/stottoss6.jpg", alt: "Samvær ved Iqra Senter" },
+              ].map((img, i) => (
+                <div key={i} className="relative aspect-[4/3] rounded-2xl overflow-hidden group">
+                  <Image
+                    src={img.src}
+                    alt={img.alt}
+                    fill
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                </div>
+              ))}
+            </div>
+          </FadeIn>
+        </div>
+      </section>
+
       {/* ===== CTA — Warm, inviting ===== */}
       <section className="relative py-20 lg:py-28 overflow-hidden" style={{ backgroundColor: "#1B6B4A" }}>
         {/* Pattern */}
