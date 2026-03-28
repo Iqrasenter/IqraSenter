@@ -63,7 +63,7 @@ const WHAT_YOU_SUPPORT = [
       "Leksehjelp, sport, turer og kreative aktiviteter som gir barn minner for livet.",
     image: "/images/fritid.jpg",
   },
-] as const;
+];
 
 const IMPACT_STATS = [
   { value: "200+", label: "familier støttet" },
