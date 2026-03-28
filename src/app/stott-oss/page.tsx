@@ -123,6 +123,56 @@ export default function StottOssPage() {
         </div>
       </section>
 
+      {/* ===== WHAT YOUR SUPPORT MEANS ===== */}
+      <section className="py-20 lg:py-28 bg-bg-warm relative">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <FadeIn>
+            <div className="text-center mb-16">
+              <span className="inline-block px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary mb-4">
+                Hva du støtter
+              </span>
+              <h2 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-text leading-tight">
+                Din gave gir{" "}
+                <em className="text-primary not-italic">mening</em>
+              </h2>
+              <p className="mt-4 text-lg text-text-muted max-w-2xl mx-auto">
+                Hver krone går til å styrke islam, fellesskap og kunnskap
+                for barn og familier i Norge.
+              </p>
+            </div>
+          </FadeIn>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {WHAT_YOU_SUPPORT.map((item, i) => (
+              <FadeIn key={item.title} delay={i * 0.08}>
+                <div className="group bg-white rounded-container-lg overflow-hidden card-pop h-full flex flex-col">
+                  <div className="relative h-48 overflow-hidden">
+                    <Image
+                      src={item.image}
+                      alt={item.title}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                  </div>
+                  <div className="p-6 flex-1 flex flex-col">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center -mt-8 relative z-10 mb-3 ml-1 border-2 border-white shadow-sm">
+                      <item.icon className="text-primary" size={18} />
+                    </div>
+                    <h3 className="font-heading text-lg font-bold text-text mb-2">
+                      {item.title}
+                    </h3>
+                    <p className="text-sm text-text-muted leading-relaxed flex-1">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ===== DONATION METHODS ===== */}
       <section id="stott" className="py-20 lg:py-28 scroll-mt-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -240,56 +290,6 @@ export default function StottOssPage() {
                 </a>
               </div>
             </FadeIn>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== WHAT YOUR SUPPORT MEANS ===== */}
-      <section className="py-20 lg:py-28 bg-bg-warm relative">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <FadeIn>
-            <div className="text-center mb-16">
-              <span className="inline-block px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary mb-4">
-                Hva du støtter
-              </span>
-              <h2 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-text leading-tight">
-                Din gave gir{" "}
-                <em className="text-primary not-italic">mening</em>
-              </h2>
-              <p className="mt-4 text-lg text-text-muted max-w-2xl mx-auto">
-                Hver krone går til å styrke islam, fellesskap og kunnskap
-                for barn og familier i Norge.
-              </p>
-            </div>
-          </FadeIn>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {WHAT_YOU_SUPPORT.map((item, i) => (
-              <FadeIn key={item.title} delay={i * 0.08}>
-                <div className="group bg-white rounded-container-lg overflow-hidden card-pop h-full flex flex-col">
-                  <div className="relative h-48 overflow-hidden">
-                    <Image
-                      src={item.image}
-                      alt={item.title}
-                      fill
-                      className="object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-                  </div>
-                  <div className="p-6 flex-1 flex flex-col">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center -mt-8 relative z-10 mb-3 ml-1 border-2 border-white shadow-sm">
-                      <item.icon className="text-primary" size={18} />
-                    </div>
-                    <h3 className="font-heading text-lg font-bold text-text mb-2">
-                      {item.title}
-                    </h3>
-                    <p className="text-sm text-text-muted leading-relaxed flex-1">
-                      {item.description}
-                    </p>
-                  </div>
-                </div>
-              </FadeIn>
-            ))}
           </div>
         </div>
       </section>
