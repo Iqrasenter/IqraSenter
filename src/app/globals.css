@@ -146,6 +146,17 @@ h6 {
   background-size: 60px 60px;
 }
 
+/* Force light text inside dark sections */
+.text-on-dark h1,
+.text-on-dark h2,
+.text-on-dark h3,
+.text-on-dark h4,
+.text-on-dark h5,
+.text-on-dark h6,
+.text-on-dark p {
+  color: inherit !important;
+}
+
 /* Hide scrollbar but keep scroll functionality */
 .no-scrollbar {
   -ms-overflow-style: none;
