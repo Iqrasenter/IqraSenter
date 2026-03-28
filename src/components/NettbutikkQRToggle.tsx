@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { Smartphone } from "lucide-react";
 
-const VIPPS_LINK = "https://qr.vipps.no/donations/21490";
+const VIPPS_LINK = "https://qr.vipps.no/vp/mSPWvQajp";
 
 export function NettbutikkVippsAction() {
   return (
