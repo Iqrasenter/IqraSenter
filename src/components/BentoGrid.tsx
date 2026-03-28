@@ -19,6 +19,10 @@ const categoryMap: Record<ServiceTitle, string> = {
   "Kurs og opplæring": "Kurs",
 };
 
+const imagePositionMap: Partial<Record<ServiceTitle, string>> = {
+  "Kurs og opplæring": "center 80%",
+};
+
 export function BentoGrid() {
   return (
     <>
@@ -40,6 +44,7 @@ export function BentoGrid() {
                 alt={service.title}
                 fill
                 className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                style={imagePositionMap[service.title] ? { objectPosition: imagePositionMap[service.title] } : undefined}
                 quality={90}
                 sizes="(max-width: 768px) 82vw, 50vw"
               />
@@ -89,6 +94,7 @@ export function BentoGrid() {
                 alt={service.title}
                 fill
                 className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                style={imagePositionMap[service.title] ? { objectPosition: imagePositionMap[service.title] } : undefined}
                 quality={90}
                 sizes="(max-width: 768px) 82vw, 50vw"
               />

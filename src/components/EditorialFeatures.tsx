@@ -17,7 +17,7 @@ const linkMap: Record<ServiceTitle, string> = {
 const imagePositionMap: Record<ServiceTitle, string> = {
   Helgeskole: 'center center',
   Fritidsaktiviteter: 'center 100%',
-  'Kurs og opplæring': 'center 20%',
+  'Kurs og opplæring': 'center 80%',
 };
 
 function EditorialRow({
