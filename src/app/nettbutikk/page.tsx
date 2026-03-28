@@ -4,6 +4,7 @@ import { EditorialPageHeader } from "@/components/EditorialPageHeader";
 import { FadeIn } from "@/components/FadeIn";
 import { ProductCard } from "@/components/ProductCard";
 import { Footer } from "@/components/Footer";
+import { NettbutikkQRToggle } from "@/components/NettbutikkQRToggle";
 
 export const metadata: Metadata = {
   title: "Nettbutikk",
@@ -64,6 +65,7 @@ export default function NetbutikkPage() {
                     <span>Skriv i teksten <span className="font-semibold text-text">stedet du vil ha den sendt til</span></span>
                   </li>
                 </ol>
+                <NettbutikkQRToggle />
               </div>
             </FadeIn>
           </div>
