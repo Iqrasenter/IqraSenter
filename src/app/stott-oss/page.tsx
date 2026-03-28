@@ -7,53 +7,47 @@ import {
   ArrowRight,
   Copy,
   Check,
-  BookOpen,
-  Trophy,
-  PartyPopper,
-  Heart,
-  Users,
-  Star,
 } from "lucide-react";
 import { FadeIn } from "@/components/FadeIn";
 
 const WHAT_YOU_SUPPORT = [
   {
-    icon: BookOpen,
+
     title: "Madrasa & Helgeskole",
     description:
       "Ukentlig islamsk undervisning for barn og unge — Quran, arabisk og islamsk etikk i trygge rammer.",
     image: "/images/stottoss1.jpg",
   },
   {
-    icon: Trophy,
+
     title: "Korankonkurranser",
     description:
       "Årlige konkurranser som motiverer barn til å memorere og forstå Quranens budskap.",
     image: "/images/stottoss2.jpg",
   },
   {
-    icon: PartyPopper,
+
     title: "Avslutninger & fester",
     description:
       "Fellesarrangementer som samler familier — Eid-feiringer, skoleavslutninger og sosiale kvelder.",
     image: "/images/stottoss3.jpg",
   },
   {
-    icon: Heart,
+
     title: "Islam & tradisjon",
     description:
       "Bevaring av islamske verdier og norsk-muslimsk identitet — tro, moral og tilhørighet for neste generasjon.",
     image: "/images/stottoss4.jpg",
   },
   {
-    icon: Users,
+
     title: "Fellesskap & tilhørighet",
     description:
       "Et trygt sted der familier møtes, barn leker og vennskap bygges på tvers av bakgrunn.",
     image: "/images/stottoss5.jpg",
   },
   {
-    icon: Star,
+
     title: "Fritidsaktiviteter",
     description:
       "Leksehjelp, sport, turer og kreative aktiviteter som gir barn minner for livet.",
@@ -128,9 +122,6 @@ export default function StottOssPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <FadeIn>
             <div className="text-center mb-16">
-              <span className="inline-block px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary mb-4">
-                Hva du støtter
-              </span>
               <h2 className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold text-text leading-tight">
                 Din gave gir{" "}
                 <em className="text-primary not-italic">mening</em>
@@ -156,9 +147,6 @@ export default function StottOssPage() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
                   </div>
                   <div className="p-6 flex-1 flex flex-col">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center -mt-8 relative z-10 mb-3 ml-1 border-2 border-white shadow-sm">
-                      <item.icon className="text-primary" size={18} />
-                    </div>
                     <h3 className="font-heading text-lg font-bold text-text mb-2">
                       {item.title}
                     </h3>

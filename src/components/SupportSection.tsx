@@ -114,7 +114,7 @@ export function SupportSection() {
               href="/stott-oss"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-accent font-heading font-medium rounded-full transition-[border-color] duration-300 btn-magnetic text-xs border-2 border-accent/25 hover:border-accent"
             >
-              Se alle måter å støtte oss på
+              Se hva du støtter
               <ArrowRight size={14} />
             </Link>
           </div>
