@@ -121,7 +121,7 @@ export function Footer() {
             &copy; {new Date().getFullYear()} {SITE.name}. Alle rettigheter reservert.
           </p>
           <p className="text-sm text-white/50 font-body">
-            Laget med omtanke for fellesskapet
+            Nettsiden er laget av <a href="https://www.idweb.no" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">IDweb</a>
           </p>
         </div>
       </div>
