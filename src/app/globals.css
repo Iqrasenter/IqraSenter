@@ -14,8 +14,8 @@
   --color-text-muted: #555555;
   --color-border: #BDD2B6;
 
-  --font-heading: var(--font-fraunces), Georgia, serif;
-  --font-drama: var(--font-fraunces), Georgia, serif;
+  --font-heading: var(--font-bricolage), system-ui, sans-serif;
+  --font-drama: var(--font-bricolage), system-ui, sans-serif;
   --font-data: monospace;
   --font-body: var(--font-outfit), system-ui, sans-serif;
 
