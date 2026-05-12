@@ -17,7 +17,7 @@ export function Hero() {
         </h1>
 
         <p className="animate-hero-fade text-text-body text-base md:text-lg max-w-xl mt-3 md:mt-6 leading-relaxed font-body [animation-delay:270ms]">
-          Et trygt fellesskap i Oslo der barn, unge og familier vokser sammen gjennom islamsk utdanning.
+          Et trygt fellesskap i Oslo der barn, unge og familier vokser sammen gjennom tradisjonell læring.
         </p>
 
         <div className="animate-hero-fade flex flex-nowrap gap-2 md:gap-4 mt-6 md:mt-10 [animation-delay:390ms]">

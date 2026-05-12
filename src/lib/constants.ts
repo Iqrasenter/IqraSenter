@@ -78,7 +78,7 @@ export const TESTIMONIALS = [
 
 export const NEWS = [
   {
-    title: "Nye utgivelser: To nye islamske barnebøker",
+    title: "Nye utgivelser: To nye barnebøker",
     excerpt:
       "Vi har gleden av å presentere to nye barnebøker med fokus på islamsk barneoppdragelse. Bøkene er nå til salgs i vår nettbutikk og hos våre utsalgssteder.",
     date: "2026-02-26",
