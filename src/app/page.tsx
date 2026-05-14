@@ -22,7 +22,8 @@ const AboutBentoGrid = dynamic(
   { ssr: true }
 );
 
-import { NEWS, TESTIMONIALS } from "@/lib/constants";
+import { TESTIMONIALS } from "@/lib/constants";
+import { NEWS } from "@/lib/news";
 
 export const metadata: Metadata = {
   title: "Iqra Læring og Aktivitetssenter — Læring for hele familien",

@@ -1,21 +1,4 @@
-export const SITE = {
-  name: "Iqra Læring og Aktivitetssenter",
-  shortName: "Iqra Senter",
-  tagline: "Læring og aktivitet for hele familien",
-  description:
-    "Et trygt og inkluderende fellesskap med læring, fritidsaktiviteter og sosialt samvær for barn, unge og familier i Oslo.",
-  email: "info@iqrasenter.net",
-  phone: "+47 998 64 331",
-  phoneRaw: "+4799864331",
-  address: "Ryenstubben 2, 0679 Oslo",
-  mapUrl:
-    "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2001.5!2d10.7942!3d59.8963!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x46416e5c8b4a0a0b%3A0x0!2sRyenstubben+2%2C+0679+Oslo!5e0!3m2!1sno!2sno!4v1",
-  social: {
-    facebook: "https://www.facebook.com/iqrasenter",
-    instagram: "https://www.instagram.com/iqrasenter",
-    whatsapp: "https://wa.me/4799864331",
-  },
-} as const;
+export { SITE, STATS } from "./site-config";
 
 export const NAV_ITEMS = [
   { label: "Siste Nytt", href: "/sistenytt" },
@@ -76,39 +59,6 @@ export const TESTIMONIALS = [
   },
 ] as const;
 
-export const NEWS = [
-  {
-    title: "Nye utgivelser: To nye islamske barnebøker",
-    excerpt:
-      "Vi har gleden av å presentere to nye barnebøker med fokus på islamsk barneoppdragelse. Bøkene er nå til salgs i vår nettbutikk og hos våre utsalgssteder.",
-    date: "2026-02-26",
-    image: "/images/books-combined.webp",
-  },
-  {
-    title: "Foreldremøte — Viktig beskjed til alle foreldre",
-    excerpt:
-      "Ledelsen i Iqra kaller inn alle foreldre til foreldremøte. Søndag 09.02.2025 kl. 15:30 i Iqra sine lokaler.",
-    date: "2025-02-05",
-    image: "/images/iqrany5.webp",
-    imagePosition: "center 20%",
-  },
-  {
-    title: "Intern Koran-konkurranse avsluttet",
-    excerpt:
-      "Alle deltakerne har gjort en fantastisk innsats. Gratulerer til alle som har deltatt!",
-    date: "2025-01-20",
-    image: "/images/iqrany4.webp",
-    imagePosition: "center 20%",
-  },
-  {
-    title: "Refleksjonskveld med imam Abdifataah",
-    excerpt:
-      "En inspirerende refleksjonskveld og workshop om egenskapene som er mest elsket av Allah.",
-    date: "2025-01-04",
-    image: "/images/helgeskole.webp",
-  },
-] as const;
-
 export const TEACHERS = [
   {
     name: "Fatima Hassan",
@@ -138,12 +88,6 @@ export const TEACHERS = [
       "Vi skaper et trygt rom der ungdommene kan stille spørsmål, reflektere og finne sin egen vei innen troen.",
     src: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=500&h=500&fit=crop",
   },
-] as const;
-
-export const STATS = [
-  { value: "200+", label: "Medlemmer" },
-  { value: "5+", label: "År aktive" },
-  { value: "50+", label: "Arrangementer i året" },
 ] as const;
 
 export interface Product {

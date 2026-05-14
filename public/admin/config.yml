@@ -1,0 +1,74 @@
+backend:
+  name: git-gateway
+  branch: main
+
+media_folder: "public/uploads"
+public_folder: "/uploads"
+
+locale: "no"
+publish_mode: simple
+
+site_url: https://www.iqrasenter.net
+display_url: https://www.iqrasenter.net
+logo_url: https://www.iqrasenter.net/favicon.ico
+
+collections:
+  # ─────────────────────────────────────────────
+  # 1) SENTER-INFO — single document (kontakt, adresse, sosiale medier, tall)
+  # ─────────────────────────────────────────────
+  - name: "site"
+    label: "Senter-info"
+    delete: false
+    editor: { preview: false }
+    files:
+      - file: "content/site/info.json"
+        label: "Kontakt og info"
+        name: "info"
+        format: "json"
+        fields:
+          - { name: "name", label: "Senterets fulle navn", widget: "string" }
+          - { name: "shortName", label: "Kortnavn (vises i navbar)", widget: "string" }
+          - { name: "tagline", label: "Slagord", widget: "string" }
+          - { name: "description", label: "Beskrivelse (vises i Google-treff)", widget: "text" }
+          - { name: "email", label: "E-post", widget: "string" }
+          - { name: "phone", label: "Telefon (visning)", widget: "string", hint: 'Slik det vises på siden, f.eks. "+47 998 64 331"' }
+          - { name: "phoneRaw", label: "Telefon (kun tall)", widget: "string", hint: 'Brukes til klikk-for-å-ringe, f.eks. "+4799864331"' }
+          - { name: "address", label: "Adresse", widget: "string" }
+          - name: "social"
+            label: "Sosiale medier"
+            widget: "object"
+            fields:
+              - { name: "facebook", label: "Facebook URL", widget: "string", required: false }
+              - { name: "instagram", label: "Instagram URL", widget: "string", required: false }
+              - { name: "whatsapp", label: "WhatsApp URL", widget: "string", required: false }
+          - name: "stats"
+            label: "Tall som vises på forsiden"
+            widget: "list"
+            summary: "{{fields.value}} {{fields.label}}"
+            fields:
+              - { name: "value", label: 'Tall (f.eks. "200+")', widget: "string" }
+              - { name: "label", label: 'Etikett (f.eks. "Medlemmer")', widget: "string" }
+
+  # ─────────────────────────────────────────────
+  # 2) SISTE NYTT — flere artikler (mest brukt)
+  # ─────────────────────────────────────────────
+  - name: "news"
+    label: "Siste nytt"
+    label_singular: "Artikkel"
+    folder: "content/news"
+    format: "json"
+    create: true
+    delete: true
+    slug: "{{slug}}"
+    summary: "{{title}} ({{date | date('YYYY-MM-DD')}})"
+    sortable_fields: ["date", "title"]
+    view_filters:
+      - { label: "I år", field: "date", pattern: "2026" }
+      - { label: "I fjor", field: "date", pattern: "2025" }
+    fields:
+      - { name: "title", label: "Tittel", widget: "string" }
+      - { name: "date", label: "Dato", widget: "datetime", format: "YYYY-MM-DD", date_format: "YYYY-MM-DD", time_format: false }
+      - { name: "excerpt", label: "Kort sammendrag", widget: "text", hint: "Vises i kortet på forsiden og siste nytt-siden" }
+      - { name: "image", label: "Hovedbilde", widget: "image" }
+      - { name: "imagePosition", label: "Bildeposisjon (avansert, valgfritt)", widget: "string", required: false, hint: 'F.eks. "center 20%" — la stå tom hvis usikker' }
+      - { name: "body", label: "Full artikkel (vises på egen side)", widget: "markdown", required: false }

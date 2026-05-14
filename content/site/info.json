@@ -1,0 +1,20 @@
+{
+  "name": "Iqra Læring og Aktivitetssenter",
+  "shortName": "Iqra Senter",
+  "tagline": "Læring og aktivitet for hele familien",
+  "description": "Et trygt og inkluderende fellesskap med læring, fritidsaktiviteter og sosialt samvær for barn, unge og familier i Oslo.",
+  "email": "info@iqrasenter.net",
+  "phone": "+47 998 64 331",
+  "phoneRaw": "+4799864331",
+  "address": "Ryenstubben 2, 0679 Oslo",
+  "social": {
+    "facebook": "https://www.facebook.com/iqrasenter",
+    "instagram": "https://www.instagram.com/iqrasenter",
+    "whatsapp": "https://wa.me/4799864331"
+  },
+  "stats": [
+    { "value": "200+", "label": "Medlemmer" },
+    { "value": "5+", "label": "År aktive" },
+    { "value": "50+", "label": "Arrangementer i året" }
+  ]
+}

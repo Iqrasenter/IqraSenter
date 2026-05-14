@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { EditorialPageHeader } from "@/components/EditorialPageHeader";
 import { EditorialLabel } from "@/components/EditorialLabel";
 import { FadeIn } from "@/components/FadeIn";
-import { NEWS } from "@/lib/constants";
+import { NEWS } from "@/lib/news";
 
 export const metadata: Metadata = {
   title: "Siste Nytt",
