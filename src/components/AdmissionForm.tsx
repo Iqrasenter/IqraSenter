@@ -136,7 +136,7 @@ export function AdmissionForm() {
           <input
             type="email"
             id="admission-email"
-            name="parent_email"
+            name="email"
             required
             autoComplete="email"
             spellCheck={false}
