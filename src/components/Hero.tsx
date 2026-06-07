@@ -5,7 +5,7 @@ import { ArrowRight } from 'lucide-react';
 export function Hero() {
   return (
     <div
-      className="relative w-full h-[100svh] flex flex-col md:flex-row items-center justify-center bg-white pt-20 md:pt-24 pb-4 md:pb-0 px-4 sm:px-6 lg:px-8 gap-4 md:gap-12 lg:gap-16 overflow-hidden"
+      className="relative w-full h-[100svh] flex flex-col md:flex-row items-center justify-center bg-white pt-6 md:pt-10 pb-4 md:pb-0 px-4 sm:px-6 lg:px-8 gap-4 md:gap-12 lg:gap-16 overflow-hidden"
     >
       {/* Text side */}
       <div className="flex flex-col justify-center md:w-[55%] lg:w-[55%] max-w-2xl min-w-0">

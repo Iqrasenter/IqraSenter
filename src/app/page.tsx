@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Hero } from "@/components/Hero";
+import { AnnouncementMarquee } from "@/components/AnnouncementMarquee";
 
 import { SectionHeading } from "@/components/SectionHeading";
 import { TestimonialCard } from "@/components/ui/testimonial-card";
@@ -38,6 +39,9 @@ export default function HomePage() {
 
   return (
     <>
+      {/* ===== ANNOUNCEMENT BANNER ===== */}
+      <AnnouncementMarquee />
+
       {/* ===== HERO ===== */}
       <section id="hero">
         <Hero />
@@ -57,6 +61,19 @@ export default function HomePage() {
               highlight="Nytt"
               subtitle="Nyheter og arrangementer"
             />
+          </FadeIn>
+
+          <FadeIn delay={0.1}>
+            <p className="mt-3 text-sm text-text-muted">
+              Nye elever med opptak:{" "}
+              <Link
+                href="/foreldreavtale"
+                className="text-accent font-medium underline underline-offset-4 hover:text-accent-light transition-colors"
+              >
+                les foreldreavtalen
+              </Link>
+              <span aria-hidden> →</span>
+            </p>
           </FadeIn>
 
           <FadeIn delay={0.15}>
