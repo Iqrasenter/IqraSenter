@@ -27,7 +27,7 @@ export function AnnouncementMarquee() {
     <Link
       href="/foreldreavtale"
       aria-label="Nye elever med opptak: les og bekreft foreldreavtalen"
-      className="group relative z-30 block w-full overflow-hidden bg-primary text-white"
+      className="group relative z-30 block w-full overflow-hidden bg-primary text-white transition-colors duration-200 hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white touch-manipulation"
       style={{ marginTop: "var(--navbar-h)" }}
     >
       <div className="flex overflow-hidden [--gap:0px] [--duration:30s]">
