@@ -1,14 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Outfit } from "next/font/google";
+import { Geist, Outfit } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/JsonLd";
 
-const bricolage = Bricolage_Grotesque({
-  variable: "--font-bricolage",
+const geist = Geist({
+  variable: "--font-geist",
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700", "800"],
 });
 
 const outfit = Outfit({
@@ -101,7 +100,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="nb" className={`${bricolage.variable} ${outfit.variable}`}>
+    <html lang="nb" className={`${geist.variable} ${outfit.variable}`}>
       <body className="antialiased selection:bg-accent/20 selection:text-accent">
         <OrganizationJsonLd />
         <WebSiteJsonLd />

@@ -9,9 +9,9 @@ export function Hero() {
     >
       {/* Text side */}
       <div className="flex flex-col justify-center md:w-[55%] lg:w-[55%] max-w-2xl min-w-0">
-        <h1 className="animate-hero-fade font-heading font-[900] text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-text mt-5 leading-[1.05] tracking-tight [animation-delay:150ms]">
+        <h1 className="animate-hero-fade font-heading font-semibold text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl text-text mt-5 leading-[1.05] tracking-tight [animation-delay:150ms]">
           Læring for{' '}
-          <em className="text-primary font-[300] not-italic">hele</em>
+          <em className="text-primary not-italic">hele</em>
           <br />
           familien.
         </h1>
