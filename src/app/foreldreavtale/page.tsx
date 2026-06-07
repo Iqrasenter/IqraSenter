@@ -27,7 +27,6 @@ type Section = {
   title: string;
   intro?: string;
   items?: string[];
-  outro?: string;
 };
 
 const SECTIONS: Section[] = [
@@ -136,7 +135,7 @@ export default function ForeldreavtalePage() {
                 rel="noopener noreferrer"
                 className="mt-3 lg:mt-6 inline-flex items-center gap-2 px-4 lg:px-6 py-2 lg:py-3 text-sm lg:text-base border-2 border-border hover:border-primary text-text font-heading font-medium rounded-xl transition-colors duration-200"
               >
-                <Download size={16} />
+                <Download size={16} aria-hidden="true" />
                 Last ned avtalen (PDF)
               </a>
             </FadeIn>
@@ -151,9 +150,9 @@ export default function ForeldreavtalePage() {
             {SECTIONS.map((section, i) => (
               <FadeIn key={section.title} delay={i === 0 ? 0 : 0.05}>
                 <article>
-                  <h2 className="font-heading text-xl lg:text-3xl font-bold text-text">
+                  <h3 className="font-heading text-xl lg:text-3xl font-bold text-text">
                     {section.title}
-                  </h2>
+                  </h3>
                   <div className="mt-3 w-12 h-px bg-border" />
                   {section.intro && (
                     <p className="mt-4 text-sm lg:text-lg text-text-muted leading-relaxed">
@@ -202,7 +201,7 @@ export default function ForeldreavtalePage() {
                 className="mt-6 inline-flex items-center gap-2 px-6 lg:px-8 py-3 lg:py-4 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg text-sm lg:text-base"
               >
                 Bekreft foreldreavtalen
-                <ArrowRight size={16} />
+                <ArrowRight size={16} aria-hidden="true" />
               </a>
             </div>
           </FadeIn>
