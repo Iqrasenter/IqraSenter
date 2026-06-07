@@ -1,19 +1,40 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { Send, CheckCircle } from "lucide-react";
+import { Send, CheckCircle, AlertCircle } from "lucide-react";
+
+const FORMSPREE_ID = process.env.NEXT_PUBLIC_FORMSPREE_ID || "";
 
 export function BookingForm() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    // Simulate form submission — replace with real endpoint later
-    await new Promise((r) => setTimeout(r, 1000));
-    setLoading(false);
-    setSubmitted(true);
+    setError("");
+
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    data.append("_subject", "Ny romforespørsel — Iqra Senter");
+
+    try {
+      const res = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, {
+        method: "POST",
+        body: data,
+        headers: { Accept: "application/json" },
+      });
+      if (res.ok) {
+        setSubmitted(true);
+      } else {
+        setError("Noe gikk galt. Vennligst prøv igjen eller kontakt oss direkte.");
+      }
+    } catch {
+      setError("Kunne ikke sende skjemaet. Sjekk internettforbindelsen din og prøv igjen.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (submitted) {
@@ -32,6 +53,9 @@ export function BookingForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Honeypot for spam */}
+      <input type="text" name="_gotcha" className="hidden" tabIndex={-1} autoComplete="off" />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div>
           <label
@@ -139,6 +163,13 @@ export function BookingForm() {
           placeholder="Beskriv hva lokalet skal brukes til, f.eks. bursdag, seminar, kurs\u2026"
         />
       </div>
+
+      {error && (
+        <div aria-live="polite" className="flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-700">
+          <AlertCircle size={16} className="shrink-0" />
+          {error}
+        </div>
+      )}
 
       <button
         type="submit"
