@@ -150,9 +150,9 @@ export default function ForeldreavtalePage() {
             {SECTIONS.map((section, i) => (
               <FadeIn key={section.title} delay={i === 0 ? 0 : 0.05}>
                 <article>
-                  <h3 className="font-heading text-xl lg:text-3xl font-bold text-text">
+                  <h2 className="font-heading text-xl lg:text-3xl font-bold text-text">
                     {section.title}
-                  </h3>
+                  </h2>
                   <div className="mt-3 w-12 h-px bg-border" />
                   {section.intro && (
                     <p className="mt-4 text-sm lg:text-lg text-text-muted leading-relaxed">

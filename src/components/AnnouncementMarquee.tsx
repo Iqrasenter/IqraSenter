@@ -8,7 +8,7 @@ function MarqueeTrack({ ariaHidden = false }: { ariaHidden?: boolean }) {
       aria-hidden={ariaHidden || undefined}
       className="flex shrink-0 items-center animate-marquee group-hover:[animation-play-state:paused] motion-reduce:animate-none"
     >
-      {[...Array(4)].map((_, i) => (
+      {[...Array(6)].map((_, i) => (
         <span
           key={i}
           className="flex items-center whitespace-nowrap py-2 text-xs sm:text-sm font-medium tracking-wide"
