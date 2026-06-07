@@ -3,7 +3,7 @@
 import { useState, FormEvent } from "react";
 import { Send, CheckCircle, AlertCircle } from "lucide-react";
 
-const WEB3FORMS_KEY = process.env.NEXT_PUBLIC_WEB3FORMS_KEY || "";
+const FORMSPREE_ID = process.env.NEXT_PUBLIC_FORMSPREE_ID || "";
 
 export function MembershipForm() {
   const [submitted, setSubmitted] = useState(false);
@@ -17,17 +17,15 @@ export function MembershipForm() {
 
     const form = e.currentTarget;
     const data = new FormData(form);
-    data.append("access_key", WEB3FORMS_KEY);
-    data.append("subject", "Ny medlemsregistrering — Iqra Senter");
-    data.append("from_name", "Iqra Senter Nettside");
+    data.append("_subject", "Ny medlemsregistrering — Iqra Senter");
 
     try {
-      const res = await fetch("https://api.web3forms.com/submit", {
+      const res = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, {
         method: "POST",
         body: data,
+        headers: { Accept: "application/json" },
       });
-      const json = await res.json();
-      if (json.success) {
+      if (res.ok) {
         setSubmitted(true);
       } else {
         setError("Noe gikk galt. Vennligst prøv igjen eller kontakt oss direkte.");
@@ -56,7 +54,7 @@ export function MembershipForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3 lg:space-y-5">
       {/* Honeypot for spam */}
-      <input type="checkbox" name="botcheck" className="hidden" />
+      <input type="text" name="_gotcha" className="hidden" tabIndex={-1} autoComplete="off" />
 
       <div>
         <label

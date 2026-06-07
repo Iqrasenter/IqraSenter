@@ -3,7 +3,7 @@
 import { useState, FormEvent } from "react";
 import { Send, CheckCircle, AlertCircle } from "lucide-react";
 
-const WEB3FORMS_KEY = process.env.NEXT_PUBLIC_WEB3FORMS_KEY || "";
+const FORMSPREE_ID = process.env.NEXT_PUBLIC_FORMSPREE_ID || "";
 
 const GRADE_OPTIONS = [
   "1. klasse",
@@ -32,17 +32,15 @@ export function AdmissionForm() {
 
     const form = e.currentTarget;
     const data = new FormData(form);
-    data.append("access_key", WEB3FORMS_KEY);
-    data.append("subject", "Nytt interesseskjema for opptak — Iqra Senter");
-    data.append("from_name", "Iqra Senter Nettside");
+    data.append("_subject", "Nytt interesseskjema for opptak — Iqra Senter");
 
     try {
-      const res = await fetch("https://api.web3forms.com/submit", {
+      const res = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, {
         method: "POST",
         body: data,
+        headers: { Accept: "application/json" },
       });
-      const json = await res.json();
-      if (json.success) {
+      if (res.ok) {
         setSubmitted(true);
       } else {
         setError("Noe gikk galt. Vennligst prøv igjen eller kontakt oss direkte.");
@@ -74,7 +72,7 @@ export function AdmissionForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Honeypot for spam */}
-      <input type="checkbox" name="botcheck" className="hidden" />
+      <input type="text" name="_gotcha" className="hidden" tabIndex={-1} autoComplete="off" />
 
       {/* Child's full name */}
       <div>
@@ -138,7 +136,7 @@ export function AdmissionForm() {
           <input
             type="email"
             id="admission-email"
-            name="parent_email"
+            name="email"
             required
             autoComplete="email"
             spellCheck={false}
