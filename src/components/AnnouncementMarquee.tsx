@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-const MESSAGE = "Nye elever med opptak — les og bekreft foreldreavtalen";
+const MESSAGE = "Foreldre og foresatte av nye elever — les og bekreft foreldreavtalen";
 
 function MarqueeTrack({ ariaHidden = false }: { ariaHidden?: boolean }) {
   return (
@@ -26,7 +26,7 @@ export function AnnouncementMarquee() {
   return (
     <Link
       href="/foreldreavtale"
-      aria-label="Nye elever med opptak: les og bekreft foreldreavtalen"
+      aria-label="Foreldre og foresatte av nye elever: les og bekreft foreldreavtalen"
       className="group relative z-30 block w-full overflow-hidden bg-primary text-white transition-colors duration-200 hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white touch-manipulation"
       style={{ marginTop: "var(--navbar-h)" }}
     >
