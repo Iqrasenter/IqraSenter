@@ -82,7 +82,7 @@ export default function HomePage() {
                 <NewsCard
                   key={item.title}
                   title={item.title}
-                  excerpt={item.excerpt}
+                  excerpt={"cardExcerpt" in item ? (item.cardExcerpt as string) : item.excerpt}
                   date={item.date}
                   image={item.image}
                   imagePosition={"imagePosition" in item ? (item.imagePosition as string) : undefined}

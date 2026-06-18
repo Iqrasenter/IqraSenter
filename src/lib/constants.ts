@@ -78,6 +78,47 @@ export const TESTIMONIALS = [
 
 export const NEWS = [
   {
+    title: "Iqra Sommerskole 2026",
+    excerpt:
+      "Iqra Senter inviterer til en lærerik og minnerik sommer! En hel måned fylt med islamsk undervisning, lek, uteaktiviteter og turer — en flott mulighet for barna til å lære, vokse og knytte nye vennskap i trygge og inspirerende omgivelser.",
+    date: "2026-06-18",
+    image: "/images/sommerskole-2026.webp",
+    imagePosition: "center top",
+    details: [
+      { icon: "Calendar", text: "29. juni – 30. juli 2026 (uke 27–31)" },
+      { icon: "Clock", text: "Mandag–torsdag kl. 11:00–16:00, med én time aktivitet hver dag" },
+      { icon: "MapPin", text: "Iqra Senter, Ryenstubben 2, Oslo" },
+      { icon: "Users", text: "For barn og unge, jenter og gutter — elever ved Iqra eller på venteliste" },
+      { icon: "Coins", text: "Skoleavgift: 400 kr for aktive elever / 1200 kr for øvrige" },
+      { icon: "CalendarClock", text: "Påmeldingsfrist: søndag 21. juni — begrenset antall plasser" },
+    ],
+    cta: {
+      label: "Innmeldingsskjema",
+      href: "https://docs.google.com/forms/d/e/1FAIpQLScHmgO3SRN-P0mRmh3XjkG_JVHQenB1Em6M4UiP-GPqjDmO-g/viewform",
+    },
+  },
+  {
+    title: "Tusen takk for en fantastisk sommerfest!",
+    excerpt:
+      "Tusen takk til alle som deltok på Iqras sommerfest! Vi hadde en fantastisk dag med stort oppmøte, herlig fellesskap og masse glede. Barna og ungdommene imponerte med sine fremføringer, vi hadde inspirerende taler, ansiktsmaling, fotball, stikkball, sang, lek og nydelig mat. En stor takk til alle frivillige, foreldre og medlemmer som gjorde dagen så vellykket — sammen skaper vi et trygt og inkluderende fellesskap for våre barn og unge.",
+    cardExcerpt:
+      "Tusen takk til alle som deltok på Iqras sommerfest! En fantastisk dag med stort oppmøte, herlig fellesskap og masse glede.",
+    date: "2026-06-14",
+    image: "/images/sommerfest-1.webp",
+    gallery: [
+      { src: "/images/sommerfest-1.webp", w: 1600, h: 900, alt: "Barn og ungdom fremfører på scenen under Iqras sommerfest" },
+      { src: "/images/sommerfest-2.webp", w: 1200, h: 1600, alt: "Ansiktsmaling av et barn på sommerfesten" },
+      { src: "/images/sommerfest-3.webp", w: 1200, h: 1600, alt: "To barn presenterer med mikrofon på scenen" },
+      { src: "/images/sommerfest-4.webp", w: 1200, h: 1600, alt: "Jenter samlet ute i sommersol på sommerfesten" },
+      { src: "/images/sommerfest-5.webp", w: 1200, h: 1600, alt: "Publikum følger med under fremføringene" },
+      { src: "/images/sommerfest-6.webp", w: 1200, h: 1600, alt: "Barn med ansiktsmaling ute på sommerfesten" },
+      { src: "/images/sommerfest-7.webp", w: 1200, h: 1600, alt: "Elev synger på scenen" },
+      { src: "/images/sommerfest-8.webp", w: 1080, h: 622, alt: "Gjestetaler holder innlegg under sommerfesten" },
+      { src: "/images/sommerfest-9.webp", w: 1200, h: 1600, alt: "Full sal med deltakere på sommerfesten" },
+      { src: "/images/sommerfest-10.webp", w: 1114, h: 1600, alt: "Presentasjon av nye Tarbiyah-bøker på scenen" },
+    ],
+  },
+  {
     title: "Nye utgivelser: To nye barnebøker",
     excerpt:
       "Vi har gleden av å presentere to nye barnebøker med fokus på islamsk barneoppdragelse. Bøkene er nå til salgs i vår nettbutikk og hos våre utsalgssteder.",
