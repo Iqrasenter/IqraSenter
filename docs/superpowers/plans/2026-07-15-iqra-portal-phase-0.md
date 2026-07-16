@@ -21,7 +21,7 @@
 5. **Commit messages:** Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`). Never mention Claude or AI in commit messages. No `Co-Authored-By` trailers.
 6. **Norwegian UI, English code.** All user-facing strings are Norwegian (bokmål). Identifiers, comments, table/column names stay English (roles in the DB are `'admin','teacher','parent','student','economy'`; URL paths are Norwegian: `/laerer`, `/forelder`, `/elev`, `/okonomi`, `/logg-inn`).
 7. **Design bans (spec §7):** no kicker/eyebrow uppercase mini-labels, no emojis in UI, no purple, never `#000`/`#fff` (use the `ink`/`canvas` tokens), no gradient text, no identical-card grids.
-8. **Migrations own their privileges (amendment 2026-07-16).** This Supabase vintage does NOT auto-grant table DML to `anon`/`authenticated`/`service_role` — new tables are not auto-exposed (see the `auto_expose_new_tables` note in config.toml; legacy auto-expose is deprecated and removed 2026-10-30, and the residual default ACL hands the api roles only TRUNCATE/REFERENCES/TRIGGER/MAINTAIN). Every migration that creates a table MUST therefore normalize its privileges explicitly: `revoke all on table ... from anon, authenticated, service_role;` then `grant` back exactly the verbs its RLS policies are written for. `anon` gets nothing (anonymous requests fail with 42501 at the privilege layer before RLS is consulted). Tasks 4-5 model the pattern; every later phase follows it.
+8. **Migrations own their privileges (amendment 2026-07-16).** This Supabase vintage does NOT auto-grant table DML to `anon`/`authenticated`/`service_role` — new tables are not auto-exposed (see the `auto_expose_new_tables` note in config.toml; legacy auto-expose is deprecated and removed 2026-10-30, and the residual default ACL hands the api roles only TRUNCATE/REFERENCES/TRIGGER/MAINTAIN). Every migration that creates a table MUST therefore normalize its privileges explicitly: `revoke all on table ... from anon, authenticated, service_role;` then `grant` back exactly the verbs its RLS policies are written for. `anon` gets nothing (anonymous requests fail with 42501 at the privilege layer before RLS is consulted). The same rule covers FUNCTIONS: PostgreSQL grants EXECUTE to PUBLIC on every new function by default, so each `create function` is followed by `revoke execute on function ... from public;` before its narrow grant — even for trigger functions, where it is inert but keeps the rule uniform. Tasks 4-5 model the pattern; every later phase follows it.
 
 **File structure created by this plan:**
 
@@ -464,7 +464,7 @@ Create `/Users/daodilyas/dev/iqra-portal/supabase/tests/01_schema.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(11);
+select plan(13);
 
 -- Tables exist
 select has_table('public'::name, 'profiles'::name, 'profiles table exists');
@@ -494,6 +494,13 @@ select throws_ok(
 -- Helper functions exist in the private schema
 select has_function('private', 'has_role', array['uuid', 'text'], 'private.has_role(uuid,text) exists');
 select has_function('private', 'is_staff', array['uuid'], 'private.is_staff(uuid) exists');
+
+-- ...and PUBLIC's default EXECUTE is stripped: anon cannot call them even if
+-- it ever gained USAGE on the private schema (defense in depth, gotcha 8)
+select ok(not has_function_privilege('anon', 'private.has_role(uuid,text)', 'execute'),
+  'anon cannot execute private.has_role');
+select ok(not has_function_privilege('anon', 'private.is_staff(uuid)', 'execute'),
+  'anon cannot execute private.is_staff');
 
 select * from finish();
 rollback;
@@ -722,6 +729,9 @@ as $$
   );
 $$;
 
+-- Postgres grants EXECUTE to PUBLIC on every new function by default
+-- (header gotcha 8): strip it first, then grant the narrow set.
+revoke execute on function private.has_role(uuid, text), private.is_staff(uuid) from public;
 grant execute on function private.has_role(uuid, text) to authenticated;
 grant execute on function private.is_staff(uuid) to authenticated;
 
@@ -735,6 +745,9 @@ begin
   return new;
 end;
 $$;
+
+-- Uninvokable directly (returns trigger), but the normalize rule is uniform.
+revoke execute on function private.set_updated_at() from public;
 
 create trigger profiles_set_updated_at
   before update on public.profiles
@@ -753,6 +766,8 @@ begin
   return new;
 end;
 $$;
+
+revoke execute on function private.handle_new_user() from public;
 
 create trigger on_auth_user_created
   after insert on auth.users
@@ -844,7 +859,7 @@ Create `/Users/daodilyas/dev/iqra-portal/supabase/tests/03_audit_log_rls.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(10);
 
 -- ── Setup (as postgres) ────────────────────────────────────────────
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -896,6 +911,10 @@ select throws_ok(
   'anon has no grant on audit_log at all'
 );
 reset role;
+
+-- PUBLIC's default EXECUTE on the sanctioned write path is stripped too
+select ok(not has_function_privilege('anon', 'private.audit(text,text,text,jsonb)', 'execute'),
+  'anon cannot execute private.audit');
 
 -- ── Admin reads the entry written above, with actor recorded ───────
 select set_config('request.jwt.claims',
@@ -1071,6 +1090,7 @@ as $$
   values ((select auth.uid()), p_action, p_entity, p_entity_id, p_meta);
 $$;
 
+revoke execute on function private.audit(text, text, text, jsonb) from public;
 grant execute on function private.audit(text, text, text, jsonb) to authenticated;
 
 -- ── settings (single row) ───────────────────────────────────────────
