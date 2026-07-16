@@ -1385,7 +1385,7 @@ describe('Button', () => {
 
   it.each([
     ['primary', 'bg-primary'],
-    ['secondary', 'border-hairline'],
+    ['secondary', 'border-border-input'],
     ['ghost', 'text-primary'],
   ] as const)('applies the %s variant class', (variant, expectedClass) => {
     render(<Button variant={variant}>Knapp</Button>);
@@ -1544,13 +1544,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const base =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-5 text-base font-medium ' +
   'transition-[transform,background-color,border-color,opacity] duration-200 ease-brand ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ' +
   'active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50';
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-canvas hover:bg-primary-strong',
+  primary: 'bg-primary text-on-primary hover:bg-primary-strong',
   secondary:
-    'border border-hairline bg-surface-tint text-ink hover:border-primary/40',
+    'border border-border-input bg-surface-tint text-ink hover:border-primary/40',
   ghost: 'bg-transparent text-primary hover:bg-surface-tint',
 };
 
@@ -1622,9 +1622,9 @@ export function Input({ invalid = false, className, ...rest }: InputProps) {
       className={cn(
         'min-h-11 w-full rounded-md border bg-canvas px-4 text-base text-ink placeholder:text-ink/45',
         'transition-colors duration-200 ease-brand',
-        'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         'disabled:pointer-events-none disabled:opacity-50',
-        invalid ? 'border-danger' : 'border-hairline',
+        invalid ? 'border-danger' : 'border-border-input',
         className,
       )}
       {...rest}
@@ -1679,7 +1679,7 @@ export type ChipTone = 'neutral' | 'success' | 'warning' | 'danger';
 const tones: Record<ChipTone, string> = {
   neutral: 'bg-surface-tint text-ink',
   success: 'bg-success/15 text-success-ink',
-  warning: 'bg-warning/20 text-warning-ink',
+  warning: 'bg-warning/15 text-warning-ink',
   danger: 'bg-danger/15 text-danger-ink',
 };
 
