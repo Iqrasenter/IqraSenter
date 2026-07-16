@@ -997,7 +997,7 @@ Create `/Users/daodilyas/dev/iqra-portal/supabase/tests/03_audit_log_rls.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(10);
+select plan(15);
 
 -- ── Setup (as postgres) ────────────────────────────────────────────
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -1082,6 +1082,45 @@ select throws_ok(
 );
 reset role;
 
+-- ── Append-only holds even for service_role (BYPASSRLS + INSERT grant) ──
+-- The one realistic regression surface: a stray grant in a later migration
+-- would slip past the firewall (UPDATE/DELETE aren't DDL-adjacent verbs),
+-- so the denial is pinned here per table.
+set local role service_role;
+select throws_ok(
+  $$ update public.audit_log set action = 'tampered-by-service'
+     where action = 'test.event' $$,
+  '42501',
+  null,
+  'service_role cannot UPDATE audit_log (append-only)'
+);
+select throws_ok(
+  $$ delete from public.audit_log where action = 'test.event' $$,
+  '42501',
+  null,
+  'service_role cannot DELETE from audit_log (append-only)'
+);
+select throws_ok(
+  $$ truncate public.audit_log $$,
+  '42501',
+  null,
+  'service_role cannot TRUNCATE audit_log'
+);
+-- The sanctioned direct-insert path for the Task 11 admin module works,
+-- including nextval on the identity sequence (USAGE grant).
+select lives_ok(
+  $$ insert into public.audit_log (actor_id, action, entity, entity_id, meta)
+     values ('bbbbbbbb-0000-0000-0000-000000000001', 'admin.module_write',
+             'pgtap', 'landmine-check', '{}'::jsonb) $$,
+  'service_role can INSERT into audit_log directly (admin module path)'
+);
+reset role;
+select is(
+  (select count(*) from public.audit_log where action = 'admin.module_write'),
+  1::bigint,
+  'service_role insert landed with the explicit actor recorded'
+);
+
 select * from finish();
 rollback;
 ```
@@ -1093,7 +1132,7 @@ Create `/Users/daodilyas/dev/iqra-portal/supabase/tests/04_settings.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(7);
+select plan(11);
 
 -- ── Setup: one authenticated user, no roles needed ─────────────────
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -1148,6 +1187,30 @@ select throws_ok(
   'anon has no grant on settings at all'
 );
 reset role;
+
+-- ── service_role: may update, may never delete; single row holds ────────
+set local role service_role;
+select throws_ok(
+  $$ delete from public.settings $$,
+  '42501',
+  null,
+  'service_role cannot DELETE the settings row (immortal single row)'
+);
+select throws_ok(
+  $$ update public.settings set id = false $$,
+  '23514',
+  null,
+  'flipping id to false via UPDATE violates the check (single-row holds)'
+);
+select lives_ok(
+  $$ update public.settings set school_name = 'IQRA senter' $$,
+  'service_role can update settings (admin module path)'
+);
+reset role;
+select ok(
+  (select updated_at > created_at from public.settings),
+  'updated_at bumped by the update trigger'
+);
 
 select * from finish();
 rollback;
@@ -1231,6 +1294,14 @@ $$;
 revoke execute on function private.audit(text, text, text, jsonb) from public;
 grant execute on function private.audit(text, text, text, jsonb) to authenticated;
 
+comment on function private.audit(text, text, text, jsonb) is
+  'Sanctioned app-role write path to audit_log. TRUST MODEL: actor_id is
+   authoritative (pinned to auth.uid() by this definer function); action,
+   entity, entity_id and meta are CALLER-ASSERTED and must never be treated
+   as proof of authority. Before any consumer keys on action (log viewer,
+   alerting, export), namespace or source-stamp admin-authoritative entries
+   (tracked for the Task 11 admin module).';
+
 -- ── settings (single row) ───────────────────────────────────────────
 create table public.settings (
   id               boolean primary key default true check (id),
@@ -1241,7 +1312,7 @@ create table public.settings (
   updated_at       timestamptz not null default now()
 );
 comment on table public.settings is
-  'Exactly one row (id must be true). Grows in later phases: current term, grade-scale labels (spec §4).';
+  'Exactly one row (id must be true). Grows in later phases: current term, grade-scale labels (spec §4). The read policy is deliberately using(true) for every authenticated user — keep sensitive values OUT of this table; split anything sensitive into an admin-only table instead.';
 
 create trigger settings_set_updated_at
   before update on public.settings
