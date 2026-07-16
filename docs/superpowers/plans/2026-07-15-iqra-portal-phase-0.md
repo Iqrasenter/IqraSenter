@@ -2057,6 +2057,7 @@ Create `/Users/daodilyas/dev/iqra-portal/src/lib/auth/access.test.ts`:
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_ROLES,
   defaultPortalPath,
   hasStaffRole,
   isRole,
@@ -2119,15 +2120,43 @@ describe('roles', () => {
   });
 });
 
+describe('role classification completeness', () => {
+  const NON_STAFF_ROLES = ['parent', 'student'];
+
+  it('classifies every ALL_ROLES entry as staff or an explicitly named non-staff role', () => {
+    const actualNonStaff = ALL_ROLES.filter((role) => !isStaffRole(role));
+
+    // Direction 1: every non-staff role actually found in ALL_ROLES must be
+    // explicitly named here — a new sixth role fails until classified.
+    for (const role of actualNonStaff) {
+      expect(NON_STAFF_ROLES).toContain(role);
+    }
+
+    // Direction 2: every explicitly named non-staff role must still exist in
+    // ALL_ROLES and still be non-staff — catches stale/renamed entries.
+    for (const role of NON_STAFF_ROLES) {
+      expect(actualNonStaff).toContain(role);
+    }
+  });
+});
+
 describe('mfaGate (spec §6: staff sessions below AAL2 are blocked)', () => {
   it.each([
+    // full 3x3 aal1/aal2/null matrix
     ['aal1', 'aal1', 'enroll'], // no factor enrolled -> /mfa/registrer
     ['aal1', 'aal2', 'verify'], // enrolled, not verified -> /mfa/verifiser
+    ['aal1', null, 'enroll'],
     ['aal2', 'aal2', 'ok'],
     ['aal2', 'aal1', 'ok'], // stale JWT after unenroll — session already aal2
+    ['aal2', null, 'ok'],
+    [null, 'aal1', 'enroll'],
+    [null, 'aal2', 'verify'],
     [null, null, 'enroll'],
+    // garbage rows: fail-closed on unknown strings
+    ['AAL2', 'AAL2', 'enroll'],
+    ['aal3', 'aal3', 'enroll'],
   ])('current=%s next=%s -> %s', (current, next, expected) => {
-    expect(mfaGate(current, next)).toBe(expected);
+    expect(mfaGate({ currentLevel: current, nextLevel: next })).toBe(expected);
   });
 });
 ```
@@ -2212,11 +2241,13 @@ export type MfaGate = 'ok' | 'verify' | 'enroll';
  *   currentLevel aal2            -> verified this session -> ok
  *   aal1 with nextLevel aal2     -> factor enrolled, unverified -> verify
  *   aal1 with nextLevel aal1     -> no factor enrolled -> enroll
+ * The table is asymmetric, so call sites must be self-labeling; never accept positional levels.
  */
-export function mfaGate(
-  currentLevel: string | null,
-  nextLevel: string | null,
-): MfaGate {
+export function mfaGate(levels: {
+  currentLevel: string | null;
+  nextLevel: string | null;
+}): MfaGate {
+  const { currentLevel, nextLevel } = levels;
   if (currentLevel === 'aal2') return 'ok';
   if (nextLevel === 'aal2') return 'verify';
   return 'enroll';
@@ -3345,7 +3376,7 @@ export async function proxy(request: NextRequest) {
     if (aalError) {
       return redirectTo(request, DENIED_PATH);
     }
-    const gate = mfaGate(aal?.currentLevel ?? null, aal?.nextLevel ?? null);
+    const gate = mfaGate({ currentLevel: aal?.currentLevel ?? null, nextLevel: aal?.nextLevel ?? null });
     if (gate === 'enroll' && path !== MFA_ENROLL_PATH) {
       return redirectTo(request, MFA_ENROLL_PATH);
     }
