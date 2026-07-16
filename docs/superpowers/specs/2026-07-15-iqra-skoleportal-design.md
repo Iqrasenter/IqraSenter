@@ -146,7 +146,7 @@ Money is stored as **integer øre**. All tables have `created_at`; mutating tabl
 - **Audit:** triggers on writes to students/grades/invoices/roles + explicit logging of exports and admin impersonation-style reads. Append-only.
 - **Logs:** no PII in application logs; content-free notification e-mails.
 - **Supply chain:** lockfile, automated dependency updates, `npm audit` in CI.
-- **E-mail:** transactional pings via a provider with signed DPA and EU-compatible processing (candidates: Brevo (EU) or Resend (DPF-certified); decided in Phase 0). Content-free by design; provider listed in the privacy notice.
+- **E-mail:** transactional pings via a provider with signed DPA and EU-compatible processing (decided Phase 0: **Brevo** — EU processing, DPA signed during Skyoppsett). Content-free by design; provider listed in the privacy notice.
 - **Backups:** Supabase automated daily backups (PITR if plan allows); restore procedure tested and documented in Phase 7.
 
 ### GDPR posture (register = Art. 9 special-category data by context)

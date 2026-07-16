@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the portal repository with local Supabase, auth + enforced TOTP MFA for staff, the roles/RLS security skeleton with an adversarial pgTAP harness, design tokens + core UI components, per-role portal shells, seed users, CI, and cloud-setup documentation — Phase 0 of `docs/superpowers/specs/2026-07-15-iqra-skoleportal-design.md` (§9).
+**Goal:** Stand up the portal repository with local Supabase, auth + enforced TOTP MFA for staff, the roles/RLS security skeleton with adversarial test harnesses at both walls (pgTAP for RLS, Vitest for the API/DAL), design tokens + core UI components, per-role portal shells, seed users, security headers, CI with Dependabot, and cloud-setup documentation — Phase 0 of `docs/superpowers/specs/2026-07-15-iqra-skoleportal-design.md` (§9).
 
 **Architecture:** One Next.js 16 (App Router) app; all data access through a server-only DAL using the requesting user's cookie session so RLS applies to every query (wall 1 = DAL checks, wall 2 = RLS default-deny). Service-role usage quarantined to `src/lib/admin/`, where every function re-verifies the caller's admin role and writes an audit entry. Staff roles (admin/teacher/economy) are blocked below AAL2 by `src/proxy.ts` (Next 16's middleware).
 
@@ -27,11 +27,17 @@
 ```
 /Users/daodilyas/dev/iqra-portal/
 ├── .github/workflows/ci.yml          # Task 15
+├── .github/dependabot.yml            # Task 15 (weekly grouped dependency PRs)
 ├── .env.example                      # Task 3
 ├── PRODUCT.md / DESIGN.md / README.md# Task 15
 ├── docs/spec.md                      # Task 15 (copy of approved spec)
+├── next.config.ts                    # Task 15 (security headers + baseline CSP)
 ├── vercel.json                       # Task 15 (region pin arn1)
 ├── vitest.config.ts / vitest.setup.ts# Task 2
+├── vitest.config.api.ts              # Task 12b (config for the API-wall suite)
+├── tests/api/                        # Task 12b: wall-1 adversarial harness
+│   ├── harness.ts                    #   sign-in-as-seed-user mock factories
+│   └── access-wall.test.ts           #   forbidden-cell tests (grows every phase)
 ├── supabase/
 │   ├── config.toml                   # Task 3 (MFA on, region note)
 │   ├── seed.sql                      # Task 6 (LOCAL-ONLY test users)
@@ -70,7 +76,7 @@
         └── admin/ audit-log.ts        # Task 11 (service-role quarantine)
 ```
 
-**Task order and why:** 1 repo → 2 test tooling → 3 local Supabase → 4–5 migrations+pgTAP (security skeleton proven before any app code touches it) → 6 seeds → 7 tokens → 8 UI primitives → 9 env+clients → 10 pure access logic → 11 DAL+admin module → 12 portal shells → 13 middleware gate → 14 MFA pages → 15 CI+docs+acceptance.
+**Task order and why:** 1 repo → 2 test tooling → 3 local Supabase → 4–5 migrations+pgTAP (security skeleton proven before any app code touches it) → 6 seeds → 7 tokens → 8 UI primitives → 9 env+clients → 10 pure access logic → 11 DAL+admin module → 12 portal shells → 12b API-wall harness (wall-1 twin of the pgTAP suite) → 13 middleware gate → 14 MFA pages → 15 headers+CI+docs+acceptance.
 
 ---
 
@@ -1131,13 +1137,15 @@ insert into public.user_roles (user_id, role) values
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
 supabase db reset
-psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c \
+docker exec supabase_db_iqra-portal psql -U postgres -d postgres -c \
   "select u.email, p.full_name, r.role
    from auth.users u
    join public.profiles p on p.id = u.id
    join public.user_roles r on r.user_id = u.id
    order by u.email, r.role;"
 ```
+
+(`psql` is not installed on macOS by default, so the query runs inside the Supabase Postgres container. The CLI names it `supabase_db_<project-dir-name>`, here `supabase_db_iqra-portal`; if the exec fails, find the actual name with `docker ps --format '{{.Names}}' | grep supabase_db`.)
 
 Expected: reset prints `Seeding data from supabase/seed.sql...`; the query returns exactly **7 rows** (6 users; `laererforelder@test.local` appears twice — `parent` and `teacher`), each with the Norwegian full name from the seed.
 
@@ -1208,6 +1216,21 @@ Replace the entire contents of `/Users/daodilyas/dev/iqra-portal/src/app/globals
   --color-warning-ink: oklch(0.42 0.11 80);
   --color-danger: oklch(0.5 0.16 28);
   --color-danger-ink: oklch(0.4 0.15 28);
+
+  /* Type — fixed rem scale, ratio ~1.2: 13/14/16/18/20/24 px (spec §7).
+     Overrides Tailwind's default text-xs…text-2xl steps. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.4;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.45;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.3;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.25;
 
   /* Shape — rounded geometry: radii 10/14/18 + pill (spec §7) */
   --radius-sm: 10px;
@@ -1312,9 +1335,10 @@ rm -f public/next.svg public/vercel.svg public/file.svg public/globe.svg public/
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
 npm run typecheck && npm run build
+grep -c -- '--text-' src/app/globals.css
 ```
 
-Expected: both exit 0. Then optionally `npm run dev` and open `http://localhost:3000`: Outfit typeface, warm off-white background (not pure white), six swatches — green, pale green tint, hairline-bordered canvas, and the three semantic tones. No purple anywhere.
+Expected: typecheck and build exit 0; the grep prints `12` (six type sizes + six line-heights — the spec §7 scale is tokenized, not left at Tailwind defaults). Then optionally `npm run dev` and open `http://localhost:3000`: Outfit typeface, warm off-white background (not pure white), the `text-2xl` heading at 24 px with the tighter 1.25 line-height, six swatches — green, pale green tint, hairline-bordered canvas, and the three semantic tones. No purple anywhere.
 
 - [ ] **Step 5: Commit**
 
@@ -1870,7 +1894,7 @@ cd /Users/daodilyas/dev/iqra-portal
 npm test
 ```
 
-Expected: all test files pass, including `env.test.ts` (5 tests).
+Expected: all test files pass, including `env.test.ts` (6 tests).
 
 - [ ] **Step 6: Generate database types from the local schema**
 
@@ -3020,6 +3044,231 @@ git commit -m "feat: five role portals with layout guards, role switcher and hon
 
 ---
 
+### Task 12b: API-wall adversarial harness — wall 1's Vitest twin of the pgTAP suite
+
+**Files:**
+- Create: `/Users/daodilyas/dev/iqra-portal/vitest.config.api.ts`
+- Create: `/Users/daodilyas/dev/iqra-portal/tests/api/harness.ts`
+- Create: `/Users/daodilyas/dev/iqra-portal/tests/api/access-wall.test.ts`
+- Modify: `/Users/daodilyas/dev/iqra-portal/package.json` (add the `test:api` script)
+
+Spec §8.1 requires every forbidden cell in §3's matrix to be attempted at BOTH walls, and §9 row 0 ships the harnesses in Phase 0. Wall 2 (RLS, SQL as each role) is the pgTAP suite from Tasks 4–5. This task is wall 1's twin: it executes the real `session.ts` guards and `loginAction` with forged inputs against the running local stack, signed in as the Task 6 seed users (password `test-passord-123`). Only the edges are mocked: `@/lib/supabase/server` is replaced by a factory returning a real anon-key client authenticated through GoTrue (so RLS still applies underneath), and `next/navigation`'s `redirect` throws `NEXT_REDIRECT:<path>`, making a guard's decision observable. **Every later phase adds its forbidden-cell tests to BOTH suites** — `supabase/tests/` and `tests/api/`. The suite needs the local stack with fresh seeds (`supabase start` + `supabase db reset` first); Task 15's README documents this.
+
+- [ ] **Step 1: Create a separate Vitest config for the API suite**
+
+The main `vitest.config.ts` only includes `src/**` and boots jsdom; this suite runs in node against real services and must never run inside plain `npm test` (it would fail whenever the stack is down). Create `/Users/daodilyas/dev/iqra-portal/vitest.config.api.ts`:
+
+```ts
+import { loadEnv } from 'vite';
+import { defineConfig } from 'vitest/config';
+import tsconfigPaths from 'vite-tsconfig-paths';
+
+/**
+ * Config for the wall-1 adversarial suite (tests/api/) ONLY.
+ * Runs in node (no jsdom, no vitest.setup.ts) and loads the local-stack
+ * keys from .env.local so the harness can talk to GoTrue and PostgREST.
+ */
+export default defineConfig(({ mode }) => ({
+  plugins: [tsconfigPaths()],
+  test: {
+    environment: 'node',
+    include: ['tests/api/**/*.test.ts'],
+    env: loadEnv(mode, process.cwd(), ''),
+    testTimeout: 15000,
+  },
+}));
+```
+
+- [ ] **Step 2: Add the npm script**
+
+In `/Users/daodilyas/dev/iqra-portal/package.json`, extend the `"scripts"` object so it contains (keep the existing entries):
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:api": "vitest run --config vitest.config.api.ts",
+    "db:types": "supabase gen types typescript --local > src/lib/supabase/database.types.ts"
+  }
+}
+```
+
+(The `--config` flag is what keeps the suites separate: different environment, different include globs — `npm test` never touches `tests/api/`.)
+
+- [ ] **Step 3: Write the harness**
+
+Create `/Users/daodilyas/dev/iqra-portal/tests/api/harness.ts`:
+
+```ts
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { getPublicEnv } from '@/lib/env';
+import type { Database } from '@/lib/supabase/database.types';
+
+/**
+ * Wall-1 harness (spec §8.1): builds REAL Supabase clients against the
+ * local stack, signed in as the Task 6 seed users, and hands them to the
+ * code under test through the `@/lib/supabase/server` mock declared in
+ * access-wall.test.ts. Wall 2 (SQL) is proven by the pgTAP suite; this
+ * harness proves the DAL guards and server actions layered on top.
+ */
+
+export const TEST_PASSWORD = 'test-passord-123';
+
+export type SeedEmail =
+  | 'admin@test.local'
+  | 'laerer@test.local'
+  | 'forelder@test.local'
+  | 'elev@test.local'
+  | 'okonomi@test.local'
+  | 'laererforelder@test.local';
+
+let currentEmail: SeedEmail | null = null;
+
+/** Later createClient() calls act as this seed user. */
+export function signInAs(email: SeedEmail): void {
+  currentEmail = email;
+}
+
+/** Later createClient() calls act logged out. */
+export function signOut(): void {
+  currentEmail = null;
+}
+
+/**
+ * Drop-in replacement for `createClient` in `@/lib/supabase/server`:
+ * a real anon-key client (RLS applies), authenticated as the current
+ * seed user via GoTrue instead of via request cookies.
+ */
+export async function createServerClientMock() {
+  const env = getPublicEnv();
+  const client = createSupabaseClient<Database>(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  if (currentEmail) {
+    const { error } = await client.auth.signInWithPassword({
+      email: currentEmail,
+      password: TEST_PASSWORD,
+    });
+    if (error) {
+      throw new Error(
+        `Harness: innlogging som ${currentEmail} feilet (kjører den lokale ` +
+          `stacken med ferske seeds? \`supabase start\` + \`supabase db reset\`): ` +
+          error.message,
+      );
+    }
+  }
+  return client;
+}
+
+/**
+ * Drop-in replacement for `redirect` in `next/navigation`: throws so a
+ * guard's redirect is observable and halts execution like the real one.
+ */
+export function redirectMock(path: string): never {
+  throw new Error(`NEXT_REDIRECT:${path}`);
+}
+```
+
+- [ ] **Step 4: Write the adversarial tests**
+
+Create `/Users/daodilyas/dev/iqra-portal/tests/api/access-wall.test.ts`:
+
+```ts
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// vi.mock calls are hoisted above the imports below. The factories load the
+// harness lazily (dynamic import) because hoisted factories cannot touch
+// top-level imports. `server-only` becomes a no-op outside RSC.
+vi.mock('server-only', () => ({}));
+vi.mock('@/lib/supabase/server', async () => {
+  const { createServerClientMock } = await import('./harness');
+  return { createClient: createServerClientMock };
+});
+vi.mock('next/navigation', async () => {
+  const { redirectMock } = await import('./harness');
+  return { redirect: redirectMock };
+});
+
+import { loginAction } from '@/app/logg-inn/actions';
+import { getSessionRoles, requireRole } from '@/lib/dal/session';
+import { signInAs, signOut } from './harness';
+
+beforeEach(() => {
+  signOut();
+});
+
+describe('wall 1: requireRole turns forbidden roles away (spec §8.1)', () => {
+  it('redirects a parent who requests the admin portal to /ingen-tilgang', async () => {
+    signInAs('forelder@test.local');
+    await expect(requireRole('admin')).rejects.toThrow(
+      'NEXT_REDIRECT:/ingen-tilgang',
+    );
+  });
+
+  it('redirects a logged-out visitor to /logg-inn', async () => {
+    await expect(requireRole('admin')).rejects.toThrow(
+      'NEXT_REDIRECT:/logg-inn',
+    );
+  });
+
+  it('lets a parent into the parent portal with their roles', async () => {
+    signInAs('forelder@test.local');
+    const { user, roles } = await requireRole('parent');
+    expect(user.email).toBe('forelder@test.local');
+    expect(roles).toContain('parent');
+  });
+});
+
+describe('wall 1: loginAction rejects forged input without throwing', () => {
+  it('returns a field error for a forged FormData submission', async () => {
+    const forged = new FormData();
+    forged.set('epost', 'ikke-en-epost');
+    forged.set('passord', '');
+    await expect(loginAction({ error: null }, forged)).resolves.toEqual({
+      error: 'Oppgi en gyldig e-postadresse.',
+    });
+  });
+});
+
+describe('wall 1: getSessionRoles under RLS', () => {
+  it('returns both roles for the dual-role user', async () => {
+    signInAs('laererforelder@test.local');
+    const roles = await getSessionRoles();
+    expect([...roles].sort()).toEqual(['parent', 'teacher']);
+  });
+});
+```
+
+- [ ] **Step 5: Run the suite against the local stack**
+
+```bash
+cd /Users/daodilyas/dev/iqra-portal
+supabase start
+supabase db reset
+npm run test:api
+npm test && npm run typecheck
+```
+
+Expected: the API suite prints `Test Files  1 passed` and `Tests  5 passed` — the two denial tests prove the wall by asserting on the thrown `NEXT_REDIRECT` path that only the guard produces. `npm test` stays green and unchanged (the suites do not overlap), and typecheck is silent.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/daodilyas/dev/iqra-portal
+git add vitest.config.api.ts tests/api package.json
+git commit -m "test: adversarial API-wall suite proving DAL guards and login validation"
+```
+
+---
+
 ### Task 13: Staff MFA enforcement in `src/proxy.ts` (Next 16 middleware)
 
 **Files:**
@@ -3494,17 +3743,94 @@ git commit -m "feat: TOTP enrollment and challenge pages for staff MFA"
 
 ---
 
-### Task 15: CI, Vercel region pin, README (Skyoppsett + DPA), PRODUCT.md, DESIGN.md, spec copy
+### Task 15: Security headers, CI + Dependabot, Vercel region pin, README (Skyoppsett + DPA), PRODUCT.md, DESIGN.md, spec copy
 
 **Files:**
+- Modify: `/Users/daodilyas/dev/iqra-portal/next.config.ts` (security headers + baseline CSP)
 - Create: `/Users/daodilyas/dev/iqra-portal/.github/workflows/ci.yml`
+- Create: `/Users/daodilyas/dev/iqra-portal/.github/dependabot.yml`
 - Create: `/Users/daodilyas/dev/iqra-portal/vercel.json`
 - Create: `/Users/daodilyas/dev/iqra-portal/README.md` (replace CNA boilerplate)
 - Create: `/Users/daodilyas/dev/iqra-portal/PRODUCT.md`
 - Create: `/Users/daodilyas/dev/iqra-portal/DESIGN.md`
 - Create: `/Users/daodilyas/dev/iqra-portal/docs/spec.md` (copied from the marketing repo)
 
-- [ ] **Step 1: Create the CI workflow**
+- [ ] **Step 1: Security headers in next.config.ts (spec §6: strict CSP, HSTS, frame-deny)**
+
+Replace the entire contents of `/Users/daodilyas/dev/iqra-portal/next.config.ts` (create-next-app generated it with an empty options object; nothing else in the plan has touched it) with:
+
+```ts
+import type { NextConfig } from 'next';
+
+/**
+ * Security headers on every route (spec §6): HSTS, frame-deny, nosniff,
+ * tight referrer, minimal permissions, and a baseline CSP.
+ * Baseline CSP; tightened to nonce-based script-src in Phase 7 hardening
+ * (spec §9) — until then 'unsafe-inline' is required by Next.js runtime
+ * scripts and next/font inline styles.
+ * connect-src must allow the Supabase URL (browser client: auth + MFA).
+ * Next.js loads .env.local before evaluating this file, so the value is
+ * present in local dev; on Vercel it comes from project env vars.
+ */
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+
+const csp = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' blob: data:",
+  "font-src 'self'",
+  `connect-src 'self' ${supabaseUrl}`.trimEnd(),
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ');
+
+const securityHeaders = [
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
+  },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  {
+    key: 'Permissions-Policy',
+    value: 'camera=(), microphone=(), geolocation=()',
+  },
+  { key: 'Content-Security-Policy', value: csp },
+];
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+Verify:
+
+```bash
+cd /Users/daodilyas/dev/iqra-portal
+npm run typecheck && npm run build
+```
+
+Expected: both exit 0. Then start `npm run dev` and, in a second terminal:
+
+```bash
+curl -sI http://localhost:3000/logg-inn | grep -i -e content-security-policy -e strict-transport-security -e x-frame-options
+```
+
+Expected: all three headers print; the CSP line contains `default-src 'self'` and the local Supabase URL (`http://127.0.0.1:54321`) inside `connect-src`. Log in as `forelder@test.local` to confirm auth still works under the CSP, then stop the dev server.
+
+- [ ] **Step 2: Create the CI workflow**
 
 Create `/Users/daodilyas/dev/iqra-portal/.github/workflows/ci.yml`:
 
@@ -3545,7 +3871,35 @@ jobs:
       - run: supabase test db
 ```
 
-- [ ] **Step 2: Pin Vercel functions to the EU**
+- [ ] **Step 3: Create the Dependabot config (spec §6: automated dependency updates)**
+
+Create `/Users/daodilyas/dev/iqra-portal/.github/dependabot.yml`:
+
+```yaml
+version: 2
+updates:
+  # npm: weekly, minor+patch grouped into one PR to keep review load low;
+  # majors arrive as individual PRs and get reviewed against changelogs.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions: weekly (checkout/setup-node/setup-cli pins above).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+```
+
+(Dependabot activates once the repo is pushed to GitHub — the remaining manual step at the end of this task. Together with `npm audit` in CI this fulfils spec §6's supply-chain line.)
+
+- [ ] **Step 4: Pin Vercel functions to the EU**
 
 Create `/Users/daodilyas/dev/iqra-portal/vercel.json`:
 
@@ -3557,7 +3911,7 @@ Create `/Users/daodilyas/dev/iqra-portal/vercel.json`:
 
 (`arn1` = Stockholm, matching the Supabase region; `fra1` is the documented fallback if `arn1` is ever unavailable on the chosen plan.)
 
-- [ ] **Step 3: Copy the approved spec into the portal repo**
+- [ ] **Step 5: Copy the approved spec into the portal repo**
 
 ```bash
 mkdir -p /Users/daodilyas/dev/iqra-portal/docs
@@ -3567,7 +3921,7 @@ head -3 /Users/daodilyas/dev/iqra-portal/docs/spec.md
 
 Expected: first line `# IQRA Skoleportal — Design Specification`.
 
-- [ ] **Step 4: Write PRODUCT.md**
+- [ ] **Step 6: Write PRODUCT.md**
 
 Create `/Users/daodilyas/dev/iqra-portal/PRODUCT.md`:
 
@@ -3610,7 +3964,7 @@ kun norsk UI, aldri elev↔elev-chat, ingen vedlegg i meldinger, ingen
 selvbetjent påmelding, ingen offline-skriving, ingen Feide.
 ```
 
-- [ ] **Step 5: Write DESIGN.md**
+- [ ] **Step 7: Write DESIGN.md**
 
 Create `/Users/daodilyas/dev/iqra-portal/DESIGN.md`:
 
@@ -3638,9 +3992,11 @@ Tokenene under er fasit og ligger i `src/app/globals.css` (`@theme`).
 
 ## Typografi
 
-Outfit 400/500/600/700 via `next/font/google`. Fast rem-skala, ratio ~1,2:
-13 / 14 / 16 / 18 / 20 / 24. Alle tall settes med `tabular-nums`
-(satt globalt på `body`).
+Outfit 400/500/600/700 via `next/font/google`. Fast rem-skala, ratio ~1,2,
+tokenisert i `@theme` som `--text-xs` … `--text-2xl` (overstyrer Tailwinds
+standardskala): 13 / 14 / 16 / 18 / 20 / 24 px = `text-xs/sm/base/lg/xl/2xl`,
+med faste linjehøyder 1,4 / 1,4 / 1,5 / 1,45 / 1,3 / 1,25. Alle tall settes
+med `tabular-nums` (satt globalt på `body`).
 
 ## Form og bevegelse
 
@@ -3670,7 +4026,7 @@ WCAG AA-kontrast, synlige fokusringer (`focus-visible:outline-*`), fulle
 tastaturstier for oppmøte- og vurderingsflytene (fra fase 2/3).
 ```
 
-- [ ] **Step 6: Write README.md**
+- [ ] **Step 8: Write README.md**
 
 Replace the entire contents of `/Users/daodilyas/dev/iqra-portal/README.md` with:
 
@@ -3719,12 +4075,20 @@ brukere. Passord for alle: `test-passord-123`
 npm run typecheck      # TypeScript strict, null feil er kravet
 npm run lint           # ESLint
 npm test               # Vitest (enhets- og komponenttester)
+npm run test:api       # Vitest: API-veggen (DAL-vakter og server actions) i tests/api/
 supabase test db       # pgTAP: RLS-/sikkerhetstester i supabase/tests/
 supabase db reset      # kjør migrasjoner + seed på nytt
 ```
 
+`npm run test:api` krever at den lokale stacken kjører med ferske seeds:
+kjør `supabase start` og `supabase db reset` først. `test:api` og
+`supabase test db` er tvillinger — samme forbudte celler testes på begge
+vegger (spec §8.1), og hver ny fase legger til sine tester i begge.
+
 CI (`.github/workflows/ci.yml`) kjører alt over pluss `npm audit` og blokkerer
-merge ved feil.
+merge ved feil; unntaket er `test:api`, som foreløpig kjøres lokalt fordi den
+trenger hele auth-stacken. Dependabot (`.github/dependabot.yml`) åpner ukentlige
+oppdaterings-PR-er.
 
 ## Skyoppsett (engangs, manuelle steg)
 
@@ -3737,6 +4101,12 @@ merge ved feil.
 4. I dashbordet: **Authentication → Multi-Factor** — bekreft at TOTP er på.
    **Authentication → URL Configuration** — sett Site URL til
    `https://portal.iqrasenter.no`.
+5. **Authentication → SMTP** — sett opp Brevo som e-postleverandør
+   (valgt i fase 0: EU-selskap med EU-prosessering, gratisnivået holder,
+   DPA tilgjengelig). Vert `smtp-relay.brevo.com`, port `587`,
+   brukernavn/SMTP-nøkkel fra Brevo-dashbordet. Signer Brevos DPA
+   (punkt 4 under) FØR nøkkelen tas i bruk. Transaksjons-e-post er
+   innholdsfri by design og inneholder aldri persondata (spec §6).
 
 ### 2. Vercel (EU)
 
@@ -3757,9 +4127,9 @@ Hos domeneleverandøren for `iqrasenter.no`: opprett en **CNAME** for
 
 - [ ] Supabase DPA signert (dashbord → Organization → Legal Documents)
 - [ ] Vercel DPA signert (dashbord → Settings → Legal)
-- [ ] E-postleverandør for varsler valgt og DPA signert — kandidater:
-      Brevo (EU) eller Resend (DPF-sertifisert); avgjøres i fase 0 og føres
-      inn i personvernerklæringen (spec §6)
+- [ ] Brevo DPA signert (e-postleverandør, valgt i fase 0 — EU-selskap med
+      EU-prosessering; føres inn i personvernerklæringen, spec §6). Signeres
+      FØR SMTP-oppsettet i punkt 1.5 tas i bruk
 - [ ] Leverandørene ført inn i behandlingsprotokollen (Art. 30 — fase 7)
 
 ## Struktur
@@ -3771,21 +4141,22 @@ Hos domeneleverandøren for `iqrasenter.no`: opprett en **CNAME** for
 - `supabase/migrations/` — skjema; `supabase/tests/` — pgTAP-sikkerhetstester
 ````
 
-- [ ] **Step 7: Full local verification (CI-equivalent) and commit**
+- [ ] **Step 9: Full local verification (CI-equivalent) and commit**
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
 npm run typecheck && npm run lint && npm test && npm run build
 supabase db reset && supabase test db
+npm run test:api
 npm audit --audit-level=high
 ```
 
-Expected: every command exits 0 — typecheck silent, lint clean, all Vitest files pass, build succeeds, all four pgTAP files pass, audit reports no high/critical advisories. This mirrors exactly what CI will run.
+Expected: every command exits 0 — typecheck silent, lint clean, all Vitest files pass, build succeeds, all four pgTAP files pass, the five API-wall tests pass, audit reports no high/critical advisories. This mirrors what CI runs plus `test:api`, which for now runs locally only (it needs the full auth stack, so `supabase start` must be running).
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-git add .github vercel.json README.md PRODUCT.md DESIGN.md docs/spec.md
-git commit -m "docs: CI pipeline, EU region pin, setup guide and product/design references"
+git add next.config.ts .github vercel.json README.md PRODUCT.md DESIGN.md docs/spec.md
+git commit -m "feat: security headers, CI with Dependabot, EU region pin and setup docs"
 git log --oneline
 ```
 
@@ -3800,14 +4171,15 @@ Expected: a clean conventional-commit history, one commit per task.
 Run through this after Task 15. Every line must hold:
 
 - [ ] **Portal repo** — `/Users/daodilyas/dev/iqra-portal` exists on branch `main`, outside iCloud-synced folders, conventional-commit history (Task 1).
-- [ ] **CI** — `.github/workflows/ci.yml` runs typecheck, lint, Vitest, `npm audit`, and pgTAP via `supabase db start` + `supabase test db`; the same pipeline passes locally (Task 15 Step 7).
+- [ ] **CI + Dependabot** — `.github/workflows/ci.yml` runs typecheck, lint, Vitest, `npm audit`, and pgTAP via `supabase db start` + `supabase test db`; the same pipeline passes locally, plus the API-wall suite (Task 15 Step 9); `.github/dependabot.yml` opens weekly grouped npm update PRs and weekly Actions updates (Task 15 Step 3).
+- [ ] **Security headers** — every route answers with HSTS (2 years, includeSubDomains, preload), `X-Frame-Options: DENY`, nosniff, `strict-origin-when-cross-origin` referrer policy, a minimal Permissions-Policy, and the baseline CSP with the Supabase URL in `connect-src`, verified with curl against the dev server (Task 15 Step 1); nonce-based script-src is deferred to Phase 7 hardening (spec §9).
 - [ ] **Supabase Stockholm + Vercel EU** — region intent pinned in code/docs: `vercel.json` (`arn1`), config.toml comment + README «Skyoppsett» with eu-north-1, link/push commands, env vars, DNS CNAME for `portal.iqrasenter.no`, and the DPA-signing checklist (Tasks 3, 15). Actual account creation is a documented manual user action.
 - [ ] **Auth + MFA** — cookie-based email+password login at `/logg-inn` (Norwegian, generic error message); `src/proxy.ts` blocks staff (admin/teacher/economy) below AAL2 and routes them to `/mfa/registrer` or `/mfa/verifiser`; parents/students are exempt; full TOTP journey verified with a real code (Tasks 11, 13, 14).
 - [ ] **Roles** — `user_roles` table with the five roles, `private.has_role`/`private.is_staff` helpers, role switcher UI for multi-role users, portal-per-role route groups with `requireRole` layout guards calling the server-only DAL (Tasks 4, 10, 11, 12).
-- [ ] **RLS skeleton + adversarial suite harness** — RLS enabled default-deny on all four tables; explicit narrow policies; pgTAP harness proves: anon sees nothing, users see only their own profile/roles, admin sees all profiles, audit_log rejects direct writes and non-admin reads, `private.audit()` is the only write path, settings is single-row and read-only for users (Tasks 4, 5). *Note: the four fine-derived regression tests from spec §6 need student/guardian/notification tables — they join this harness in Phases 1–5; the harness structure and impersonation pattern they will use is in place now.*
-- [ ] **Design tokens + core components** — `@theme` tokens exactly per spec §7 (canvas/ink/primary/surface-tint/hairline + semantic family, radii 10/14/18/pill, Outfit 400–700, tabular-nums, 150–250 ms ease-out motion, reduced-motion respected); Button/Input+Field/Chip/Skeleton/EmptyState with full state coverage and component tests; bans honored (Tasks 7, 8).
+- [ ] **RLS skeleton + adversarial harnesses at both walls** — RLS enabled default-deny on all four tables; explicit narrow policies; the pgTAP harness proves at the SQL wall: anon sees nothing, users see only their own profile/roles, admin sees all profiles, audit_log rejects direct writes and non-admin reads, `private.audit()` is the only write path, settings is single-row and read-only for users (Tasks 4, 5); the Vitest API-wall harness proves the DAL guards and login validation against the same seed users with forged inputs (Task 12b). *Note: the four fine-derived regression tests from spec §6 need student/guardian/notification tables — they join BOTH suites in Phases 1–5; the harness structures and impersonation patterns they will use are in place now.*
+- [ ] **Design tokens + core components** — `@theme` tokens exactly per spec §7 (canvas/ink/primary/surface-tint/hairline + semantic family, the 13/14/16/18/20/24 px type scale with fixed line-heights, radii 10/14/18/pill, Outfit 400–700, tabular-nums, 150–250 ms ease-out motion, reduced-motion respected); Button/Input+Field/Chip/Skeleton/EmptyState with full state coverage and component tests; bans honored (Tasks 7, 8).
 - [ ] **Seed/demo data** — six local-only test users covering every role incl. one dual-role user; login verified against GoTrue; documented in README (Task 6).
-- [ ] **Two-wall proof** — a parent visiting `/admin` is turned away by the DAL wall (`/ingen-tilgang`), and the same isolation holds at the SQL wall in pgTAP (Tasks 12 Step 6, 4–5).
+- [ ] **Two-wall proof** — a parent visiting `/admin` is turned away by the DAL wall (`/ingen-tilgang`), verified in the browser (Task 12 Step 6) and asserted automatically by `npm run test:api` (Task 12b); the same isolation holds at the SQL wall in pgTAP (Tasks 4–5).
 - [ ] **Service-role quarantine** — the key is read only inside `src/lib/admin/`; its one function re-verifies admin membership and audits its own read, visible as `audit_log.viewed` rows on the admin dashboard (Tasks 11, 12).
 
 **Phase 0 exit:** all boxes ticked, `git log` clean, CI green on the first push. Phase 1 (School core: terms, classes, subjects, students, guardians, enrollment, admin registry) builds directly on this foundation — its student tables plug into the same RLS + pgTAP harness, and the four fine-derived tests get implemented verbatim then.
