@@ -2681,7 +2681,7 @@ export function RoleSwitcher({
                 'inline-flex min-h-11 items-center rounded-pill px-4 text-sm font-medium',
                 'transition-colors duration-200 ease-brand',
                 role === activeRole
-                  ? 'bg-primary text-canvas'
+                  ? 'bg-primary text-on-primary'
                   : 'bg-surface-tint text-ink hover:bg-hairline',
               )}
             >
@@ -4022,7 +4022,7 @@ Ingen lilla. Aldri `#000`/`#fff`.
 
 ## Tilgjengelighet
 
-WCAG AA-kontrast, synlige fokusringer (`focus-visible:outline-*`), fulle
+WCAG AA-kontrast, synlige fokusringer (`focus-visible:ring-*` med `ring`-token), fulle
 tastaturstier for oppmøte- og vurderingsflytene (fra fase 2/3).
 ```
 
