@@ -2122,7 +2122,7 @@ Create `/Users/daodilyas/dev/iqra-portal/src/lib/env.test.ts`:
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getPublicEnv, getServiceRoleKey } from './env';
+import { getPublicEnv } from './env';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -2147,6 +2147,35 @@ describe('getPublicEnv', () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', anon);
     expect(() => getPublicEnv()).toThrow(/env\.local .* \.env\.example/);
   });
+
+  it('never echoes the raw invalid value in the error message', () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'ikke-en-url-hemmelig-verdi');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key');
+    let message = '';
+    try {
+      getPublicEnv();
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/env\.local/);
+    expect(message).not.toContain('ikke-en-url-hemmelig-verdi');
+  });
+});
+```
+
+Also create `/Users/daodilyas/dev/iqra-portal/src/lib/env.server.test.ts` (amendment 2026-07-17, T9 quality review: the service key accessor moves behind `server-only`, tested separately):
+
+```ts
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getServiceRoleKey } from './env.server';
+
+// The server-only package throws when imported outside a react-server
+// bundler condition; Vitest runs in plain node. vi.mock is hoisted above
+// the imports, so the stub is in place before env.server loads.
+vi.mock('server-only', () => ({}));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('getServiceRoleKey', () => {
@@ -2204,8 +2233,18 @@ export function getPublicEnv(): PublicEnv {
   }
   return parsed.data;
 }
+```
 
-/** Server secret for the quarantined admin module (src/lib/admin/) ONLY. */
+Also create `/Users/daodilyas/dev/iqra-portal/src/lib/env.server.ts` (amendment 2026-07-17, T9 quality review: `env.ts` cannot carry `import 'server-only'` because `getPublicEnv` is legitimately client-called, which left `getServiceRoleKey` guarded only by tree-shaking. Splitting it makes any client-reachable import path a BUILD error — the quarantine is enforced by the bundler, not convention):
+
+```ts
+import 'server-only';
+
+/**
+ * Server secret for the quarantined admin module (src/lib/admin/) ONLY.
+ * The `server-only` import above turns any client-reachable import of this
+ * module into a build-time error.
+ */
 export function getServiceRoleKey(): string {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) {
@@ -2225,7 +2264,7 @@ cd /Users/daodilyas/dev/iqra-portal
 npm test
 ```
 
-Expected: all test files pass, including `env.test.ts` (6 tests).
+Expected: all test files pass, including `env.test.ts` (5 tests) and `env.server.test.ts` (2 tests).
 
 - [ ] **Step 6: Generate database types from the local schema**
 
@@ -2269,7 +2308,10 @@ export async function createClient() {
           } catch {
             // Next.js forbids cookie writes from Server Components.
             // Intentionally ignored: src/proxy.ts refreshes the session
-            // cookies on every matched request instead.
+            // cookies on every matched request instead. (Known, accepted
+            // limitation: the RSC context has no response object, so the
+            // library's anti-CDN-cache headers can't be forwarded here —
+            // the proxy's loadSession() is the path that forwards them.)
           }
         },
       },
@@ -2306,6 +2348,14 @@ import type { Database } from './database.types';
  * Refreshes the auth session inside the proxy (Next 16 middleware) and keeps
  * request/response cookies in sync. `getResponse()` must be called AFTER all
  * auth work, because setAll may swap the response object during refresh.
+ *
+ * CONTRACT FOR CALLERS (Task 13): every response returned from the proxy —
+ * including redirects — must carry `getResponse()`'s cookies AND headers.
+ * A bare `NextResponse.redirect(...)` built from scratch silently drops a
+ * token refresh that happened during this very request. Copy them over:
+ *   const redirect = NextResponse.redirect(url);
+ *   getResponse().cookies.getAll().forEach((c) => redirect.cookies.set(c));
+ *   getResponse().headers.forEach((v, k) => redirect.headers.set(k, v));
  */
 export async function loadSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -2319,7 +2369,7 @@ export async function loadSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
@@ -2327,6 +2377,14 @@ export async function loadSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options),
           );
+          // @supabase/ssr passes cache-control headers whenever it writes
+          // auth cookies, so CDNs/proxies never cache a response that sets
+          // one user's session token and serve it to another. Forward them.
+          if (headers) {
+            Object.entries(headers).forEach(([key, value]) =>
+              response.headers.set(key, value),
+            );
+          }
         },
       },
     },
@@ -2349,11 +2407,13 @@ npm run typecheck && npm test && npm run build
 
 Expected: all green. (The build does not evaluate the Supabase clients yet — nothing imports them until Task 11.)
 
+Amendment 2026-07-17 (T9 quality review): the Supabase v2.110 packages declare `"engines": {"node": ">=22.0.0"}`. Pin the project so local dev, CI and Vercel agree: in `package.json` add `"engines": { "node": ">=22" }` and bump `@types/node` to `^22`, then re-run the three gates above (all green again).
+
 - [ ] **Step 9: Commit**
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-git add package.json package-lock.json src/lib/env.ts src/lib/env.test.ts src/lib/supabase
+git add package.json package-lock.json src/lib/env.ts src/lib/env.test.ts src/lib/env.server.ts src/lib/env.server.test.ts src/lib/supabase
 git commit -m "feat: env validation and typed Supabase clients for server, browser and proxy"
 ```
 
@@ -2702,7 +2762,8 @@ Create `/Users/daodilyas/dev/iqra-portal/src/lib/admin/audit-log.ts`:
 ```ts
 import 'server-only';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { getPublicEnv, getServiceRoleKey } from '@/lib/env';
+import { getPublicEnv } from '@/lib/env';
+import { getServiceRoleKey } from '@/lib/env.server';
 import { getSessionUser } from '@/lib/dal/session';
 import type { Database } from '@/lib/supabase/database.types';
 
