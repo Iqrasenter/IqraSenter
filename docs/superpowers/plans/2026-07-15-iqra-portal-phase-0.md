@@ -406,7 +406,7 @@ done
 docker ps --filter "name=supabase_" --format '{{.Names}} {{.Status}}'
 ```
 
-Expected: `ALL_HEALTHY` within ~5 minutes, and the final listing shows all 10 containers (db, kong, auth, rest, realtime, storage, pg_meta, studio, inbucket/mailpit, edge-runtime) as `Up ... (healthy)` with none `(unhealthy)` or `(health: starting)`. If any container is still not healthy when the loop ends: STOP — do not proceed to Step 5 — and report BLOCKED with that container's `docker logs --tail 50 <name>`.
+Expected: `ALL_HEALTHY` within ~5 minutes, and the final listing shows all 10 containers (db, kong, auth, rest, realtime, storage, pg_meta, studio, inbucket/mailpit, edge-runtime) `Up` with none `(unhealthy)` or `(health: starting)`. (Observed 2026-07-16: 8 show `(healthy)`; `rest` and `edge-runtime` define no Docker healthcheck and show plain `Up` — that is healthy for them.) If any container is still not healthy when the loop ends: STOP — do not proceed to Step 5 — and report BLOCKED with that container's `docker logs --tail 50 <name>`.
 
 - [ ] **Step 5: Create .env.example (committed) and .env.local (not committed)**
 
