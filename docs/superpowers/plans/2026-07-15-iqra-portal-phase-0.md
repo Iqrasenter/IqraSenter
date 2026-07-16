@@ -16,7 +16,7 @@
 
 1. **Every Bash step must `cd` explicitly.** The default working directory is the *marketing site* repo (`/Users/daodilyas/Desktop/iqra`), NOT the portal. Every command block in this plan starts with `cd /Users/daodilyas/dev/iqra-portal` (or another absolute path). Never rely on a previous step's directory.
 2. **The new repo lives at `/Users/daodilyas/dev/iqra-portal`.** Deliberately OUTSIDE `~/Desktop` and `~/Documents` — iCloud Drive syncs those and corrupts git refs / evicts `node_modules` (see project memory). Do not create the repo anywhere else.
-3. **Docker Desktop must be running** before any `supabase start` / `supabase test db` step. If a step fails with `Cannot connect to the Docker daemon`, run `open -a Docker`, wait ~30s, retry.
+3. **Docker Desktop must be running** before any `supabase start` / `supabase test db` step. If a step fails with `Cannot connect to the Docker daemon`, run `open -a Docker`, wait ~30s, retry. **Amendment 2026-07-16:** on this machine a plain `supabase start` FAILS (CPU-slow cold boot outlives the CLI's health window) — wherever any task says `supabase start`, use the amended Task 3 Step 4 pattern instead: `supabase start --ignore-health-check` followed by the mandatory all-healthy wait loop (and usually the stack is already running — check `docker ps` first). `supabase db reset` and `supabase test db` are unaffected.
 4. **Two different spec/plan locations.** The approved spec currently lives in the marketing repo at `/Users/daodilyas/Desktop/iqra/docs/superpowers/specs/2026-07-15-iqra-skoleportal-design.md`. Task 15 copies it into the portal repo as `docs/spec.md`.
 5. **Commit messages:** Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`). Never mention Claude or AI in commit messages. No `Co-Authored-By` trailers.
 6. **Norwegian UI, English code.** All user-facing strings are Norwegian (bokmål). Identifiers, comments, table/column names stay English (roles in the DB are `'admin','teacher','parent','student','economy'`; URL paths are Norwegian: `/laerer`, `/forelder`, `/elev`, `/okonomi`, `/logg-inn`).
@@ -4120,7 +4120,7 @@ Skoleportal for IQRA senter — `portal.iqrasenter.no`. Next.js 16 + Supabase
 
 ```bash
 npm install
-supabase start                 # starter Postgres/Auth/Studio i Docker
+supabase start                 # starter Postgres/Auth/Studio i Docker (svak maskin: + --ignore-health-check, vent til alle containere er friske)
 cp .env.example .env.local     # fyll inn nøkler fra `supabase status`
 npm run dev                    # http://localhost:3000
 ```
@@ -4154,7 +4154,9 @@ supabase db reset      # kjør migrasjoner + seed på nytt
 ```
 
 `npm run test:api` krever at den lokale stacken kjører med ferske seeds:
-kjør `supabase start` og `supabase db reset` først. `test:api` og
+kjør `supabase start` (på svake maskiner: legg til `--ignore-health-check`
+og vent til `docker ps` viser alle supabase-containerne friske) og
+`supabase db reset` først. `test:api` og
 `supabase test db` er tvillinger — samme forbudte celler testes på begge
 vegger (spec §8.1), og hver ny fase legger til sine tester i begge.
 
@@ -4171,10 +4173,21 @@ oppdaterings-PR-er.
    (Stockholm)**. Ikke velg noe annet: EU-hosting er et krav (spec §3/§6).
 2. Koble repoet: `supabase link --project-ref <PROSJEKT-REF>`
 3. Send opp skjemaet: `supabase db push` (kjører kun migrasjoner — aldri seed).
-4. I dashbordet: **Authentication → Multi-Factor** — bekreft at TOTP er på.
-   **Authentication → URL Configuration** — sett Site URL til
-   `https://portal.iqrasenter.no`.
-5. **Authentication → SMTP** — sett opp Brevo som e-postleverandør
+4. I dashbordet: **Authentication → Multi-Factor** — bekreft at TOTP er på,
+   og sjekk at prosjektets plannivå faktisk støtter TOTP-innrullering
+   (CLI-malen hevder «Pro plan»; historisk er det bare telefon-MFA som er
+   betalingsgated — verifiser mot gjeldende prisside FØR produksjon lener
+   seg på MFA-porten). **Authentication → URL Configuration** — sett
+   Site URL til `https://portal.iqrasenter.no`.
+5. **Authentication → Sign In / Providers** — slå AV offentlig
+   selvregistrering: kontoer opprettes kun ved admin-invitasjon (spec §4),
+   og signup-endepunktet er ellers åpent for alle som har anon-nøkkelen
+   (som nødvendigvis er offentlig). **Authentication → Policies** — sett
+   minimum passordlengde (12+ anbefalt) og krev kompleksitet. NB:
+   `supabase/config.toml` sin `[auth]`-blokk gjelder KUN den lokale
+   stacken og pushes aldri til skyen — skyprosjektets auth-policy settes
+   her i dashbordet.
+6. **Authentication → SMTP** — sett opp Brevo som e-postleverandør
    (valgt i fase 0: EU-selskap med EU-prosessering, gratisnivået holder,
    DPA tilgjengelig). Vert `smtp-relay.brevo.com`, port `587`,
    brukernavn/SMTP-nøkkel fra Brevo-dashbordet. Signer Brevos DPA
