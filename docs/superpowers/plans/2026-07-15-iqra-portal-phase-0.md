@@ -1371,6 +1371,7 @@ Every interactive component ships default/hover/focus-visible/active/disabled/lo
 Create `/Users/daodilyas/dev/iqra-portal/src/components/ui/Button.test.tsx`:
 
 ```tsx
+import { createRef } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Button } from './Button';
@@ -1415,12 +1416,19 @@ describe('Button', () => {
       'button',
     );
   });
+
+  it('forwards a ref to the underlying button element', () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(<Button ref={ref}>Knapp</Button>);
+    expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+  });
 });
 ```
 
 Create `/Users/daodilyas/dev/iqra-portal/src/components/ui/Field.test.tsx`:
 
 ```tsx
+import { createRef } from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Field } from './Field';
@@ -1455,6 +1463,12 @@ describe('Field + Input', () => {
       </Field>,
     );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('forwards a ref to the underlying input element', () => {
+    const ref = createRef<HTMLInputElement>();
+    render(<Input ref={ref} id="epost" />);
+    expect(ref.current).toBeInstanceOf(HTMLInputElement);
   });
 });
 ```
@@ -1530,12 +1544,12 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 Create `/Users/daodilyas/dev/iqra-portal/src/components/ui/Button.tsx`:
 
 ```tsx
-import type { ButtonHTMLAttributes } from 'react';
+import type { ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ComponentProps<'button'> {
   variant?: ButtonVariant;
   /** Shows a spinner, sets aria-busy and disables the button. */
   loading?: boolean;
@@ -1607,10 +1621,10 @@ function Spinner() {
 Create `/Users/daodilyas/dev/iqra-portal/src/components/ui/Input.tsx`:
 
 ```tsx
-import type { InputHTMLAttributes } from 'react';
+import type { ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
 
-export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+export interface InputProps extends ComponentProps<'input'> {
   /** Marks the input invalid; pair with aria-describedby="<id>-feil". */
   invalid?: boolean;
 }
