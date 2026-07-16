@@ -384,10 +384,29 @@ Amendment 2026-07-16 (documented deviation): this machine has 8 GiB host RAM and
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-supabase start
+supabase start --ignore-health-check
 ```
 
-Expected (first run pulls Docker images, takes minutes): a block ending with `API URL: http://127.0.0.1:54321`, `DB URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres`, `Studio URL: http://127.0.0.1:54323`, plus `anon key: eyJ...` and `service_role key: eyJ...`. If it fails with a Docker daemon error: `open -a Docker`, wait, retry. (With `[analytics] enabled = false` no `logflare`/`vector` containers start and Studio's log explorer is empty locally — expected; the remaining ~9 containers fit the ~3.8 GiB VM.)
+Amendment 2026-07-16 (documented deviation #2): plain `supabase start` failed 4× on this machine and NOT from crashes — `docker stats` during boot showed CPU saturation (realtime 244%, studio 124%, pg_meta 90% simultaneously on the 4-vCPU VM; memory peaked under 1 GiB of 3.8). Container logs show services reaching readiness seconds *after* the CLI's fixed ~60-75s health window tears the stack down (`[db] health_timeout` covers only the db container). `--ignore-health-check` is the CLI's official flag for this ("Ignore unhealthy services and exit 0"): it skips the teardown and lets slow services finish booting. Because the flag also masks real failures, the health verification below is MANDATORY — never proceed to Step 5 without `ALL_HEALTHY`.
+
+Expected from the start command (first run pulls Docker images, takes minutes): a block ending with `API URL: http://127.0.0.1:54321`, `DB URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres`, `Studio URL: http://127.0.0.1:54323`, plus `anon key: eyJ...` and `service_role key: eyJ...`; a warning about unhealthy services is expected and fine at this point. If it fails with a Docker daemon error: `open -a Docker`, wait, retry. (With `[analytics] enabled = false` no `logflare`/`vector` containers start and Studio's log explorer is empty locally — expected.)
+
+Then verify every container actually reaches healthy (cold boot on this hardware needs 2-4 minutes past the CLI's window):
+
+```bash
+cd /Users/daodilyas/dev/iqra-portal
+for i in $(seq 1 30); do
+  sleep 10
+  STATUS=$(docker ps --filter "name=supabase_" --format '{{.Names}} {{.Status}}')
+  COUNT=$(printf '%s\n' "$STATUS" | grep -c 'Up' || true)
+  NOT_READY=$(printf '%s\n' "$STATUS" | grep -E '\(health: starting\)|\(unhealthy\)' || true)
+  if [ "$COUNT" -ge 10 ] && [ -z "$NOT_READY" ]; then echo ALL_HEALTHY; break; fi
+  echo "waiting ($COUNT up): $NOT_READY"
+done
+docker ps --filter "name=supabase_" --format '{{.Names}} {{.Status}}'
+```
+
+Expected: `ALL_HEALTHY` within ~5 minutes, and the final listing shows all 10 containers (db, kong, auth, rest, realtime, storage, pg_meta, studio, inbucket/mailpit, edge-runtime) as `Up ... (healthy)` with none `(unhealthy)` or `(health: starting)`. If any container is still not healthy when the loop ends: STOP — do not proceed to Step 5 — and report BLOCKED with that container's `docker logs --tail 50 <name>`.
 
 - [ ] **Step 5: Create .env.example (committed) and .env.local (not committed)**
 
