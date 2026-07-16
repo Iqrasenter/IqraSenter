@@ -371,6 +371,15 @@ enroll_enabled = true
 verify_enabled = true
 ```
 
+4. Find the `[analytics]` section (generated with `enabled = true`) and turn it off, leaving its other keys as generated:
+
+```toml
+[analytics]
+enabled = false
+```
+
+Amendment 2026-07-16 (documented deviation): this machine has 8 GiB host RAM and a ~3.8 GiB Docker Desktop VM. The local Logflare (`analytics`) and Vector containers are the heaviest in the stack and failed health checks on three consecutive `supabase start` runs, cascading to `realtime`/`storage` (which depend on Vector only while analytics is enabled). Phase 0 never uses local log analytics; this key affects the local stack only — cloud logging lives in the Supabase dashboard. Do NOT raise Docker Desktop's memory allocation instead: on an 8 GiB host that starves macOS.
+
 - [ ] **Step 4: Start the local stack**
 
 ```bash
@@ -378,7 +387,7 @@ cd /Users/daodilyas/dev/iqra-portal
 supabase start
 ```
 
-Expected (first run pulls Docker images, takes minutes): a block ending with `API URL: http://127.0.0.1:54321`, `DB URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres`, `Studio URL: http://127.0.0.1:54323`, plus `anon key: eyJ...` and `service_role key: eyJ...`. If it fails with a Docker daemon error: `open -a Docker`, wait, retry.
+Expected (first run pulls Docker images, takes minutes): a block ending with `API URL: http://127.0.0.1:54321`, `DB URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres`, `Studio URL: http://127.0.0.1:54323`, plus `anon key: eyJ...` and `service_role key: eyJ...`. If it fails with a Docker daemon error: `open -a Docker`, wait, retry. (With `[analytics] enabled = false` no `logflare`/`vector` containers start and Studio's log explorer is empty locally — expected; the remaining ~9 containers fit the ~3.8 GiB VM.)
 
 - [ ] **Step 5: Create .env.example (committed) and .env.local (not committed)**
 
