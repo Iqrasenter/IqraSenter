@@ -1464,7 +1464,7 @@ cd /Users/daodilyas/dev/iqra-portal
 supabase test db
 ```
 
-Expected: all 4 files pass — the tests were written to be seed-independent (temp-table snapshots, per-user scoped assertions, distinct UUID ranges).
+Expected: all 5 files pass (00 firewall + 01-04) — the tests were written to be seed-independent (temp-table snapshots, per-user scoped assertions, distinct UUID ranges).
 
 - [ ] **Step 5: Commit**
 
@@ -4506,7 +4506,7 @@ npm run test:api
 npm audit --audit-level=high
 ```
 
-Expected: every command exits 0 — typecheck silent, lint clean, all Vitest files pass, build succeeds, all four pgTAP files pass, the five API-wall tests pass, audit reports no high/critical advisories. This mirrors what CI runs plus `test:api`, which for now runs locally only (it needs the full auth stack, so `supabase start` must be running).
+Expected: every command exits 0 — typecheck silent, lint clean, all Vitest files pass, build succeeds, all five pgTAP files pass (00 firewall + 01-04), the five API-wall tests pass, audit reports no high/critical advisories. This mirrors what CI runs plus `test:api`, which for now runs locally only (it needs the full auth stack, so `supabase start` must be running).
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
