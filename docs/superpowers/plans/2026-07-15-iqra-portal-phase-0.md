@@ -1363,7 +1363,7 @@ git commit -m "feat: append-only audit log and single-row settings with RLS"
 **Files:**
 - Modify: `/Users/daodilyas/dev/iqra-portal/supabase/seed.sql` (replace the empty placeholder)
 
-Seeds run only on `supabase db reset` / `supabase start` against the LOCAL database. `supabase db push` applies migrations only — seeds never reach the cloud. The file also states this in its header. Password for all six: `test-passord-123`. `laererforelder@test.local` holds BOTH `teacher` and `parent` (exercises the role switcher).
+Seeds run on `supabase db reset` / `supabase start` against the LOCAL database. Cloud safety is a property of the DEFAULT invocations only: plain `supabase db push` applies migrations without seeds, but `db push --include-seed`, `supabase seed --linked`, and `db reset --linked --sql-paths ...` WOULD apply seeds to the linked cloud project — never run those here. The file states this (and the UUID-range reservation) in its header. Password for all six: `test-passord-123`. `laererforelder@test.local` holds BOTH `teacher` and `parent` (exercises the role switcher).
 
 - [ ] **Step 1: Write seed.sql**
 
@@ -1372,7 +1372,15 @@ Replace the contents of `/Users/daodilyas/dev/iqra-portal/supabase/seed.sql` wit
 ```sql
 -- ═══════════════════════════════════════════════════════════════════
 -- LOCAL-ONLY SEED. Runs on `supabase db reset` against the local stack.
--- Never applied in the cloud (`supabase db push` only runs migrations).
+-- Cloud safety is the DEFAULT-invocation behavior, not an absolute:
+-- plain `supabase db push` and plain `supabase seed` (--local default)
+-- never apply this file, but `db push --include-seed`,
+-- `supabase seed --linked` and `db reset --linked --sql-paths ...`
+-- WOULD seed the linked cloud project. NEVER run those against this
+-- project: this file creates pre-confirmed accounts with a published
+-- password, one of them admin.
+-- UUID prefixes 1-6 are reserved for seed users; pgTAP tests use
+-- a/b/c prefixes (supabase/tests/*.sql) — never overlap them.
 -- Six test users, password for all: test-passord-123
 --   admin@test.local           admin
 --   laerer@test.local          teacher
@@ -1384,19 +1392,25 @@ Replace the contents of `/Users/daodilyas/dev/iqra-portal/supabase/seed.sql` wit
 
 -- auth.users: the on_auth_user_created trigger auto-creates profiles,
 -- copying full_name from raw_user_meta_data. Token columns are set to ''
--- (not null) to avoid GoTrue scan errors on some versions.
+-- (not null) to avoid GoTrue scan errors on some versions. The metadata
+-- shape mirrors what a real GoTrue signup produces (sub/email/
+-- email_verified/phone_verified/full_name) so code reading
+-- user_metadata behaves the same against seeds as in production.
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-   confirmation_token, recovery_token, email_change_token_new, email_change)
+   confirmation_token, recovery_token, email_change_token_new,
+   email_change_token_current, email_change)
 select
   '00000000-0000-0000-0000-000000000000',
   u.id, 'authenticated', 'authenticated', u.email,
   extensions.crypt('test-passord-123', extensions.gen_salt('bf')),
   now(),
   '{"provider":"email","providers":["email"]}'::jsonb,
-  jsonb_build_object('full_name', u.full_name),
-  now(), now(), '', '', '', ''
+  jsonb_build_object('sub', u.id::text, 'email', u.email,
+                     'email_verified', true, 'phone_verified', false,
+                     'full_name', u.full_name),
+  now(), now(), '', '', '', '', ''
 from (values
   ('11111111-1111-1111-1111-111111111111'::uuid, 'admin@test.local',          'Amina Hassan'),
   ('22222222-2222-2222-2222-222222222222'::uuid, 'laerer@test.local',         'Leila Ahmed'),
@@ -1407,13 +1421,19 @@ from (values
 ) as u(id, email, full_name);
 
 -- auth.identities: required for email+password login with current GoTrue
--- (provider_id = user id for the email provider).
+-- (provider_id = user id for the email provider). identity_data mirrors
+-- the real signup shape. NOTE: this insert selects every @test.local user
+-- from the block above — a future persona on a DIFFERENT email domain
+-- would silently get no identity row and fail login; keep the domain or
+-- widen the filter.
 insert into auth.identities
   (id, user_id, provider_id, identity_data, provider,
    last_sign_in_at, created_at, updated_at)
 select
   gen_random_uuid(), u.id, u.id::text,
-  jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true),
+  jsonb_build_object('sub', u.id::text, 'email', u.email,
+                     'email_verified', true, 'phone_verified', false,
+                     'full_name', u.raw_user_meta_data->>'full_name'),
   'email', now(), now(), now()
 from auth.users u
 where u.email like '%@test.local';
@@ -4441,7 +4461,11 @@ oppdaterings-PR-er.
 1. Opprett organisasjon/prosjekt på supabase.com — **region `eu-north-1`
    (Stockholm)**. Ikke velg noe annet: EU-hosting er et krav (spec §3/§6).
 2. Koble repoet: `supabase link --project-ref <PROSJEKT-REF>`
-3. Send opp skjemaet: `supabase db push` (kjører kun migrasjoner — aldri seed).
+3. Send opp skjemaet: `supabase db push` — uten flagg kjører den kun
+   migrasjoner. ADVARSEL: kjør ALDRI `db push --include-seed`,
+   `supabase seed --linked` eller `db reset --linked --sql-paths ...`
+   mot dette prosjektet — de ville lagt de lokale testbrukerne (delt,
+   publisert passord, én av dem admin) inn i sky-prosjektet.
 4. I dashbordet: **Authentication → Multi-Factor** — bekreft at TOTP er på,
    og sjekk at prosjektets plannivå faktisk støtter TOTP-innrullering
    (CLI-malen hevder «Pro plan»; historisk er det bare telefon-MFA som er
