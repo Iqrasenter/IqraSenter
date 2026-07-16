@@ -1203,7 +1203,7 @@ grant select, insert on public.audit_log to service_role;
 -- existing ids and fail — an audit-suppression vector. Strip it.
 -- service_role keeps USAGE as belt and braces (identity inserts do not
 -- strictly require sequence privileges).
-revoke all on sequence public.audit_log_id_seq from anon, authenticated;
+revoke all on sequence public.audit_log_id_seq from anon, authenticated, service_role;
 grant usage on sequence public.audit_log_id_seq to service_role;
 
 -- Only admins may read the audit log.
