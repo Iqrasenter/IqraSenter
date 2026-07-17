@@ -3451,7 +3451,7 @@ cd /Users/daodilyas/dev/iqra-portal
 npm run typecheck && npm run test:api 2>&1 | tail -4
 ```
 
-Expected: typecheck silent; all 68 API tests still green (pure refactor).
+Expected: typecheck silent; all 69 API tests still green (pure refactor).
 
 - [ ] **Step 4: Write the failing module tests**
 
@@ -3711,8 +3711,14 @@ export async function adminProvisionUser(input: {
 /** Idempotent role grant (linking existing users as guardians/students). */
 export async function adminGrantRole(userId: string, role: Role): Promise<void> {
   const actorId = await requireAdminActor();
+  // z.guid(), not z.uuid(): z.uuid() enforces the RFC 9562/4122 variant
+  // nibble ([89abAB]), which the repo's own seed users fail by design
+  // (gotcha 13 — 11111111.../77777777... have no RFC-valid variant bits).
+  // z.guid() validates the same 8-4-4-4-12 hex shape without that
+  // constraint, so it accepts both seed fixtures and real gen_random_uuid()
+  // rows while still rejecting non-UUID-shaped input.
   const parsed = z
-    .object({ userId: z.uuid(), role: z.enum(ALL_ROLES) })
+    .object({ userId: z.guid(), role: z.enum(ALL_ROLES) })
     .safeParse({ userId, role });
   if (!parsed.success) {
     throw new Error('Ugyldig rolletildeling.');
@@ -3946,7 +3952,13 @@ export function firstIssue(error: z.ZodError): string {
   return error.issues[0]?.message ?? 'Ugyldig innsending.';
 }
 
-export const uuidField = z.uuid('Ugyldig id.');
+// z.guid(), not z.uuid(): z.uuid() (Zod v4) enforces the RFC 9562/4122
+// variant nibble, which the readable seed UUIDs (gotcha 13 — 11111111…,
+// fc000000…, fe000000…) do NOT satisfy, so z.uuid() would reject every seed
+// id and break these actions against the fixtures. z.guid() validates the
+// 8-4-4-4-12 hex shape without the variant constraint (accepts seed fixtures
+// AND real gen_random_uuid() rows), still rejecting non-UUID-shaped input.
+export const uuidField = z.guid('Ugyldig id.');
 
 const nameField = (message: string) =>
   z.string({ error: message }).trim().min(1, message).max(60, 'Maks 60 tegn.');
