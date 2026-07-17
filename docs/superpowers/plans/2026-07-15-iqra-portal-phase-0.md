@@ -3775,6 +3775,8 @@ git commit -m "feat: five role portals with layout guards, role switcher and hon
 
 Spec §8.1 requires every forbidden cell in §3's matrix to be attempted at BOTH walls, and §9 row 0 ships the harnesses in Phase 0. Wall 2 (RLS, SQL as each role) is the pgTAP suite from Tasks 4–5. This task is wall 1's twin: it executes the real `session.ts` guards and `loginAction` with forged inputs against the running local stack, signed in as the Task 6 seed users (password `test-passord-123`). Only the edges are mocked: `@/lib/supabase/server` is replaced by a factory returning a real anon-key client authenticated through GoTrue (so RLS still applies underneath), and `next/navigation`'s `redirect` throws `NEXT_REDIRECT:<path>`, making a guard's decision observable. **Every later phase adds its forbidden-cell tests to BOTH suites** — `supabase/tests/` and `tests/api/`. The suite needs the local stack with fresh seeds (`supabase start` + `supabase db reset` first); Task 15's README documents this.
 
+> **Amendment 2026-07-17 (pre-dispatch, ledger #8):** (a) The seed users deliberately have NO enrolled MFA factors — this suite proves the DENIAL side of the AAL2 wall: a genuine admin with the correct password is still refused by the quarantine while the session is AAL1, asserted as T12's typed `AdminAccessDenied` (new third describe block in Step 4). This works because `src/lib/admin/audit-log.ts` takes its user-session client from the same `@/lib/supabase/server` module this suite mocks; the positive AAL2 path is proven manually in Task 14 step 5 (TOTP enroll + verify). (b) The `@/lib/supabase/server` mock factory is TYPED — `Promise<typeof import('@/lib/supabase/server')>` — so export/signature drift in the real module breaks `npm run typecheck` (assignability of the harness client to the real return type was probe-verified 2026-07-17). The `next/navigation` mock stays deliberately partial: only `redirect` is consumed by the code under test, and its decisions are asserted at runtime via the thrown `NEXT_REDIRECT:` path.
+
 - [ ] **Step 1: Create a separate Vitest config for the API suite**
 
 The main `vitest.config.ts` only includes `src/**` and boots jsdom; this suite runs in node against real services and must never run inside plain `npm test` (it would fail whenever the stack is down). Create `/Users/daodilyas/dev/iqra-portal/vitest.config.api.ts`:
@@ -3908,17 +3910,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vi.mock calls are hoisted above the imports below. The factories load the
 // harness lazily (dynamic import) because hoisted factories cannot touch
 // top-level imports. `server-only` becomes a no-op outside RSC.
+// The supabase/server factory is TYPED (ledger #8): if the real module's
+// exports or createClient signature drift, `npm run typecheck` goes red.
+// next/navigation stays partial on purpose — only `redirect` is consumed,
+// and every guard decision is asserted at runtime via NEXT_REDIRECT.
 vi.mock('server-only', () => ({}));
-vi.mock('@/lib/supabase/server', async () => {
-  const { createServerClientMock } = await import('./harness');
-  return { createClient: createServerClientMock };
-});
+vi.mock(
+  '@/lib/supabase/server',
+  async (): Promise<typeof import('@/lib/supabase/server')> => {
+    const { createServerClientMock } = await import('./harness');
+    return { createClient: createServerClientMock };
+  },
+);
 vi.mock('next/navigation', async () => {
   const { redirectMock } = await import('./harness');
   return { redirect: redirectMock };
 });
 
 import { loginAction } from '@/app/logg-inn/actions';
+import { AdminAccessDenied, adminListAuditLog } from '@/lib/admin/audit-log';
 import { getSessionRoles, requireRole } from '@/lib/dal/session';
 import { signInAs, signOut } from './harness';
 
@@ -3966,19 +3976,33 @@ describe('wall 1: getSessionRoles under RLS', () => {
     expect([...roles].sort()).toEqual(['parent', 'teacher']);
   });
 });
+
+describe('wall 1: the admin quarantine denies staff below AAL2 (spec §6/§8.1)', () => {
+  it('refuses the audit log to a genuine admin on a password-only (AAL1) session', async () => {
+    signInAs('admin@test.local');
+    await expect(adminListAuditLog(5)).rejects.toBeInstanceOf(AdminAccessDenied);
+    await expect(adminListAuditLog(5)).rejects.toThrow(
+      'Krever bekreftet to-faktor (AAL2).',
+    );
+  });
+});
 ```
 
 - [ ] **Step 5: Run the suite against the local stack**
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-supabase start
+# Stack is normally already running — check `docker ps` first. If cold, use the
+# amended Task 3 Step 4 pattern (supabase start --ignore-health-check + the
+# all-healthy wait loop), NEVER plain `supabase start` (header gotcha 3).
 supabase db reset
 npm run test:api
 npm test && npm run typecheck
 ```
 
-Expected: the API suite prints `Test Files  1 passed` and `Tests  5 passed` — the two denial tests prove the wall by asserting on the thrown `NEXT_REDIRECT` path that only the guard produces. `npm test` stays green and unchanged (the suites do not overlap), and typecheck is silent.
+Per header gotcha 3: `supabase db reset` may exit 1 in its final `Restarting containers...` phase even though `Applying migration ...`/`Seeding data ...` all succeeded — if that happens do NOT re-run the reset; run the all-healthy wait loop and proceed (`npm run test:api` is the real verification).
+
+Expected: the API suite prints `Test Files  1 passed` and `Tests  6 passed` — the denial tests prove the walls: two by the thrown `NEXT_REDIRECT` path that only the guard produces, one by the typed `AdminAccessDenied` the quarantine throws for an AAL1 session. `npm test` stays green and unchanged (the suites do not overlap), and typecheck is silent.
 
 - [ ] **Step 6: Commit**
 
