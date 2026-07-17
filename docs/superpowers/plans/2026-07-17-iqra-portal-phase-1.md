@@ -1999,7 +1999,22 @@ import {
   listMyTeachingClasses,
 } from '@/lib/dal/classes';
 import { listUsersWithRole } from '@/lib/dal/users';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/lib/supabase/database.types';
+import { getPublicEnv } from '@/lib/env';
 import { signInAs, signInAsAAL2, signOut } from './harness';
+
+// Test-scaffolding service client (same sanction as the harness's AAL2
+// factor cleanup): sets up the admin+teacher dual-role case that no seed
+// user covers, then tears it down. Never the code under test.
+function scaffoldingServiceClient() {
+  const env = getPublicEnv();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY mangler i miljøet.');
+  return createSupabaseClient<Database>(env.NEXT_PUBLIC_SUPABASE_URL, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 beforeEach(() => {
   signOut();
@@ -2089,6 +2104,43 @@ describe('wall 1: teaching classes are relationship-scoped', () => {
     await expect(listMyTeachingClasses()).rejects.toThrow(
       'NEXT_REDIRECT:/mfa/registrer',
     );
+  });
+
+  // The `.eq('teacher_id', user.id)` in listMyTeachingClasses is load-bearing
+  // ONLY for a caller who is BOTH admin and teacher: RLS
+  // (class_teachers_select_admin_or_own_class = has_role(admin) OR
+  // teaches_class) already scopes a pure teacher, but lets a dual-role admin
+  // read every class's teacher rows — so without the .eq that user's "my
+  // classes" would over-return every class. No seed user holds both roles, so
+  // this grants admin@ the teacher role + one class link, verifies the scope,
+  // and tears it down. (Same-file, so it never races listUsersWithRole above.)
+  it('scopes a dual-role admin+teacher to only the class they teach (.eq guard)', async () => {
+    const ADMIN_ID = '11111111-1111-1111-1111-111111111111';
+    const KLASSE1 = 'fc000000-0000-0000-0000-000000000001';
+    const service = scaffoldingServiceClient();
+    await service.from('user_roles').insert({ user_id: ADMIN_ID, role: 'teacher' });
+    await service
+      .from('class_teachers')
+      .insert({ class_id: KLASSE1, teacher_id: ADMIN_ID });
+    try {
+      await signInAsAAL2('admin@test.local');
+      const classes = await listMyTeachingClasses();
+      // Without the .eq this is ['Klasse 1','Klasse 1','Klasse 3'] (every
+      // class_teachers row visible to admin); the strong toEqual catches both
+      // the over-return and the duplicate.
+      expect(classes.map((c) => c.name)).toEqual(['Klasse 1']);
+    } finally {
+      await service
+        .from('class_teachers')
+        .delete()
+        .eq('class_id', KLASSE1)
+        .eq('teacher_id', ADMIN_ID);
+      await service
+        .from('user_roles')
+        .delete()
+        .eq('user_id', ADMIN_ID)
+        .eq('role', 'teacher');
+    }
   });
 });
 
@@ -2562,7 +2614,7 @@ git add src/lib/dal/ 'src/app/(portal)/admin/layout.tsx' 'src/app/(portal)/laere
 git commit -m "feat: staff AAL2 wall-1 guard and structure DAL with relationship-scoped reads"
 ```
 
-Expected: typecheck/lint clean; **51** test:api (36 + 15 new); 75 Vitest untouched. If the embedded `terms(name)`/`profiles(full_name)` selects type-error, re-run `npm run db:types` (Task 5 must have landed).
+Expected: typecheck/lint clean; **52** test:api (36 + 16 new); 75 Vitest untouched. If the embedded `terms(name)`/`profiles(full_name)` selects type-error, re-run `npm run db:types` (Task 5 must have landed).
 
 ---
 
@@ -3156,7 +3208,7 @@ git add src/lib/dal/students.ts tests/api/school-core.test.ts
 git commit -m "feat: students DAL with guardian, roster and registry reads at wall 1"
 ```
 
-Expected: **67** test:api (51 + 16). The two Bergen-critical tests to eyeball in the output: `never returns another family's student ids` and `does NOT give the dual-role user her child's class as teacher`.
+Expected: **68** test:api (52 + 16). The two Bergen-critical tests to eyeball in the output: `never returns another family's student ids` and `does NOT give the dual-role user her child's class as teacher`.
 
 ---
 
@@ -3700,7 +3752,7 @@ git add supabase/migrations/*_admin_user_lookup.sql supabase/tests/10_admin_look
 git commit -m "feat: admin-module user provisioning, role grants and service-only email lookup"
 ```
 
-Expected: **78** test:api (67 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
+Expected: **79** test:api (68 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
 
 ---
 
@@ -4771,7 +4823,7 @@ git add src/lib/validation/ src/lib/dates.ts src/lib/dates.test.ts 'src/app/(por
 git commit -m "feat: validated admin actions for terms, subjects, classes and schedule"
 ```
 
-Expected: ~93 Vitest; **89** test:api (78 + 11). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
+Expected: ~93 Vitest; **90** test:api (79 + 11). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
 
 ---
 
@@ -5331,7 +5383,7 @@ git add src/lib/validation/school.ts 'src/app/(portal)/admin/elever/actions.ts' 
 git commit -m "feat: registry actions for students, guardians, enrollment and student logins"
 ```
 
-Expected: **94** test:api (89 + 5 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
+Expected: **95** test:api (90 + 5 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
 
 ---
 
@@ -7707,7 +7759,7 @@ git add src/lib/dal/dashboard.ts 'src/app/(portal)/forelder/page.tsx' 'src/app/(
 git commit -m "feat: parent, student and admin dashboards on live registry data"
 ```
 
-Expected: **96** test:api (94 + 2).
+Expected: **97** test:api (95 + 2).
 
 ---
 
@@ -7723,7 +7775,7 @@ npm test -- --run 2>&1 | tail -3        # ~96 unit tests
 npm run build 2>&1 | tail -6            # all routes compile
 supabase db reset 2>&1 | tail -4        # migrations 7 + seeds apply
 supabase test db 2>&1 | tail -14        # 177 pgTAP across 11 files
-npm run test:api 2>&1 | tail -4         # 96 live wall-1 tests
+npm run test:api 2>&1 | tail -4         # 97 live wall-1 tests
 npm audit --audit-level=high            # exit 0
 git log --oneline main..feat/phase-1 | wc -l   # 16 commits (one per task)
 ```
