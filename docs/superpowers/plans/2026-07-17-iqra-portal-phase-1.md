@@ -141,7 +141,7 @@ Create `supabase/tests/05_audit_namespace.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(7);
+select plan(9);
 
 -- Setup: an ordinary user and an ADMIN — the namespace guard must reject
 -- both (admin-authoritative entries only ever come from the service-role
@@ -169,6 +169,17 @@ select throws_ok(
   $$ select private.audit('system.retention_run', 'audit_log') $$,
   '42501', null,
   'private.audit rejects the reserved system.* namespace');
+-- Normalization-agnostic boundary (security review F1): case-folded and
+-- leading-whitespace variants must also be rejected, so the guard never
+-- depends on a downstream consumer normalizing the same way.
+select throws_ok(
+  $$ select private.audit('ADMIN.spoofed_view', 'audit_log') $$,
+  '42501', null,
+  'private.audit rejects a case-variant of the reserved namespace');
+select throws_ok(
+  $$ select private.audit('  admin.spoofed_view', 'audit_log') $$,
+  '42501', null,
+  'private.audit rejects a leading-whitespace variant of the reserved namespace');
 select lives_ok(
   $$ select private.audit('students.update', 'students', 'a5-entity') $$,
   'ordinary namespaced actions still pass');
@@ -249,7 +260,13 @@ security definer
 set search_path = ''
 as $$
 begin
-  if p_action like 'admin.%' or p_action like 'system.%' then
+  -- Normalization-agnostic boundary (T1 security review F1): fold case and
+  -- skip leading whitespace so `Admin.`, `ADMIN.`, ` admin.` and tab-prefixed
+  -- lookalikes are ALSO rejected. The guard must not depend on a downstream
+  -- consumer matching the exact same way — a viewer that ilike/lower/trims
+  -- before deciding authority would otherwise promote a spoofed variant.
+  -- lower() and ~ are pg_catalog (safe under search_path='').
+  if lower(p_action) ~ '^[[:space:]]*(admin|system)\.' then
     raise exception 'reservert navnerom for revisjonslogg: %', p_action
       using errcode = '42501';
   end if;
@@ -266,10 +283,12 @@ grant execute on function private.audit(text, text, text, jsonb) to authenticate
 comment on function private.audit(text, text, text, jsonb) is
   'Sanctioned app-role write path to audit_log. TRUST MODEL: actor_id is
    authoritative (pinned to auth.uid()); action/entity/entity_id/meta are
-   caller-asserted EXCEPT the namespace: actions starting admin. or system.
-   are REJECTED here (42501), so entries in those namespaces are
-   authoritative — they can only come from the service-role admin module
-   or migrations.';
+   caller-asserted EXCEPT the namespace: actions that normalize (case-fold +
+   leading-whitespace-skip) to an admin. or system. prefix are REJECTED here
+   (42501), so entries in those namespaces are authoritative — they can only
+   come from the service-role admin module or migrations. Phase 7 consumers
+   MUST still classify with a case-sensitive, anchored predicate
+   (action LIKE ''admin.%''), never ILIKE/lower/trim.';
 ```
 
 - [ ] **Step 4: Apply and verify GREEN**
@@ -280,7 +299,7 @@ supabase db reset 2>&1 | tail -5
 supabase test db 2>&1 | tail -10
 ```
 
-Expected: reset applies 3 migrations (gotcha 3 if exit 1 in the restart phase); `supabase test db` shows all 6 files passing — `05_audit_namespace` 7/7. Total pgTAP: **72 tests** (65 + 7).
+Expected: reset applies 3 migrations (gotcha 3 if exit 1 in the restart phase); `supabase test db` shows all 6 files passing — `05_audit_namespace` 9/9. Total pgTAP: **74 tests** (65 + 9).
 
 - [ ] **Step 5: Update the stale comment in the admin module**
 
@@ -594,7 +613,7 @@ supabase db reset 2>&1 | tail -5
 supabase test db 2>&1 | tail -12
 ```
 
-Expected: all 7 files pass — `06` 22/22; the grant firewall (`00`) still passes, proving the revoke/grant layer is complete. Total pgTAP: **94**.
+Expected: all 7 files pass — `06` 22/22; the grant firewall (`00`) still passes, proving the revoke/grant layer is complete. Total pgTAP: **96**.
 
 - [ ] **Step 5: Commit**
 
@@ -942,7 +961,7 @@ supabase db reset 2>&1 | tail -5
 supabase test db 2>&1 | tail -12
 ```
 
-Expected: all 8 files pass — `07` 25/25, firewall still green. Total pgTAP: **119**.
+Expected: all 8 files pass — `07` 25/25, firewall still green. Total pgTAP: **121**.
 
 - [ ] **Step 5: Commit**
 
@@ -1692,7 +1711,7 @@ supabase db reset 2>&1 | tail -5
 supabase test db 2>&1 | tail -14
 ```
 
-Expected: all 10 files pass — `08` 31/31, `09` 18/18, grant firewall still green (it now also sweeps the three new tables). Total pgTAP: **168**.
+Expected: all 10 files pass — `08` 31/31, `09` 18/18, grant firewall still green (it now also sweeps the three new tables). Total pgTAP: **170**.
 
 - [ ] **Step 6: Full local gate + commit**
 
@@ -1884,7 +1903,7 @@ git add supabase/seed.sql src/lib/supabase/database.types.ts tests/api/harness.t
 git commit -m "feat: seed school core fixtures, second family, regenerated db types"
 ```
 
-Expected: 168 pgTAP; 75 Vitest; **36** test:api (32 + 4 new denied cells). If `test:api` fails on login for `forelder2@test.local`, the identities insert didn't cover the new user — re-check Step 2.
+Expected: 170 pgTAP; 75 Vitest; **36** test:api (32 + 4 new denied cells). If `test:api` fails on login for `forelder2@test.local`, the identities insert didn't cover the new user — re-check Step 2.
 
 ---
 
@@ -3184,7 +3203,7 @@ supabase test db 2>&1 | tail -14
 npm run db:types && npm run typecheck
 ```
 
-Expected: all 11 pgTAP files pass — total **175** (168 + 7); `database.types.ts` gains `admin_lookup_user_by_email` under `Functions`; typecheck silent.
+Expected: all 11 pgTAP files pass — total **177** (170 + 7); `database.types.ts` gains `admin_lookup_user_by_email` under `Functions`; typecheck silent.
 
 - [ ] **Step 3: Extract the quarantine plumbing**
 
@@ -3614,7 +3633,7 @@ git add supabase/migrations/*_admin_user_lookup.sql supabase/tests/10_admin_look
 git commit -m "feat: admin-module user provisioning, role grants and service-only email lookup"
 ```
 
-Expected: **78** test:api (67 + 11); 75 Vitest; 175 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
+Expected: **78** test:api (67 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
 
 ---
 
@@ -7636,7 +7655,7 @@ npm run lint
 npm test -- --run 2>&1 | tail -3        # ~96 unit tests
 npm run build 2>&1 | tail -6            # all routes compile
 supabase db reset 2>&1 | tail -4        # migrations 7 + seeds apply
-supabase test db 2>&1 | tail -14        # 175 pgTAP across 11 files
+supabase test db 2>&1 | tail -14        # 177 pgTAP across 11 files
 npm run test:api 2>&1 | tail -4         # 96 live wall-1 tests
 npm audit --audit-level=high            # exit 0
 git log --oneline main..feat/phase-1 | wc -l   # 16 commits (one per task)
@@ -7684,6 +7703,7 @@ Expected: CI green on the branch (typecheck/lint/unit/build + pgTAP jobs; `test:
 6. **Teacher historical visibility**: `teaches_student` requires an ACTIVE enrollment, so teachers lose student access at unenrollment. Phase 2 (attendance history) must decide historical-roster semantics explicitly.
 7. **T12 minors still open**: skip-to-main link; 5-portal-layout factory; 320px header-wrap polish. (The pill-link primitive CLOSED via `PillLink` in Task 11.)
 8. **No pagination** on registry/class lists — right for a few hundred students; revisit only if the school grows past ~1k rows per list.
+9. **Phase 7 audit-viewer consumer contract (BINDING, from T1 security review F1):** the viewer/alerting MUST classify the reserved namespace with a **case-sensitive, anchored** predicate only — `action LIKE 'admin.%'` / `action LIKE 'system.%'`. Never `ILIKE`, `lower()`/`upper()`, `trim()`, or any UI case-collapsing for the authority decision. The T1 guard is now normalization-agnostic (rejects case/whitespace variants too), so this is belt-and-braces — but it must be stated in the Phase 7 plan, not assumed.
 
 ## Coverage self-check (spec §9 Phase 1: «Terms, classes, subjects, students, guardians, enrollment; admin registry + one-glance page»)
 
