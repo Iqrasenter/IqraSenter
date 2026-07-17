@@ -869,8 +869,9 @@ grant execute on function private.teaches_class(uuid, uuid) to authenticated;
 
 -- ── Grant layer (wall 2a, header gotcha 9) ──────────────────────────
 -- class_teachers/class_subjects rows are add/remove only (composite-PK link
--- rows) — no UPDATE verb exists for anyone but service_role. Schedule slots
--- are likewise replaced, never edited in place.
+-- rows) — no UPDATE verb is granted to anyone, not even service_role (they
+-- are immutable below superuser). Schedule slots are likewise replaced,
+-- never edited in place.
 revoke all on table public.classes        from anon, authenticated, service_role;
 revoke all on table public.class_teachers from anon, authenticated, service_role;
 revoke all on table public.class_subjects from anon, authenticated, service_role;
