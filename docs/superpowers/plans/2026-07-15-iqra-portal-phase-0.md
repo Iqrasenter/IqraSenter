@@ -3696,6 +3696,7 @@ git commit -m "test: adversarial API-wall suite proving DAL guards and login val
 
 **Files:**
 - Create: `/Users/daodilyas/dev/iqra-portal/src/proxy.ts`
+- Modify: `/Users/daodilyas/dev/iqra-portal/src/lib/supabase/middleware.ts` (contract docstring only — Step 1b, from the 2026-07-17 T9 review)
 
 Next.js 16 renamed `middleware.ts` to `proxy.ts`; the exported function is named `proxy` (verified against Next 16 docs). Policy (spec §6): every request refreshes the session; logged-out users only reach `/logg-inn`; staff (admin/teacher/economy) below AAL2 are forced to `/mfa/registrer` (no factor) or `/mfa/verifiser` (factor enrolled, unverified). Parents/students are never asked to enroll in v1. The pure decision logic (`mfaGate`, `hasStaffRole`) is already unit-tested in Task 10 — this file only wires it to requests.
 
@@ -3713,11 +3714,28 @@ const DENIED_PATH = '/ingen-tilgang';
 const MFA_ENROLL_PATH = '/mfa/registrer';
 const MFA_VERIFY_PATH = '/mfa/verifiser';
 
-function redirectTo(request: NextRequest, pathname: string) {
+// Headers @supabase/ssr sets alongside auth cookies so a response that
+// carries a session token is never cached and replayed to another user.
+const CACHE_HEADERS = ['cache-control', 'pragma', 'expires'];
+
+// CRITICAL: a redirect built from scratch drops any session cookie that
+// loadSession refreshed during THIS request. Refresh-token rotation is on
+// (supabase/config.toml), so a dropped refresh leaves the browser holding a
+// token the server has already rotated away — the next request fails auth
+// and the user is logged out. Worst on the staff path, which redirects on
+// every request until AAL2. So every redirect carries getResponse()'s
+// cookies plus the cache headers (never the internal x-middleware-* ones).
+function redirectTo(request: NextRequest, pathname: string, base: NextResponse) {
   const url = request.nextUrl.clone();
   url.pathname = pathname;
   url.search = '';
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  base.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+  for (const name of CACHE_HEADERS) {
+    const value = base.headers.get(name);
+    if (value) response.headers.set(name, value);
+  }
+  return response;
 }
 
 export async function proxy(request: NextRequest) {
@@ -3729,11 +3747,11 @@ export async function proxy(request: NextRequest) {
 
   if (!user) {
     if (path === LOGIN_PATH) return getResponse();
-    return redirectTo(request, LOGIN_PATH);
+    return redirectTo(request, LOGIN_PATH, getResponse());
   }
 
   if (path === LOGIN_PATH) {
-    return redirectTo(request, '/');
+    return redirectTo(request, '/', getResponse());
   }
 
   // Staff must hold AAL2 sessions (spec §6). Roles are read under RLS
@@ -3744,7 +3762,7 @@ export async function proxy(request: NextRequest) {
     .select('role')
     .eq('user_id', user.id);
   if (rolesError) {
-    return redirectTo(request, DENIED_PATH);
+    return redirectTo(request, DENIED_PATH, getResponse());
   }
   const roles = (roleRows ?? []).map((row) => row.role);
 
@@ -3752,14 +3770,14 @@ export async function proxy(request: NextRequest) {
     const { data: aal, error: aalError } =
       await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (aalError) {
-      return redirectTo(request, DENIED_PATH);
+      return redirectTo(request, DENIED_PATH, getResponse());
     }
     const gate = mfaGate({ currentLevel: aal?.currentLevel ?? null, nextLevel: aal?.nextLevel ?? null });
     if (gate === 'enroll' && path !== MFA_ENROLL_PATH) {
-      return redirectTo(request, MFA_ENROLL_PATH);
+      return redirectTo(request, MFA_ENROLL_PATH, getResponse());
     }
     if (gate === 'verify' && path !== MFA_VERIFY_PATH) {
-      return redirectTo(request, MFA_VERIFY_PATH);
+      return redirectTo(request, MFA_VERIFY_PATH, getResponse());
     }
   }
 
@@ -3775,6 +3793,32 @@ export const config = {
 };
 ```
 
+- [ ] **Step 1b: Correct the middleware.ts contract docstring**
+
+The T9-era docstring in `src/lib/supabase/middleware.ts` advised copying `getResponse()`'s cookies AND *all* headers onto a redirect. That is unsafe — `NextResponse.next({ request })` carries internal `x-middleware-*` headers that must never land on a redirect. `src/proxy.ts` (Step 1) implements the correct pattern; align the contract doc to it. Replace exactly:
+
+```ts
+ * CONTRACT FOR CALLERS (Task 13): every response returned from the proxy —
+ * including redirects — must carry `getResponse()`'s cookies AND headers.
+ * A bare `NextResponse.redirect(...)` built from scratch silently drops a
+ * token refresh that happened during this very request. Copy them over:
+ *   const redirect = NextResponse.redirect(url);
+ *   getResponse().cookies.getAll().forEach((c) => redirect.cookies.set(c));
+ *   getResponse().headers.forEach((v, k) => redirect.headers.set(k, v));
+```
+
+with:
+
+```ts
+ * CONTRACT FOR CALLERS (Task 13): every response returned from the proxy —
+ * including redirects — must carry `getResponse()`'s session cookies plus
+ * the cache-control/pragma/expires headers @supabase/ssr sets when it
+ * writes auth cookies. A bare `NextResponse.redirect(...)` drops the token
+ * refresh that happened during this very request. Copy cookies and those
+ * named headers ONLY — never the internal x-middleware-* headers. See
+ * `src/proxy.ts` `redirectTo` for the canonical implementation.
+```
+
 - [ ] **Step 2: Verify typecheck and build**
 
 ```bash
@@ -3786,7 +3830,7 @@ Expected: both green; the build output lists `Proxy (middleware)` (or an `ƒ Pro
 
 - [ ] **Step 3: Verify the gate over HTTP (logged out)**
 
-With `supabase start` running, start the dev server, then in a second terminal:
+With the local stack already running (gotcha 3 — never plain `supabase start`), start the dev server, then in a second terminal:
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
@@ -3816,7 +3860,7 @@ Expected:
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-git add src/proxy.ts
+git add src/proxy.ts src/lib/supabase/middleware.ts
 git commit -m "feat: enforce AAL2 for staff roles in the request proxy"
 ```
 
