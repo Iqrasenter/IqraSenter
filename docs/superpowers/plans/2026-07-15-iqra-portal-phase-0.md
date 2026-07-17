@@ -4257,7 +4257,7 @@ Create `/Users/daodilyas/dev/iqra-portal/src/app/mfa/registrer/EnrollForm.tsx`:
 ```tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
@@ -4273,14 +4273,19 @@ export function EnrollForm() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const startedRef = useRef(false);
 
   useEffect(() => {
+    // enroll() creates a real server-side factor — not idempotent. StrictMode
+    // double-invokes effects in dev, so guard with a single-flight ref to
+    // create exactly one factor (and one QR code), not two.
+    if (startedRef.current) return;
+    startedRef.current = true;
     const supabase = createClient();
-    let cancelled = false;
 
     async function enroll() {
-      // Clean up abandoned unverified factors from earlier visits, so
-      // re-opening this page always yields one fresh QR code.
+      // Clean up abandoned unverified factors from earlier visits, so the
+      // page yields one fresh QR code.
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const stale =
         factors?.all.filter(
@@ -4295,7 +4300,6 @@ export function EnrollForm() {
         factorType: 'totp',
         friendlyName: `IQRA portal ${new Date().toISOString()}`,
       });
-      if (cancelled) return;
       if (enrollError || !data) {
         setError('Kunne ikke starte oppsettet. Last siden på nytt og prøv igjen.');
         return;
@@ -4306,9 +4310,6 @@ export function EnrollForm() {
     }
 
     void enroll();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -4344,7 +4345,7 @@ export function EnrollForm() {
 
   if (!qrCode) {
     return (
-      <div className="flex flex-col gap-4" aria-busy="true">
+      <div className="flex flex-col gap-4" aria-busy={!error}>
         <Skeleton className="mx-auto size-44" />
         <Skeleton className="h-11 w-full" />
         {error ? (
@@ -4370,7 +4371,7 @@ export function EnrollForm() {
       {secret ? (
         <p className="text-sm text-ink/70">
           Kan du ikke skanne? Skriv inn nøkkelen manuelt:{' '}
-          <code className="font-medium break-all text-ink">{secret}</code>
+          <code className="font-mono font-medium break-all text-ink">{secret}</code>
         </p>
       ) : null}
       <Field label="Kode fra appen" htmlFor="kode" error={error ?? undefined}>
@@ -4387,7 +4388,7 @@ export function EnrollForm() {
           aria-describedby={error ? 'kode-feil' : undefined}
         />
       </Field>
-      <Button type="submit" loading={submitting} disabled={code.trim().length !== 6}>
+      <Button type="submit" loading={submitting} disabled={!/^\d{6}$/.test(code.trim())}>
         Bekreft
       </Button>
     </form>
@@ -4504,7 +4505,7 @@ export function VerifyForm() {
           aria-describedby={error ? 'kode-feil' : undefined}
         />
       </Field>
-      <Button type="submit" loading={submitting} disabled={code.trim().length !== 6}>
+      <Button type="submit" loading={submitting} disabled={!/^\d{6}$/.test(code.trim())}>
         Bekreft
       </Button>
     </form>
@@ -4781,6 +4782,8 @@ describe('wall 1: the admin quarantine at AAL2 (closes the surviving-mutant gap)
 ```
 
 Run `npm run test:api` — expect `Test Files 1 passed`, `Tests 32 passed`. (Runtime grows a little; the two AAL2 tests each do an enroll/verify round-trip. If either AAL2 test ever fails on a fresh checkout, confirm the stack is up and seeds are fresh — the harness throws a Norwegian diagnostic naming the failed MFA step.)
+
+> **Post-review fixes 2026-07-17 (design/quality review; already folded into the Step 1/3 blocks above):** (1) `EnrollForm` guards enrollment with a `useRef` single-flight instead of a cleanup `cancelled` flag — the old flag guarded state updates but not the network call, so React StrictMode's dev double-invoke created TWO server-side factors; the ref creates exactly one (controller-verified live: one `unverified` row in `auth.mfa_factors` after a fresh enroll page load). (2) `aria-busy={!error}` (was hardcoded `"true"`, so the skeleton/error branch announced "busy" forever on enroll failure). (3) the manual-entry secret uses `font-mono` (disambiguates 1/I/l, 0/O for a hand-transcribed key). (4) both code inputs gate submit on `!/^\d{6}$/.test(code.trim())` (digit-ness, not just length). Deferred to the ledger (Minor RECOMMENDATIONs): in-app retry for enroll-init failure; `challengeAndVerify` consolidation (kept separate to preserve the challenge-vs-verify error distinction); `Promise.all` on stale-factor cleanup (0–1 items); skeleton reserving all four layout chunks; `/mfa/registrer` redirecting an already-AAL2 session away; component tests for the two forms (matches the LoginForm no-component-test precedent).
 
 - [ ] **Step 4: Verify typecheck, tests, build**
 
