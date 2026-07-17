@@ -4916,6 +4916,8 @@ curl -sI http://localhost:3000/logg-inn | grep -i -e content-security-policy -e 
 
 Expected: all three headers print; the CSP line contains `default-src 'self'` and the local Supabase URL (`http://127.0.0.1:54321`) inside `connect-src`. Log in as `forelder@test.local` to confirm auth still works under the CSP, then stop the dev server.
 
+> **Post-review 2026-07-17 (Fable-5 security review, ✅ no defects):** the production CSP was exercised against a real prod build (login/logout/AAL2 gate/MFA-enroll incl. the data: QR) with ZERO violations; the prod bundle contains no runtime code-evaluation. Two recommendations folded in below: (Finding 2) the `app` job gains an `npm run build` step so a broken build fails CI, not only the Vercel deploy (verified locally to pass with placeholder public env); (Finding 7) the README's «blokkerer merge» claim is corrected to note GitHub branch protection must be enabled for CI to gate merges. **Decision (Finding 1): keep the CSP strict-everywhere — do NOT add a dev-only `'unsafe-eval'` carve-out** (the dev-mode CSP console warnings come from React Fast Refresh and are React-scoped to development; the shipped production bundle never evaluates code at runtime; strict-in-dev keeps dev exercising the real policy and prevents an env-gate typo shipping `'unsafe-eval'` to prod; if ever added, require a unit test asserting the prod CSP omits `'unsafe-eval'`). Ledgered (Phase 7 / pre-real-data): fail the prod build on missing `NEXT_PUBLIC_SUPABASE_URL` (F3); document the HSTS-preload apex-submission caveat (F4); add `object-src 'none'`/`frame-src 'none'` in the nonce rework (F5); pin the Supabase CLI version in CI (F6); scope the Vercel Preview service-role key before real data (F8).
+
 - [ ] **Step 2: Create the CI workflow**
 
 Create `/Users/daodilyas/dev/iqra-portal/.github/workflows/ci.yml`:
@@ -4944,6 +4946,13 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # Compile + prerender check so a broken build fails CI, not only the
+      # Vercel deploy. Placeholder public env — this build is never deployed;
+      # real values come from the Vercel project env.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
       # Supply-chain gate (spec §6): fail on known high/critical advisories.
       - run: npm audit --audit-level=high
 
@@ -5179,10 +5188,12 @@ test-oppsett, for å nullstille MFA-faktorer). Den nøkkelen i `.env.local`
 skal ALLTID være den lokale demo-nøkkelen fra `supabase status` — aldri et
 ekte prosjekts service_role-nøkkel.
 
-CI (`.github/workflows/ci.yml`) kjører alt over pluss `npm audit` og blokkerer
-merge ved feil; unntaket er `test:api`, som foreløpig kjøres lokalt fordi den
-trenger hele auth-stacken. Dependabot (`.github/dependabot.yml`) åpner ukentlige
-oppdaterings-PR-er.
+CI (`.github/workflows/ci.yml`) kjører alt over pluss `npm run build` og
+`npm audit`. For at en feilende sjekk faktisk skal blokkere merge må
+grenbeskyttelse på `main` slås på i GitHub (Settings → Branches → krev at
+CI-sjekkene passerer). Unntaket er `test:api`, som foreløpig kjøres lokalt
+fordi den trenger hele auth-stacken. Dependabot (`.github/dependabot.yml`)
+åpner ukentlige oppdaterings-PR-er.
 
 ## Skyoppsett (engangs, manuelle steg)
 
