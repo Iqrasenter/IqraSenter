@@ -2657,6 +2657,8 @@ git commit -m "feat: pure role and MFA gate policy with decision-table tests"
 - Create: `/Users/daodilyas/dev/iqra-portal/src/lib/dal/settings.ts`
 - Create: `/Users/daodilyas/dev/iqra-portal/src/lib/admin/audit-log.ts`
 - Create: `/Users/daodilyas/dev/iqra-portal/src/app/logg-inn/actions.ts`
+- Create: `/Users/daodilyas/dev/iqra-portal/src/app/logg-inn/actions.test.ts` (Step 5b, 2026-07-17 review)
+- Create: `/Users/daodilyas/dev/iqra-portal/src/lib/admin/audit-log.test.ts` (Step 5b, 2026-07-17 review)
 - Create: `/Users/daodilyas/dev/iqra-portal/src/app/logg-inn/LoginForm.tsx`
 - Create: `/Users/daodilyas/dev/iqra-portal/src/app/logg-inn/page.tsx`
 - Create: `/Users/daodilyas/dev/iqra-portal/src/app/ingen-tilgang/page.tsx`
@@ -2685,7 +2687,12 @@ export const getSessionUser = cache(async (): Promise<User | null> => {
   return user;
 });
 
-/** The caller's roles, read under RLS (policy only exposes own rows). */
+/**
+ * The caller's OWN roles. NB: the RLS policy is permissive for admins
+ * (own OR has_role(admin)), so for an admin it would expose EVERY user's
+ * roles — the `.eq('user_id', ...)` below is what guarantees own-rows-only.
+ * Never drop it trusting RLS to scope; that would union all users' roles.
+ */
 export const getSessionRoles = cache(async (): Promise<Role[]> => {
   const user = await getSessionUser();
   if (!user) return [];
@@ -2765,13 +2772,18 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getPublicEnv } from '@/lib/env';
 import { getServiceRoleKey } from '@/lib/env.server';
 import { getSessionUser } from '@/lib/dal/session';
+import { createClient as createUserClient } from '@/lib/supabase/server';
 import type { Database } from '@/lib/supabase/database.types';
 
 /**
  * QUARANTINE (spec §3/§6): src/lib/admin/ is the ONLY place allowed to use
- * the service-role key. Contract for every exported function:
- *   1. Re-verify the caller holds the admin role with an independent query.
- *   2. Write an audit entry describing what was done.
+ * the service-role key. Because the service client BYPASSES RLS, this module
+ * is the SOLE wall if the proxy ever fails to gate a route — so it re-verifies
+ * everything itself, trusting neither cookie claims nor the proxy. Contract
+ * for every exported function:
+ *   1. Re-verify the caller holds AAL2 (staff must be 2FA-verified, spec §6).
+ *   2. Re-verify the caller holds the admin role with an independent query.
+ *   3. Write an audit entry describing what was done.
  * The raw service client is module-private — never export it.
  */
 function createServiceRoleClient() {
@@ -2783,11 +2795,23 @@ function createServiceRoleClient() {
   );
 }
 
-/** Throws unless the current session user is an admin. Returns their id. */
+/** Throws unless the current session user is an AAL2 admin. Returns their id. */
 async function requireAdminActor(): Promise<string> {
   const user = await getSessionUser();
   if (!user) {
     throw new Error('Ikke innlogget.');
+  }
+  // Assurance re-check on the caller's OWN session (not the service client).
+  // The proxy also enforces AAL2, but this module bypasses RLS, so it must
+  // never depend on the proxy having run. Denies before any service query.
+  const userClient = await createUserClient();
+  const { data: aal, error: aalError } =
+    await userClient.auth.getAuthenticatorAssuranceLevel();
+  if (aalError) {
+    throw new Error(`Sikkerhetsnivå-kontroll feilet: ${aalError.message}`);
+  }
+  if (aal?.currentLevel !== 'aal2') {
+    throw new Error('Krever bekreftet to-faktor (AAL2).');
   }
   const service = createServiceRoleClient();
   const { data, error } = await service
@@ -2821,12 +2845,18 @@ export interface AuditLogEntry {
 export async function adminListAuditLog(limit = 5): Promise<AuditLogEntry[]> {
   const actorId = await requireAdminActor();
   const service = createServiceRoleClient();
+  // Clamp so a future user-supplied limit cannot over-fetch or pass NaN.
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit) || 1), 100);
 
+  // `admin.*` marks a service-role (authoritative) entry, distinct from the
+  // caller-asserted private.audit() path. NB: until private.audit() rejects
+  // the reserved `admin.` prefix (tracked), the namespace is convention only —
+  // no consumer may treat `admin.*` alone as proof of a genuine admin action.
   const { error: auditError } = await service.from('audit_log').insert({
     actor_id: actorId,
-    action: 'audit_log.viewed',
+    action: 'admin.audit_log.viewed',
     entity: 'audit_log',
-    meta: { limit },
+    meta: { source: 'admin_module', limit: safeLimit },
   });
   if (auditError) {
     throw new Error(`Kunne ikke skrive til revisjonsloggen: ${auditError.message}`);
@@ -2837,7 +2867,7 @@ export async function adminListAuditLog(limit = 5): Promise<AuditLogEntry[]> {
     .select('id, actor_id, action, entity, entity_id, created_at')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
-    .limit(limit);
+    .limit(safeLimit);
   if (error) {
     throw new Error(`Kunne ikke lese revisjonsloggen: ${error.message}`);
   }
@@ -2861,8 +2891,8 @@ export interface LoginState {
 }
 
 const loginSchema = z.object({
-  epost: z.email('Oppgi en gyldig e-postadresse.'),
-  passord: z.string().min(1, 'Oppgi passord.'),
+  epost: z.email('Oppgi en gyldig e-postadresse.').max(254),
+  passord: z.string().min(1, 'Oppgi passord.').max(200),
 });
 
 export async function loginAction(
@@ -3007,6 +3037,149 @@ export default async function Home() {
 }
 ```
 
+- [ ] **Step 5b: Regression tests (added by the 2026-07-17 T11 security review)**
+
+Two code-level security guarantees the T12b SQL harness will not cover: the login action must stay enumeration-quiet, and the admin module must deny before it ever touches the service role. These pin exactly those properties.
+
+Create `/Users/daodilyas/dev/iqra-portal/src/app/logg-inn/actions.test.ts`:
+
+```ts
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const signInWithPassword = vi.fn();
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: vi.fn(async () => ({ auth: { signInWithPassword } })),
+}));
+vi.mock('next/navigation', () => ({
+  redirect: vi.fn((path: string) => {
+    throw new Error(`NEXT_REDIRECT:${path}`);
+  }),
+}));
+
+import { loginAction } from './actions';
+
+function form(fields: Record<string, string>) {
+  const fd = new FormData();
+  for (const [key, value] of Object.entries(fields)) fd.set(key, value);
+  return fd;
+}
+
+beforeEach(() => {
+  signInWithPassword.mockReset();
+});
+
+describe('loginAction', () => {
+  it('rejects a malformed email before calling GoTrue', async () => {
+    const state = await loginAction(
+      { error: null },
+      form({ epost: 'ikke-epost', passord: 'x' }),
+    );
+    expect(state.error).toMatch(/gyldig e-postadresse/);
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing password before calling GoTrue', async () => {
+    const state = await loginAction(
+      { error: null },
+      form({ epost: 'a@test.local', passord: '' }),
+    );
+    expect(state.error).toMatch(/passord/);
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('collapses any GoTrue error to one generic message, leaking no detail', async () => {
+    signInWithPassword.mockResolvedValue({
+      error: { message: 'User with this email not found', code: 'user_not_found' },
+    });
+    const state = await loginAction(
+      { error: null },
+      form({ epost: 'ukjent@test.local', passord: 'feilpassord' }),
+    );
+    expect(state.error).toBe('Feil e-post eller passord.');
+    expect(state.error).not.toMatch(/not found|user_not_found/i);
+  });
+
+  it('redirects to / on success', async () => {
+    signInWithPassword.mockResolvedValue({ error: null });
+    await expect(
+      loginAction({ error: null }, form({ epost: 'a@test.local', passord: 'riktig' })),
+    ).rejects.toThrow('NEXT_REDIRECT:/');
+  });
+});
+```
+
+Create `/Users/daodilyas/dev/iqra-portal/src/lib/admin/audit-log.test.ts`:
+
+```ts
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const getSessionUser = vi.fn();
+vi.mock('@/lib/dal/session', () => ({ getSessionUser: () => getSessionUser() }));
+
+const getAuthenticatorAssuranceLevel = vi.fn();
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: vi.fn(async () => ({ auth: { getAuthenticatorAssuranceLevel } })),
+}));
+
+const serviceFrom = vi.fn();
+const createSupabaseClient = vi.fn(() => ({ from: serviceFrom }));
+vi.mock('@supabase/supabase-js', () => ({ createClient: createSupabaseClient }));
+
+vi.mock('@/lib/env', () => ({
+  getPublicEnv: () => ({
+    NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon',
+  }),
+}));
+vi.mock('@/lib/env.server', () => ({ getServiceRoleKey: () => 'service' }));
+
+import { adminListAuditLog } from './audit-log';
+
+beforeEach(() => {
+  getSessionUser.mockReset();
+  getAuthenticatorAssuranceLevel.mockReset();
+  serviceFrom.mockReset();
+  createSupabaseClient.mockClear();
+});
+
+describe('adminListAuditLog quarantine — deny before touching the service role', () => {
+  it('throws for a logged-out caller before constructing the service client', async () => {
+    getSessionUser.mockResolvedValue(null);
+    await expect(adminListAuditLog()).rejects.toThrow(/Ikke innlogget/);
+    expect(createSupabaseClient).not.toHaveBeenCalled();
+  });
+
+  it('throws for an aal1 (not 2FA-verified) caller before any service query', async () => {
+    getSessionUser.mockResolvedValue({ id: 'u1' });
+    getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: 'aal1', nextLevel: 'aal2' },
+      error: null,
+    });
+    await expect(adminListAuditLog()).rejects.toThrow(/AAL2|to-faktor/);
+    expect(serviceFrom).not.toHaveBeenCalled();
+  });
+
+  it('throws for a non-admin aal2 caller before writing an audit entry', async () => {
+    getSessionUser.mockResolvedValue({ id: 'u1' });
+    getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: 'aal2', nextLevel: 'aal2' },
+      error: null,
+    });
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    const insert = vi.fn();
+    serviceFrom.mockImplementation((table: string) =>
+      table === 'user_roles'
+        ? { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle }) }) }) }
+        : { insert },
+    );
+    await expect(adminListAuditLog()).rejects.toThrow(/tilgang/);
+    expect(insert).not.toHaveBeenCalled();
+  });
+});
+```
+
+Note on the mocks: the assertions encode the security contract (deny-before-touch, generic login error); if a mock's method-chain shape needs a small adjustment to run against the real modules, adjust the plumbing but keep every assertion intact. If an assertion itself fails, STOP and report — it means behavior diverged.
+
 - [ ] **Step 6: Verify typecheck, tests, build**
 
 ```bash
@@ -3014,13 +3187,13 @@ cd /Users/daodilyas/dev/iqra-portal
 npm run typecheck && npm test && npm run build
 ```
 
-Expected: all green; the build marks `/`, `/logg-inn` as dynamic (ƒ) because they read cookies.
+Expected: all green (Vitest now includes `actions.test.ts` and `audit-log.test.ts` — 8 test files); the build marks `/`, `/logg-inn` as dynamic (ƒ) because they read cookies.
 
 - [ ] **Step 7: Verify the login flow in the browser**
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-supabase start
+# The local stack is already running (gotcha 3 — never plain `supabase start`).
 npm run dev
 ```
 
