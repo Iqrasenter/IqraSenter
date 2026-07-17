@@ -347,6 +347,22 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(22);
 
+-- Hermetic fixtures (seed independence): `supabase db reset` loads seed.sql —
+-- which populates the school-core tables from Task 5 on — BEFORE `supabase
+-- test db` runs. Clear those rows first (as postgres, inside this rolled-back
+-- transaction) so the fixtures below are the only rows and the absolute-count
+-- and single-current assertions stay independent of seed content. Restored on
+-- rollback. FK-safe order: children before parents.
+delete from public.class_students;
+delete from public.class_schedule;
+delete from public.class_subjects;
+delete from public.class_teachers;
+delete from public.guardian_student;
+delete from public.students;
+delete from public.classes;
+delete from public.subjects;
+delete from public.terms;
+
 -- ── Setup (as postgres) ─────────────────────────────────────────────
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -639,6 +655,22 @@ Create `supabase/tests/07_classes_rls.sql`:
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(25);
+
+-- Hermetic fixtures (seed independence): `supabase db reset` loads seed.sql —
+-- which populates the school-core tables from Task 5 on — BEFORE `supabase
+-- test db` runs. Clear those rows first (as postgres, inside this rolled-back
+-- transaction) so the fixtures below are the only rows and the absolute-count
+-- and single-current assertions stay independent of seed content. Restored on
+-- rollback. FK-safe order: children before parents.
+delete from public.class_students;
+delete from public.class_schedule;
+delete from public.class_subjects;
+delete from public.class_teachers;
+delete from public.guardian_student;
+delete from public.students;
+delete from public.classes;
+delete from public.subjects;
+delete from public.terms;
 
 -- ── Setup (as postgres) ─────────────────────────────────────────────
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -991,6 +1023,22 @@ Create `supabase/tests/08_students_guardians_rls.sql`:
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(31);
+
+-- Hermetic fixtures (seed independence): `supabase db reset` loads seed.sql —
+-- which populates the school-core tables from Task 5 on — BEFORE `supabase
+-- test db` runs. Clear those rows first (as postgres, inside this rolled-back
+-- transaction) so the fixtures below are the only rows and the absolute-count
+-- and single-current assertions stay independent of seed content. Restored on
+-- rollback. FK-safe order: children before parents.
+delete from public.class_students;
+delete from public.class_schedule;
+delete from public.class_subjects;
+delete from public.class_teachers;
+delete from public.guardian_student;
+delete from public.students;
+delete from public.classes;
+delete from public.subjects;
+delete from public.terms;
 
 -- ── Setup (as postgres) ─────────────────────────────────────────────
 -- Two families: parent A (children s1, s3), parent B (child s2, protected).
@@ -1730,6 +1778,8 @@ Expected: typecheck/Vitest untouched and green (no app code changed yet).
 ### Task 5: Seeds, regenerated types, and the grown denial matrix
 
 Extends the local fixture world: a second parent (for the cross-family denial tests), a full school structure, and five students. Then regenerates `database.types.ts` and grows `DENIED_CELLS` (23 → 27) plus the `SeedEmail` union.
+
+> **Dependency (resolved plan gap):** this seed is the first to populate the school-core tables that pgTAP files `06`/`07`/`08` count against, and `supabase db reset` loads it BEFORE `supabase test db` runs. Those three files therefore carry a hermetic delete-preamble (added to their Task 2/3/4 blocks above) that clears the seed rows inside their rolled-back transaction, so their absolute-count and single-current assertions stay seed-independent. If executing Tasks 2–4 fresh, that preamble is already in their blocks; nothing extra is needed here. `09` needs no preamble (its assertions are relationship-id-scoped, so the seed's different families are invisible to its fixture users).
 
 **Files:**
 - Modify: `supabase/seed.sql`
