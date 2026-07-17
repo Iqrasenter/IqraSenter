@@ -4839,6 +4839,8 @@ git commit -m "feat: TOTP enrollment and challenge pages for staff MFA"
 - Create: `/Users/daodilyas/dev/iqra-portal/DESIGN.md`
 - Create: `/Users/daodilyas/dev/iqra-portal/docs/spec.md` (copied from the marketing repo)
 
+> **Controller pre-flight 2026-07-17 (ledger #11):** (a) **Build-time env validation** is already satisfied by T9 — `src/lib/env.ts` fail-fasts via a zod `safeParse` with a clear Norwegian message, and `src/lib/env.server.ts` throws on a missing service key; no extra build step is added here. (b) **Node version:** CI is pinned to **22** to match package.json `engines: >=22` (Vercel also builds on 22 from that field) — the plan's original `node-version: 20` was a mismatch, now corrected. (c) **Forbidden seed commands** against the cloud project are called out in the README «Skyoppsett» ADVARSEL (Step 8). (d) `npm audit --audit-level=high` was pre-run 2026-07-17: only 2 *moderate* advisories (next→postcss), so the Step 9/CI high gate passes (exit 0). (e) Per the T14 security review, the README notes the `test:api` service key must be the local demo key only.
+
 - [ ] **Step 1: Security headers in next.config.ts (spec §6: strict CSP, HSTS, frame-deny)**
 
 Replace the entire contents of `/Users/daodilyas/dev/iqra-portal/next.config.ts` (create-next-app generated it with an empty options object; nothing else in the plan has touched it) with:
@@ -4934,7 +4936,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Match package.json engines (>=22); Vercel also builds on 22 from
+          # that field, so CI must test on the same major.
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -5124,7 +5128,7 @@ Skoleportal for IQRA senter — `portal.iqrasenter.no`. Next.js 16 + Supabase
 ## Krav
 
 - **Docker Desktop** (kjører den lokale Supabase-stacken)
-- **Node 20+** og npm
+- **Node 22+** og npm (samsvarer med `engines` i package.json)
 - **Supabase CLI** (`brew install supabase/tap/supabase`)
 
 ## Kom i gang lokalt
@@ -5170,6 +5174,10 @@ og vent til `docker ps` viser alle supabase-containerne friske) og
 `supabase db reset` først. `test:api` og
 `supabase test db` er tvillinger — samme forbudte celler testes på begge
 vegger (spec §8.1), og hver ny fase legger til sine tester i begge.
+AAL2-testene i `test:api` bruker `SUPABASE_SERVICE_ROLE_KEY` (kun som
+test-oppsett, for å nullstille MFA-faktorer). Den nøkkelen i `.env.local`
+skal ALLTID være den lokale demo-nøkkelen fra `supabase status` — aldri et
+ekte prosjekts service_role-nøkkel.
 
 CI (`.github/workflows/ci.yml`) kjører alt over pluss `npm audit` og blokkerer
 merge ved feil; unntaket er `test:api`, som foreløpig kjøres lokalt fordi den
