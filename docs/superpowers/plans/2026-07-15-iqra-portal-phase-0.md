@@ -4240,7 +4240,7 @@ git commit -m "feat: enforce AAL2 for staff roles in the request proxy"
 
 ### Task 14: MFA pages — TOTP enroll (`/mfa/registrer`) and challenge (`/mfa/verifiser`)
 
-> **Binding addition 2026-07-17 (from the T12b Fable-5 security review, finding 1):** the admin quarantine's ROLE branch (`src/lib/admin/audit-log.ts` — `'Du har ikke tilgang til denne siden.'`) is a proven surviving mutant: deleting it leaves every suite green today, because the AAL2 denial fires first for every seed user and the service client bypasses RLS. Task 14 (which makes AAL2 sessions programmatically reachable via GoTrue TOTP enroll+verify) MUST extend `tests/api/access-wall.test.ts` with two tests: (1) an AAL2 session for a NON-admin staff user (e.g. `okonomi@test.local`) calling `adminListAuditLog` → rejects with `AdminAccessDenied('Du har ikke tilgang til denne siden.')`; (2) an AAL2 `admin@test.local` session → resolves AND a fresh `admin.audit_log.viewed` row exists. The controller adds the exact TOTP-harness code (node:crypto, zero new deps) via pre-dispatch surgery after probing the local GoTrue MFA flow — implementers: if this note is still here without that code block at dispatch time, report NEEDS_CONTEXT.
+> **Binding addition 2026-07-17 (from the T12b Fable-5 security review, finding 1) — RESOLVED, code embedded in Step 3b below:** the admin quarantine's ROLE branch (`src/lib/admin/audit-log.ts` — `'Du har ikke tilgang til denne siden.'`) is a proven surviving mutant: deleting it leaves the T12b suite green, because the AAL2 denial fires first for every seed user and the service client bypasses RLS. Step 3b (added by controller surgery after probing the local GoTrue MFA flow — enroll→challenge→verify with a node:crypto RFC-6238 code, then setSession to carry the AAL2 tokens onto the fresh clients `adminListAuditLog` builds) extends the API-wall suite from 30 → 32 tests, covering that branch: a 2FA-verified economy user is still refused, and only a 2FA-verified admin is admitted and audited. The controller verified locally that the two tests pass, are idempotent across re-runs, and go RED when the role branch is deleted (mutation-confirmed 2026-07-17). No new dependency (node:crypto only).
 
 **Files:**
 - Create: `/Users/daodilyas/dev/iqra-portal/src/app/mfa/registrer/EnrollForm.tsx`
@@ -4542,14 +4542,228 @@ export default function MfaVerifiserPage() {
 }
 ```
 
+- [ ] **Step 3b: Extend the API-wall harness + suite with the two AAL2 quarantine tests (controller-authored, verified 2026-07-17)**
+
+This closes the surviving-mutant gap from the T12b review (binding note above). It touches ONLY `tests/api/` — the same files Task 12b created — and adds no dependency (node:crypto is built in). The harness gains a `signInAsAAL2` that steps a real session up to AAL2 via GoTrue TOTP (enroll→challenge→verify with a generated RFC-6238 code, then unenrolls the throwaway factor so runs stay idempotent) and hands those AAL2 tokens to `createServerClientMock` via `setSession`, so the fresh clients `adminListAuditLog` builds both see AAL2.
+
+Replace the ENTIRE contents of `/Users/daodilyas/dev/iqra-portal/tests/api/harness.ts` with:
+
+```ts
+import { createHmac } from 'node:crypto';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { getPublicEnv } from '@/lib/env';
+import type { Database } from '@/lib/supabase/database.types';
+
+/**
+ * Wall-1 harness (spec §8.1): builds REAL Supabase clients against the
+ * local stack, signed in as the Task 6 seed users, and hands them to the
+ * code under test through the `@/lib/supabase/server` mock declared in
+ * access-wall.test.ts. Wall 2 (SQL) is proven by the pgTAP suite; this
+ * harness proves the DAL guards and server actions layered on top.
+ */
+
+export const TEST_PASSWORD = 'test-passord-123';
+
+export type SeedEmail =
+  | 'admin@test.local'
+  | 'laerer@test.local'
+  | 'forelder@test.local'
+  | 'elev@test.local'
+  | 'okonomi@test.local'
+  | 'laererforelder@test.local';
+
+let currentEmail: SeedEmail | null = null;
+let aal2Session: { access_token: string; refresh_token: string } | null = null;
+
+function anonClient() {
+  const env = getPublicEnv();
+  return createSupabaseClient<Database>(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+}
+
+/** Later createClient() calls act as this seed user (AAL1 password session). */
+export function signInAs(email: SeedEmail): void {
+  currentEmail = email;
+  aal2Session = null;
+}
+
+/** Later createClient() calls act logged out. */
+export function signOut(): void {
+  currentEmail = null;
+  aal2Session = null;
+}
+
+// --- RFC 6238 TOTP, so the harness can step a session up to AAL2 without an
+// authenticator app. node:crypto only; no new dependency (ledger #8/§8.1).
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function base32Decode(input: string): Buffer {
+  let bits = '';
+  for (const char of input.replace(/=+$/, '').toUpperCase()) {
+    const value = BASE32.indexOf(char);
+    if (value < 0) continue;
+    bits += value.toString(2).padStart(5, '0');
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+function totpCode(secret: string): string {
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  const message = Buffer.alloc(8);
+  message.writeBigInt64BE(BigInt(counter));
+  const digest = createHmac('sha1', base32Decode(secret)).update(message).digest();
+  const offset = digest[digest.length - 1] & 0xf;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff);
+  return (binary % 1_000_000).toString().padStart(6, '0');
+}
+
+/**
+ * Later createClient() calls act as this seed user with an AAL2 (2FA-verified)
+ * session. A plain password sign-in is always AAL1 even when a factor exists,
+ * so this enrolls a throwaway TOTP factor, verifies it with a generated code
+ * to mint an AAL2 token, then unenrolls the factor (the minted token stays
+ * valid) — leaving the seed user factorless so runs are idempotent.
+ */
+export async function signInAsAAL2(email: SeedEmail): Promise<void> {
+  const client = anonClient();
+  const { error: signInError } = await client.auth.signInWithPassword({
+    email,
+    password: TEST_PASSWORD,
+  });
+  if (signInError) {
+    throw new Error(`Harness AAL2: innlogging som ${email} feilet: ${signInError.message}`);
+  }
+  // Clear any factors left by an interrupted earlier run.
+  const { data: existing } = await client.auth.mfa.listFactors();
+  for (const factor of existing?.all ?? []) {
+    await client.auth.mfa.unenroll({ factorId: factor.id });
+  }
+  const { data: enroll, error: enrollError } = await client.auth.mfa.enroll({
+    factorType: 'totp',
+    friendlyName: `harness ${email} ${new Date().toISOString()}`,
+  });
+  if (enrollError || !enroll) {
+    throw new Error(`Harness AAL2: enroll feilet: ${enrollError?.message ?? 'ukjent'}`);
+  }
+  const { data: challenge, error: challengeError } = await client.auth.mfa.challenge({
+    factorId: enroll.id,
+  });
+  if (challengeError || !challenge) {
+    throw new Error(`Harness AAL2: challenge feilet: ${challengeError?.message ?? 'ukjent'}`);
+  }
+  const { data: verify, error: verifyError } = await client.auth.mfa.verify({
+    factorId: enroll.id,
+    challengeId: challenge.id,
+    code: totpCode(enroll.totp.secret),
+  });
+  if (verifyError || !verify) {
+    throw new Error(`Harness AAL2: verify feilet: ${verifyError?.message ?? 'ukjent'}`);
+  }
+  await client.auth.mfa.unenroll({ factorId: enroll.id });
+  currentEmail = email;
+  aal2Session = {
+    access_token: verify.access_token,
+    refresh_token: verify.refresh_token,
+  };
+}
+
+/**
+ * Drop-in replacement for `createClient` in `@/lib/supabase/server`:
+ * a real anon-key client (RLS applies), authenticated as the current
+ * seed user via GoTrue instead of via request cookies. Carries the AAL2
+ * session when signInAsAAL2 set one, else a plain AAL1 password session.
+ */
+export async function createServerClientMock() {
+  const client = anonClient();
+  if (aal2Session) {
+    const { error } = await client.auth.setSession(aal2Session);
+    if (error) {
+      throw new Error(`Harness: kunne ikke gjenbruke AAL2-sesjonen: ${error.message}`);
+    }
+    return client;
+  }
+  if (currentEmail) {
+    const { error } = await client.auth.signInWithPassword({
+      email: currentEmail,
+      password: TEST_PASSWORD,
+    });
+    if (error) {
+      throw new Error(
+        `Harness: innlogging som ${currentEmail} feilet (kjører den lokale ` +
+          `stacken med ferske seeds? \`supabase start\` + \`supabase db reset\`): ` +
+          error.message,
+      );
+    }
+  }
+  return client;
+}
+
+/**
+ * Drop-in replacement for `redirect` in `next/navigation`: throws so a
+ * guard's redirect is observable and halts execution like the real one.
+ */
+export function redirectMock(path: string): never {
+  throw new Error(`NEXT_REDIRECT:${path}`);
+}
+```
+
+Then in `/Users/daodilyas/dev/iqra-portal/tests/api/access-wall.test.ts`, change the harness import line
+
+```ts
+import { signInAs, signOut, type SeedEmail } from './harness';
+```
+
+to
+
+```ts
+import { signInAs, signInAsAAL2, signOut, type SeedEmail } from './harness';
+```
+
+and append this describe block at the END of the file (after the `getOwnProfile` describe):
+
+```ts
+describe('wall 1: the admin quarantine at AAL2 (closes the surviving-mutant gap)', () => {
+  // The AAL1 denial fires the two-factor branch for every seed user, so the
+  // quarantine's admin-ROLE branch is only reachable once a session is AAL2.
+  // These two prove that branch: a real 2FA-verified economy user is still
+  // refused, and only a 2FA-verified admin is admitted (and audited).
+  it('still refuses the audit log to a non-admin staff member (economy) at AAL2', async () => {
+    await signInAsAAL2('okonomi@test.local');
+    await expect(adminListAuditLog(5)).rejects.toBeInstanceOf(AdminAccessDenied);
+    await expect(adminListAuditLog(5)).rejects.toThrow(
+      'Du har ikke tilgang til denne siden.',
+    );
+  });
+
+  it('admits a 2FA-verified admin and records the read in the audit log', async () => {
+    await signInAsAAL2('admin@test.local');
+    const entries = await adminListAuditLog(5);
+    expect(entries.some((entry) => entry.action === 'admin.audit_log.viewed')).toBe(
+      true,
+    );
+  });
+});
+```
+
+Run `npm run test:api` — expect `Test Files 1 passed`, `Tests 32 passed`. (Runtime grows a little; the two AAL2 tests each do an enroll/verify round-trip. If either AAL2 test ever fails on a fresh checkout, confirm the stack is up and seeds are fresh — the harness throws a Norwegian diagnostic naming the failed MFA step.)
+
 - [ ] **Step 4: Verify typecheck, tests, build**
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-npm run typecheck && npm test && npm run build
+npm run typecheck && npm test && npm run test:api && npm run build
 ```
 
-Expected: all green.
+Expected: all green — `npm test` 75, `npm run test:api` 32 (the two new AAL2 tests included), typecheck silent, build clean.
 
 - [ ] **Step 5: Verify the full staff MFA journey end-to-end**
 
@@ -4578,7 +4792,7 @@ This is the Phase 0 auth acceptance path — all six checks must pass.
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-git add src/app/mfa
+git add src/app/mfa tests/api/harness.ts tests/api/access-wall.test.ts
 git commit -m "feat: TOTP enrollment and challenge pages for staff MFA"
 ```
 
