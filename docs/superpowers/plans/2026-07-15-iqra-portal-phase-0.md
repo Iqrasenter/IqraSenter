@@ -3239,6 +3239,8 @@ git commit -m "feat: server-only DAL, quarantined admin module and Norwegian log
 
 Each portal layout calls `requireRole(...)` (wall 1) before rendering anything. Dashboards are honest teaching empty states — no lorem, no fake data. The admin dashboard additionally renders real audit entries through the quarantined admin module, proving the service-role pattern end-to-end. No kickers, no emojis (spec §7 bans).
 
+> **Amendment 2026-07-17 (pre-dispatch surgery):** T11's fix round hardened `requireAdminActor` to demand AAL2 on the caller's own session — correct (the module bypasses RLS and must not trust the proxy), but it makes the original step 6.5 expectation (admin dashboard renders audit entries) unreachable until T13+T14 exist: a password login is AAL1, so `adminListAuditLog` throws. This task therefore (a) types the module's three *denial* throws as `AdminAccessDenied` (new Step 2b; infrastructure errors stay plain `Error`), (b) has the admin dashboard catch exactly that denial and render an honest locked state (Step 4 updated) — the entries-render proof moves to Task 14 step 5.3, (c) fixes the `/ingen-tilgang` dead-end (ledger #7) with a logout control and a way home (new Step 4b), and (d) gives pill links the same focus-visible ring Button uses (no global focus rule exists in globals.css).
+
 - [ ] **Step 1: Create the logout action**
 
 Create `/Users/daodilyas/dev/iqra-portal/src/app/(portal)/actions.ts`:
@@ -3286,6 +3288,7 @@ export function RoleSwitcher({
               className={cn(
                 'inline-flex min-h-11 items-center rounded-pill px-4 text-sm font-medium',
                 'transition-colors duration-200 ease-brand',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 role === activeRole
                   ? 'bg-primary text-on-primary'
                   : 'bg-surface-tint text-ink hover:bg-hairline',
@@ -3349,6 +3352,25 @@ export function PortalShell({
   );
 }
 ```
+
+- [ ] **Step 2b: Type the admin module's denials (amendment 2026-07-17)**
+
+In `/Users/daodilyas/dev/iqra-portal/src/lib/admin/audit-log.ts`:
+
+1. Add this exported class immediately before `function createServiceRoleClient()`:
+
+```ts
+/**
+ * A DENIAL from the admin quarantine (not an infrastructure failure).
+ * UI may catch exactly this to render a locked state; every other error
+ * must keep propagating (fail fast).
+ */
+export class AdminAccessDenied extends Error {}
+```
+
+2. In `requireAdminActor`, change exactly the three **denial** sites from `throw new Error(...)` to `throw new AdminAccessDenied(...)`, keeping each message byte-identical: `'Ikke innlogget.'`, `'Krever bekreftet to-faktor (AAL2).'`, `'Du har ikke tilgang til denne siden.'`. The two infrastructure sites (`Sikkerhetsnivå-kontroll feilet: ...`, `Rollekontroll feilet: ...`) stay plain `Error`. Do not touch any query, `.eq` filter, or the audit insert.
+
+Expected: `npm test` stays green (existing matchers assert messages, and `AdminAccessDenied instanceof Error` holds).
 
 - [ ] **Step 3: Create the five portal layouts**
 
@@ -3486,17 +3508,36 @@ export default async function OkonomiLayout({ children }: { children: ReactNode 
 
 - [ ] **Step 4: Create the five dashboard pages**
 
-Create `/Users/daodilyas/dev/iqra-portal/src/app/(portal)/admin/page.tsx` (renders real audit entries via the quarantined module):
+Create `/Users/daodilyas/dev/iqra-portal/src/app/(portal)/admin/page.tsx` (renders real audit entries via the quarantined module; below AAL2 the module denies — render that denial as a locked state, amendment 2026-07-17):
 
 ```tsx
 import type { Metadata } from 'next';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { adminListAuditLog } from '@/lib/admin/audit-log';
+import {
+  AdminAccessDenied,
+  adminListAuditLog,
+  type AuditLogEntry,
+} from '@/lib/admin/audit-log';
 
 export const metadata: Metadata = { title: 'Administrasjon' };
 
+/**
+ * The audit list demands AAL2 (the admin module re-verifies the caller's own
+ * session). Until the MFA gate and pages exist (T13/T14), an admin session is
+ * AAL1, so a denial here is EXPECTED — show it as a locked state. Every other
+ * error keeps propagating (fail fast).
+ */
+async function loadAuditEntries(): Promise<AuditLogEntry[] | 'locked'> {
+  try {
+    return await adminListAuditLog(5);
+  } catch (error) {
+    if (error instanceof AdminAccessDenied) return 'locked';
+    throw error;
+  }
+}
+
 export default async function AdminDashboard() {
-  const entries = await adminListAuditLog(5);
+  const entries = await loadAuditEntries();
 
   return (
     <div className="flex flex-col gap-8">
@@ -3507,26 +3548,33 @@ export default async function AdminDashboard() {
       />
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Siste hendelser</h2>
-        <ul className="divide-y divide-hairline rounded-lg border border-hairline">
-          {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3"
-            >
-              <span className="font-medium">{entry.action}</span>
-              <span className="text-sm text-ink/60">{entry.entity}</span>
-              <time
-                dateTime={entry.created_at}
-                className="ms-auto text-sm text-ink/60"
+        {entries === 'locked' ? (
+          <p className="rounded-lg border border-hairline bg-surface-tint/60 px-4 py-3 text-sm leading-relaxed text-ink/70">
+            Revisjonsloggen krever bekreftet to-faktor. Den låses opp når
+            to-faktor er satt opp og bekreftet for kontoen din.
+          </p>
+        ) : (
+          <ul className="divide-y divide-hairline rounded-lg border border-hairline">
+            {entries.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3"
               >
-                {new Date(entry.created_at).toLocaleString('nb-NO', {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })}
-              </time>
-            </li>
-          ))}
-        </ul>
+                <span className="font-medium">{entry.action}</span>
+                <span className="text-sm text-ink/60">{entry.entity}</span>
+                <time
+                  dateTime={entry.created_at}
+                  className="ms-auto text-sm text-ink/60"
+                >
+                  {new Date(entry.created_at).toLocaleString('nb-NO', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
+                </time>
+              </li>
+            ))}
+          </ul>
+        )}
         <p className="text-sm text-ink/60">
           Alle sensitive handlinger logges. Full revisjonslogg med filtrering kommer i
           herdingsfasen.
@@ -3536,6 +3584,8 @@ export default async function AdminDashboard() {
   );
 }
 ```
+
+The audit-entry markup renders raw `action` strings only. Do NOT add copy or filtering that presents `admin.*`-prefixed rows as *verified* admin actions — until `private.audit()` rejects the reserved prefix (tracked, pre-Phase-7), that namespace is convention, not proof.
 
 Create `/Users/daodilyas/dev/iqra-portal/src/app/(portal)/laerer/page.tsx`:
 
@@ -3621,6 +3671,68 @@ export default function OkonomiDashboard() {
 }
 ```
 
+- [ ] **Step 4b: Turn `/ingen-tilgang` into an escape hatch (amendment 2026-07-17, ledger #7)**
+
+The page is currently a dead end: a wrong-role user bounced here has no way back to their own portal, and a user with no portal at all cannot even log out. Replace `/Users/daodilyas/dev/iqra-portal/src/app/ingen-tilgang/page.tsx` with:
+
+```tsx
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { logoutAction } from '@/app/(portal)/actions';
+import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { defaultPortalPath } from '@/lib/auth/access';
+import { getSessionRoles, getSessionUser } from '@/lib/dal/session';
+
+export const metadata: Metadata = { title: 'Ingen tilgang' };
+
+const linkPill =
+  'inline-flex min-h-11 items-center rounded-pill bg-primary px-5 text-base font-medium text-on-primary ' +
+  'transition-colors duration-200 ease-brand hover:bg-primary-strong ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+
+/**
+ * Escape hatch, never a dead end (ledger #7): a wrong-role user gets a way
+ * back to their own portal, and any signed-in user can always log out.
+ */
+export default async function IngenTilgangPage() {
+  const user = await getSessionUser();
+  const roles = user ? await getSessionRoles() : [];
+  const homePath = defaultPortalPath(roles);
+
+  return (
+    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-6">
+      <EmptyState
+        title="Du har ikke tilgang til denne siden"
+        description="Kontoen din mangler rollen som kreves her. Ta kontakt med administrasjonen ved IQRA senter hvis du mener dette er feil."
+        action={
+          user ? (
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {homePath ? (
+                <Link href={homePath} className={linkPill}>
+                  Til min side
+                </Link>
+              ) : null}
+              <form action={logoutAction}>
+                <Button type="submit" variant="ghost">
+                  Logg ut
+                </Button>
+              </form>
+            </div>
+          ) : (
+            <Link href="/logg-inn" className={linkPill}>
+              Til innlogging
+            </Link>
+          )
+        }
+      />
+    </main>
+  );
+}
+```
+
+(`getSessionUser`/`getSessionRoles` never redirect, so this page cannot loop; importing the server action from the `(portal)` group into a page outside the group is legal in Next.js.)
+
 - [ ] **Step 5: Verify typecheck, tests, build**
 
 ```bash
@@ -3635,16 +3747,16 @@ Expected: all green; the build lists `/admin`, `/laerer`, `/forelder`, `/elev`, 
 With `supabase start` running and `npm run dev`:
 
 1. Log in as `forelder@test.local` / `test-passord-123` → lands on `/forelder`: header shows «IQRA senter · Forelder · Omar Farah», teaching empty state «Ingen barn registrert ennå», NO role switcher (single role).
-2. Manually visit `/admin` while logged in as forelder → redirected to `/ingen-tilgang` («Du har ikke tilgang til denne siden»). This is wall 1 working.
-3. «Logg ut» → back at `/logg-inn`.
+2. Manually visit `/admin` while logged in as forelder → redirected to `/ingen-tilgang` («Du har ikke tilgang til denne siden»). This is wall 1 working. The page now shows «Til min side» and «Logg ut» (amendment 2026-07-17): «Til min side» navigates back to `/forelder`.
+3. «Logg ut» (from the forelder portal header) → back at `/logg-inn`.
 4. Log in as `laererforelder@test.local` → lands on `/laerer` (teacher outranks parent); the switcher shows two pills «Lærer» and «Forelder»; clicking «Forelder» navigates to `/forelder`.
-5. Log in as `admin@test.local` → `/admin` shows «Siste hendelser» with at least one `audit_log.viewed` row (the module audits its own read — expected and correct). NOTE: no MFA is demanded yet; that is Task 13.
+5. Log in as `admin@test.local` → `/admin` renders with the full shell, and «Siste hendelser» shows the LOCKED state «Revisjonsloggen krever bekreftet to-faktor …» (amendment 2026-07-17: `requireAdminActor` demands AAL2; a password login is AAL1 until T13/T14 land — the entries-render proof is deferred to Task 14 step 5.3). NOTE: no MFA is demanded during login yet; that is Task 13.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
-git add "src/app/(portal)" src/components/shell
+git add "src/app/(portal)" src/components/shell src/app/ingen-tilgang/page.tsx src/lib/admin/audit-log.ts
 git commit -m "feat: five role portals with layout guards, role switcher and honest empty states"
 ```
 
@@ -4376,7 +4488,7 @@ With `supabase start` running and `npm run dev`:
    oathtool --totp -b 'PASTE-THE-SECRET-HERE'
    ```
    (Or scan the QR with any authenticator app.)
-3. Enter the 6-digit code → «Bekreft» → you land on `/admin` with the full shell. The gate is satisfied: the session is AAL2.
+3. Enter the 6-digit code → «Bekreft» → you land on `/admin` with the full shell. The gate is satisfied: the session is AAL2 — and «Siste hendelser» now lists real audit entries (at least one `admin.audit_log.viewed` row; the module audits its own read). This completes the service-role render proof deferred from Task 12 step 6.5 (amendment 2026-07-17).
 4. «Logg ut», then log in as `admin@test.local` again → this time redirected to `/mfa/verifiser` (factor exists, session is AAL1). Run `oathtool` again with the same secret, enter the code → `/admin`.
 5. Enter a wrong code first and confirm the inline error «Ugyldig kode. Prøv igjen.» appears and the form stays usable.
 6. Log in as `forelder@test.local` → still goes straight to `/forelder`; parents are never asked to enroll.
