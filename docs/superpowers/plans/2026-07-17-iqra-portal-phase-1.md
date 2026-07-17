@@ -2676,6 +2676,34 @@ describe('wall 1: a parent sees exactly their own children (Bergen #1)', () => {
     expect(children[1].class_name).toBe('Klasse 3');
   });
 
+  // The `.eq('guardian_id', user.id)` in listChildrenForGuardian is
+  // load-bearing ONLY for a caller who is BOTH admin and parent: RLS
+  // (guardian_student_select_own_or_admin = has_role(admin) OR guardian_id =
+  // uid) already scopes a pure parent to their own links, but lets a dual-role
+  // admin read EVERY family's links — so without the .eq that user's "my
+  // children" would over-return all five children. No seed user holds both
+  // roles; grant an existing PARENT the admin role (not the reverse — a
+  // service_role insert into guardian_student trips its audit trigger, which
+  // service_role can't reach). AAL1 suffices (requireRole('parent'), not staff).
+  it('scopes a dual-role admin+parent to only their OWN children (.eq guard)', async () => {
+    const FORELDER_ID = '33333333-3333-3333-3333-333333333333';
+    const service = scaffoldingServiceClient();
+    await service.from('user_roles').insert({ user_id: FORELDER_ID, role: 'admin' });
+    try {
+      signInAs('forelder@test.local');
+      const children = await listChildrenForGuardian();
+      // Without the .eq, RLS lets the admin read every family's links → all 5
+      // children over-return; the strong toEqual catches it.
+      expect(children.map((c) => c.first_name)).toEqual(['Amira', 'Yusuf']);
+    } finally {
+      await service
+        .from('user_roles')
+        .delete()
+        .eq('user_id', FORELDER_ID)
+        .eq('role', 'admin');
+    }
+  });
+
   it('turns a teacher without the parent role away', async () => {
     await signInAsAAL2('laerer@test.local');
     await expect(listChildrenForGuardian()).rejects.toThrow(
@@ -3208,7 +3236,7 @@ git add src/lib/dal/students.ts tests/api/school-core.test.ts
 git commit -m "feat: students DAL with guardian, roster and registry reads at wall 1"
 ```
 
-Expected: **68** test:api (52 + 16). The two Bergen-critical tests to eyeball in the output: `never returns another family's student ids` and `does NOT give the dual-role user her child's class as teacher`.
+Expected: **69** test:api (52 + 17). The two Bergen-critical tests to eyeball in the output: `never returns another family's student ids` and `does NOT give the dual-role user her child's class as teacher`.
 
 ---
 
@@ -3752,7 +3780,7 @@ git add supabase/migrations/*_admin_user_lookup.sql supabase/tests/10_admin_look
 git commit -m "feat: admin-module user provisioning, role grants and service-only email lookup"
 ```
 
-Expected: **79** test:api (68 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
+Expected: **80** test:api (69 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
 
 ---
 
@@ -4823,7 +4851,7 @@ git add src/lib/validation/ src/lib/dates.ts src/lib/dates.test.ts 'src/app/(por
 git commit -m "feat: validated admin actions for terms, subjects, classes and schedule"
 ```
 
-Expected: ~93 Vitest; **90** test:api (79 + 11). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
+Expected: ~93 Vitest; **91** test:api (80 + 11). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
 
 ---
 
@@ -5383,7 +5411,7 @@ git add src/lib/validation/school.ts 'src/app/(portal)/admin/elever/actions.ts' 
 git commit -m "feat: registry actions for students, guardians, enrollment and student logins"
 ```
 
-Expected: **95** test:api (90 + 5 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
+Expected: **96** test:api (91 + 5 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
 
 ---
 
@@ -7759,7 +7787,7 @@ git add src/lib/dal/dashboard.ts 'src/app/(portal)/forelder/page.tsx' 'src/app/(
 git commit -m "feat: parent, student and admin dashboards on live registry data"
 ```
 
-Expected: **97** test:api (95 + 2).
+Expected: **98** test:api (96 + 2).
 
 ---
 
@@ -7775,7 +7803,7 @@ npm test -- --run 2>&1 | tail -3        # ~96 unit tests
 npm run build 2>&1 | tail -6            # all routes compile
 supabase db reset 2>&1 | tail -4        # migrations 7 + seeds apply
 supabase test db 2>&1 | tail -14        # 177 pgTAP across 11 files
-npm run test:api 2>&1 | tail -4         # 97 live wall-1 tests
+npm run test:api 2>&1 | tail -4         # 98 live wall-1 tests
 npm audit --audit-level=high            # exit 0
 git log --oneline main..feat/phase-1 | wc -l   # 16 commits (one per task)
 ```
@@ -7823,6 +7851,7 @@ Expected: CI green on the branch (typecheck/lint/unit/build + pgTAP jobs; `test:
 7. **T12 minors still open**: skip-to-main link; 5-portal-layout factory; 320px header-wrap polish. (The pill-link primitive CLOSED via `PillLink` in Task 11.)
 8. **No pagination** on registry/class lists — right for a few hundred students; revisit only if the school grows past ~1k rows per list.
 9. **Phase 7 audit-viewer consumer contract (BINDING, from T1 security review F1):** the viewer/alerting MUST classify the reserved namespace with a **case-sensitive, anchored** predicate only — `action LIKE 'admin.%'` / `action LIKE 'system.%'`. Never `ILIKE`, `lower()`/`upper()`, `trim()`, or any UI case-collapsing for the authority decision. The T1 guard is now normalization-agnostic (rejects case/whitespace variants too), so this is belt-and-braces — but it must be stated in the Phase 7 plan, not assumed.
+10. **Dual-role-with-admin `.eq` coverage (LOW, from T6/T7 security reviews):** the wall-1 relationship `.eq` filters (`listMyTeachingClasses` teacher_id, `listChildrenForGuardian` guardian_id, `getOwnStudentRecord` student_user_id, `getRosterForTeacher` teacher_id) are load-bearing ONLY for a caller who ALSO holds admin (RLS admin-permissive lets them read all rows; a pure-role caller is already RLS-scoped). Severity is CORRECTNESS not leak — an admin already sees all via the registry, so over-return discloses nothing new; RLS is the real Bergen wall for non-admins (T7 mutation-proved: removing every `.eq`, pure-role users still saw only their own rows). COVERED so far: admin+teacher (`listMyTeachingClasses`, T6 test) + admin+parent (`listChildrenForGuardian`, T7 test). STILL uncovered (accepted low-severity): admin+student (`getOwnStudentRecord` — fails closed via maybeSingle-on-many) and admin+teacher (`getRosterForTeacher` — same principle as the covered `listMyTeachingClasses`). Add tests if a real admin+student/admin+teacher persona appears, or during a Phase-7 hardening sweep. **Scaffolding gotcha:** build such a dual role by granting an EXISTING role-holder the second role via service_role on `user_roles` — NOT by inserting into an AUDITED school-core table (students/guardian_student/class_students): those fire `private.audit_row_change`→`private.audit`, and **service_role lacks USAGE on schema `private`**, so the insert 42501s. This also means retention/anonymization jobs (Phase 7) cannot mutate the audited tables via the service role — they must run through an authenticated path or the audit-trigger grants must be revisited.
 
 ## Coverage self-check (spec §9 Phase 1: «Terms, classes, subjects, students, guardians, enrollment; admin registry + one-glance page»)
 
