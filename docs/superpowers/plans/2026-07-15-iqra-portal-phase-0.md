@@ -2806,7 +2806,7 @@ async function requireAdminActor(): Promise<string> {
   // never depend on the proxy having run. Denies before any service query.
   const userClient = await createUserClient();
   const { data: aal, error: aalError } =
-    await userClient.auth.getAuthenticatorAssuranceLevel();
+    await userClient.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aalError) {
     throw new Error(`Sikkerhetsnivå-kontroll feilet: ${aalError.message}`);
   }
@@ -3113,17 +3113,27 @@ Create `/Users/daodilyas/dev/iqra-portal/src/lib/admin/audit-log.test.ts`:
 ```ts
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// audit-log.ts leads with `import 'server-only'`, which throws under node.
+vi.mock('server-only', () => ({}));
+
 const getSessionUser = vi.fn();
 vi.mock('@/lib/dal/session', () => ({ getSessionUser: () => getSessionUser() }));
 
+// AAL lives on auth.mfa (Supabase namespaces MFA methods under .mfa).
 const getAuthenticatorAssuranceLevel = vi.fn();
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(async () => ({ auth: { getAuthenticatorAssuranceLevel } })),
+  createClient: vi.fn(async () => ({
+    auth: { mfa: { getAuthenticatorAssuranceLevel } },
+  })),
 }));
 
 const serviceFrom = vi.fn();
 const createSupabaseClient = vi.fn(() => ({ from: serviceFrom }));
-vi.mock('@supabase/supabase-js', () => ({ createClient: createSupabaseClient }));
+// Lazy wrapper: vi.mock is hoisted above the const, so reference it lazily
+// (mirrors the getSessionUser pattern above) to avoid a TDZ error.
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: () => createSupabaseClient(),
+}));
 
 vi.mock('@/lib/env', () => ({
   getPublicEnv: () => ({
