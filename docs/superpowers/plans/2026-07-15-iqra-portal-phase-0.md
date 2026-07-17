@@ -4240,7 +4240,7 @@ git commit -m "feat: enforce AAL2 for staff roles in the request proxy"
 
 ### Task 14: MFA pages — TOTP enroll (`/mfa/registrer`) and challenge (`/mfa/verifiser`)
 
-> **Binding addition 2026-07-17 (from the T12b Fable-5 security review, finding 1) — RESOLVED, code embedded in Step 3b below:** the admin quarantine's ROLE branch (`src/lib/admin/audit-log.ts` — `'Du har ikke tilgang til denne siden.'`) is a proven surviving mutant: deleting it leaves the T12b suite green, because the AAL2 denial fires first for every seed user and the service client bypasses RLS. Step 3b (added by controller surgery after probing the local GoTrue MFA flow — enroll→challenge→verify with a node:crypto RFC-6238 code, then setSession to carry the AAL2 tokens onto the fresh clients `adminListAuditLog` builds) extends the API-wall suite from 30 → 32 tests, covering that branch: a 2FA-verified economy user is still refused, and only a 2FA-verified admin is admitted and audited. The controller verified locally that the two tests pass, are idempotent across re-runs, and go RED when the role branch is deleted (mutation-confirmed 2026-07-17). No new dependency (node:crypto only).
+> **Binding addition 2026-07-17 (from the T12b Fable-5 security review, finding 1) — RESOLVED, code embedded in Step 3b below:** the admin quarantine's ROLE branch (`src/lib/admin/audit-log.ts` — `'Du har ikke tilgang til denne siden.'`) is a proven surviving mutant: deleting it leaves the T12b suite green, because the AAL2 denial fires first for every seed user and the service client bypasses RLS. Step 3b (added by controller surgery after probing the local GoTrue MFA flow — enroll→challenge→verify with a node:crypto RFC-6238 code, then setSession to carry the AAL2 tokens onto the fresh clients `adminListAuditLog` builds) extends the API-wall suite from 30 → 32 tests, covering that branch: a 2FA-verified economy user is still refused, and only a 2FA-verified admin is admitted and audited. The controller verified locally that the two tests pass, are idempotent across re-runs, and go RED when the role branch is deleted (mutation-confirmed 2026-07-17). No new npm dependency (node:crypto for TOTP; the existing @supabase/supabase-js admin API + the `SUPABASE_SERVICE_ROLE_KEY` already in .env.local for the factor reset below). **Fix 2026-07-17 (spec review caught it):** the first cut cleaned up prior factors with the AAL1 *user* session, which cannot delete a VERIFIED factor — so once Step 5's manual walkthrough had verified a factor on `admin@`, a re-run of `test:api` failed with `enroll feilet: AAL2 required to enroll a new factor`. The harness now purges prior factors via the service-role admin API (`auth.admin.mfa.listFactors`/`deleteFactor`), which is AAL-independent; re-verified idempotent with a pre-planted verified factor on `admin@` (2026-07-17).
 
 **Files:**
 - Create: `/Users/daodilyas/dev/iqra-portal/src/app/mfa/registrer/EnrollForm.tsx`
@@ -4584,6 +4584,23 @@ function anonClient() {
   );
 }
 
+// Service-role client, used ONLY as AAL2 test scaffolding: to reset a seed
+// user's MFA factors before minting a fresh AAL2 session. It is NOT the code
+// under test — the admin quarantine's own service usage is what the suite
+// exercises. A verified factor cannot be removed from an AAL1 user session
+// (that needs AAL2, which needs the factor's secret we don't have), so the
+// service key is the only AAL-independent way to guarantee a clean slate.
+function serviceClient() {
+  const env = getPublicEnv();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    throw new Error('Harness AAL2: SUPABASE_SERVICE_ROLE_KEY mangler i miljøet.');
+  }
+  return createSupabaseClient<Database>(env.NEXT_PUBLIC_SUPABASE_URL, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 /** Later createClient() calls act as this seed user (AAL1 password session). */
 export function signInAs(email: SeedEmail): void {
   currentEmail = email;
@@ -4629,23 +4646,30 @@ function totpCode(secret: string): string {
 /**
  * Later createClient() calls act as this seed user with an AAL2 (2FA-verified)
  * session. A plain password sign-in is always AAL1 even when a factor exists,
- * so this enrolls a throwaway TOTP factor, verifies it with a generated code
- * to mint an AAL2 token, then unenrolls the factor (the minted token stays
- * valid) — leaving the seed user factorless so runs are idempotent.
+ * so this purges any prior factor via the service role (an AAL1 session cannot
+ * remove a VERIFIED one, and one left by the Task 14 manual walkthrough would
+ * otherwise block enrollment), enrolls a throwaway TOTP factor, verifies it
+ * with a generated code to mint an AAL2 token, then deletes that factor —
+ * leaving the seed user factorless so runs are idempotent regardless of prior
+ * MFA state.
  */
 export async function signInAsAAL2(email: SeedEmail): Promise<void> {
   const client = anonClient();
-  const { error: signInError } = await client.auth.signInWithPassword({
+  const { data: signIn, error: signInError } = await client.auth.signInWithPassword({
     email,
     password: TEST_PASSWORD,
   });
-  if (signInError) {
-    throw new Error(`Harness AAL2: innlogging som ${email} feilet: ${signInError.message}`);
+  if (signInError || !signIn.user) {
+    throw new Error(
+      `Harness AAL2: innlogging som ${email} feilet: ${signInError?.message ?? 'ukjent'}`,
+    );
   }
-  // Clear any factors left by an interrupted earlier run.
-  const { data: existing } = await client.auth.mfa.listFactors();
-  for (const factor of existing?.all ?? []) {
-    await client.auth.mfa.unenroll({ factorId: factor.id });
+  const userId = signIn.user.id;
+  const service = serviceClient();
+  // Remove every prior factor (verified or not) so enrollment is never blocked.
+  const { data: priorFactors } = await service.auth.admin.mfa.listFactors({ userId });
+  for (const factor of priorFactors?.factors ?? []) {
+    await service.auth.admin.mfa.deleteFactor({ id: factor.id, userId });
   }
   const { data: enroll, error: enrollError } = await client.auth.mfa.enroll({
     factorType: 'totp',
@@ -4668,7 +4692,9 @@ export async function signInAsAAL2(email: SeedEmail): Promise<void> {
   if (verifyError || !verify) {
     throw new Error(`Harness AAL2: verify feilet: ${verifyError?.message ?? 'ukjent'}`);
   }
-  await client.auth.mfa.unenroll({ factorId: enroll.id });
+  // Delete the throwaway factor via the service role (AAL-independent); the
+  // already-minted AAL2 token stays valid.
+  await service.auth.admin.mfa.deleteFactor({ id: enroll.id, userId });
   currentEmail = email;
   aal2Session = {
     access_token: verify.access_token,
