@@ -3569,6 +3569,7 @@ export default async function AdminDashboard() {
                   {new Date(entry.created_at).toLocaleString('nb-NO', {
                     dateStyle: 'short',
                     timeStyle: 'short',
+                    timeZone: 'Europe/Oslo',
                   })}
                 </time>
               </li>
@@ -3577,13 +3578,15 @@ export default async function AdminDashboard() {
         )}
         <p className="text-sm text-ink/60">
           Alle sensitive handlinger logges. Full revisjonslogg med filtrering kommer i
-          herdingsfasen.
+          en senere fase.
         </p>
       </section>
     </div>
   );
 }
 ```
+
+> **Post-review fix 2026-07-17:** timestamps pin `timeZone: 'Europe/Oslo'` (without it, `Intl` uses the server runtime's zone — UTC on production hosts, so audit times would render 1–2 h off Norwegian time), and the footnote says «en senere fase» instead of internal roadmap vocabulary («herdingsfasen»).
 
 The audit-entry markup renders raw `action` strings only. Do NOT add copy or filtering that presents `admin.*`-prefixed rows as *verified* admin actions — until `private.audit()` rejects the reserved prefix (tracked, pre-Phase-7), that namespace is convention, not proof.
 
