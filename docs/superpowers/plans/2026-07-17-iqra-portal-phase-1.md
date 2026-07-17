@@ -2515,22 +2515,38 @@ export interface RoleUser {
 
 const nbCollator = new Intl.Collator('nb');
 
-/** Admin-only: every user holding a role (class-teacher pickers etc.). */
+/**
+ * Admin-only: every user holding a role (class-teacher pickers etc.).
+ * Two queries + client-side join, NOT a PostgREST embed: user_roles and
+ * profiles have NO foreign key between them (both reference auth.users
+ * independently), so `user_roles.select('...profiles(...)')` cannot resolve
+ * ("Could not find a relationship"). Both reads run under the admin's RLS
+ * (user_roles: admin sees all; profiles: admin sees all). Contrast with
+ * classes.ts, whose embeds work because class_teachers.teacher_id and
+ * guardian_student.guardian_id DO carry an FK to profiles(id).
+ */
 export async function listUsersWithRole(role: Role): Promise<RoleUser[]> {
   await requireStaffRole('admin');
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data: roleRows, error } = await supabase
     .from('user_roles')
-    .select('user_id, profiles(full_name)')
+    .select('user_id')
     .eq('role', role);
   if (error) {
     throw new Error(`Kunne ikke lese brukere med rolle ${role}: ${error.message}`);
   }
-  return (data ?? [])
-    .map((row) => ({
-      user_id: row.user_id,
-      full_name: row.profiles?.full_name ?? '',
-    }))
+  const ids = (roleRows ?? []).map((row) => row.user_id);
+  if (ids.length === 0) return [];
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, full_name')
+    .in('id', ids);
+  if (profilesError) {
+    throw new Error(`Kunne ikke lese navn for brukere: ${profilesError.message}`);
+  }
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+  return ids
+    .map((id) => ({ user_id: id, full_name: nameById.get(id) ?? '' }))
     .sort((a, b) => nbCollator.compare(a.full_name, b.full_name));
 }
 ```
