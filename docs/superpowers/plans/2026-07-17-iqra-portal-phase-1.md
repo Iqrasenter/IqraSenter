@@ -8140,8 +8140,10 @@ export default async function LaererDashboard() {
               >
                 <span className="text-lg font-semibold">{cls.name}</span>
                 <span className="text-sm text-ink/60">
-                  {cls.schedule.map(scheduleLabel).join(' · ')}
-                  {cls.room ? ` · ${cls.room}` : ''}
+                  {cls.schedule
+                    .map(scheduleLabel)
+                    .concat(cls.room ? [cls.room] : [])
+                    .join(' · ')}
                 </span>
                 <span className="ms-auto text-sm tabular-nums text-ink/70">
                   {cls.active_count} elever
