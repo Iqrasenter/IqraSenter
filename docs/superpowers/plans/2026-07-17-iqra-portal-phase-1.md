@@ -6327,9 +6327,14 @@ export function SubjectRow({ subject }: { subject: Subject }) {
   );
   const [confirming, setConfirming] = useState(false);
 
-  useEffect(() => {
+  // Collapse the edit form when the action reports success — state is
+  // adjusted during render (React's recommended pattern; the repo's lint
+  // rules forbid synchronous setState inside effects).
+  const [prevEditState, setPrevEditState] = useState(editState);
+  if (prevEditState !== editState) {
+    setPrevEditState(editState);
     if (editState.success) setEditing(false);
-  }, [editState]);
+  }
 
   if (editing) {
     return (
@@ -6435,6 +6440,8 @@ rm -rf .next && npm run dev
 ```
 
 Browser check (header gotcha 17 for the TOTP code): log in as `admin@test.local` / `test-passord-123`, complete MFA enrollment, then visit `/admin/terminer` and `/admin/fag`. Verify: AdminNav pills with correct active state; «Høst 2026» listed with the green «Nåværende» chip; create a term «Vår 2027» (form clears on success), edit it, delete it; duplicate-name create shows the inline error; add subject «Test-fag», edit its sort, delete it; deleting «Arabisk» shows «Faget er i bruk …» inline (linked to classes). Keyboard-only pass: every pill/button reachable with a visible ring.
+
+Expected: typecheck + lint silent · 96 unit · clean build · every walkthrough item observed live.
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
