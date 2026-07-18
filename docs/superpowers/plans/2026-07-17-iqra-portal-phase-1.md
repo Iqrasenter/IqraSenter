@@ -7448,7 +7448,7 @@ Create `src/app/(portal)/admin/elever/GuardianCard.tsx`:
 ```tsx
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Field } from '@/components/ui/Field';
@@ -7522,6 +7522,10 @@ function GuardianRow({ elevId, guardian }: { elevId: string; guardian: GuardianL
  */
 function GuardianAddForm({ elevId }: { elevId: string }) {
   const [phase, setPhase] = useState<'link' | 'provision'>('link');
+  const [epost, setEpost] = useState('');
+  const [relasjon, setRelasjon] = useState('mor');
+  const [betaler, setBetaler] = useState(false);
+  const [fulltNavn, setFulltNavn] = useState('');
   const [linkState, linkAction, linkPending] = useActionState<LinkFormState, FormData>(
     linkGuardianAction,
     idleForm,
@@ -7530,14 +7534,17 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
     provisionGuardianAction,
     idleForm,
   );
-  const formRef = useRef<HTMLFormElement>(null);
   const pending = phase === 'link' ? linkPending : provPending;
 
-  // Switch the link/provision phase from the action results — state is
-  // adjusted during render (React's recommended pattern; the repo's lint
-  // rules forbid synchronous setState inside effects). provBase pins the
-  // provision slot at phase entry so an error from an EARLIER provisioning
-  // attempt never resurfaces when a new attempt reveals the fields.
+  // Every field is CONTROLLED: React 19 auto-resets uncontrolled fields after
+  // EVERY completed form action — including the needsProvision reply — which
+  // would wipe the e-mail the admin just typed the moment the provisioning
+  // fields appear. Controlled values survive; the success branches below
+  // clear them explicitly. Phase switching is adjusted during render
+  // (React's recommended pattern; the repo's lint rules forbid synchronous
+  // setState inside effects). provBase pins the provision slot at phase
+  // entry so an error from an EARLIER provisioning attempt never resurfaces
+  // when a new attempt reveals the fields.
   const [prevLinkState, setPrevLinkState] = useState(linkState);
   const [provBase, setProvBase] = useState(provState);
   if (prevLinkState !== linkState) {
@@ -7546,11 +7553,23 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
       setPhase('provision');
       setProvBase(provState);
     }
+    if (linkState.success) {
+      setEpost('');
+      setRelasjon('mor');
+      setBetaler(false);
+      setFulltNavn('');
+    }
   }
   const [prevProvState, setPrevProvState] = useState(provState);
   if (prevProvState !== provState) {
     setPrevProvState(provState);
-    if (provState.success) setPhase('link');
+    if (provState.success) {
+      setPhase('link');
+      setEpost('');
+      setRelasjon('mor');
+      setBetaler(false);
+      setFulltNavn('');
+    }
   }
   const error =
     phase === 'link'
@@ -7558,16 +7577,9 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
       : provState === provBase
         ? null
         : provState.error;
-  useEffect(() => {
-    if (linkState.success) formRef.current?.reset();
-  }, [linkState]);
-  useEffect(() => {
-    if (provState.success) formRef.current?.reset();
-  }, [provState]);
 
   return (
     <form
-      ref={formRef}
       action={phase === 'link' ? linkAction : provAction}
       className="flex flex-col gap-4 px-4 py-4"
     >
@@ -7581,10 +7593,18 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
             required
             maxLength={254}
             placeholder="navn@eksempel.no"
+            value={epost}
+            onChange={(event) => setEpost(event.target.value)}
           />
         </Field>
         <Field label="Relasjon" htmlFor="foresatt-relasjon">
-          <select id="foresatt-relasjon" name="relasjon" className={selectClasses}>
+          <select
+            id="foresatt-relasjon"
+            name="relasjon"
+            className={selectClasses}
+            value={relasjon}
+            onChange={(event) => setRelasjon(event.target.value)}
+          >
             {RELATIONSHIPS.map((value) => (
               <option key={value} value={value}>
                 {RELATIONSHIP_LABELS[value]}
@@ -7600,12 +7620,25 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
             kontoen (innlogging aktiveres senere).
           </p>
           <Field label="Fullt navn" htmlFor="foresatt-navn">
-            <Input id="foresatt-navn" name="fulltNavn" required maxLength={120} />
+            <Input
+              id="foresatt-navn"
+              name="fulltNavn"
+              required
+              maxLength={120}
+              value={fulltNavn}
+              onChange={(event) => setFulltNavn(event.target.value)}
+            />
           </Field>
         </>
       ) : null}
       <label className="flex min-h-11 items-center gap-3 text-base">
-        <input type="checkbox" name="betaler" className="size-5 accent-primary" />
+        <input
+          type="checkbox"
+          name="betaler"
+          className="size-5 accent-primary"
+          checked={betaler}
+          onChange={(event) => setBetaler(event.target.checked)}
+        />
         Er betaler for eleven
       </label>
       <FormError error={error} />
@@ -7661,7 +7694,7 @@ Create `src/app/(portal)/admin/elever/LoginCard.tsx`:
 ```tsx
 'use client';
 
-import { useActionState, useRef, useState } from 'react';
+import { useActionState, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Field } from '@/components/ui/Field';
@@ -7683,6 +7716,8 @@ export function LoginCard({
 }) {
   const [phase, setPhase] = useState<'link' | 'provision'>('link');
   const [confirming, setConfirming] = useState(false);
+  const [epost, setEpost] = useState('');
+  const [fulltNavn, setFulltNavn] = useState('');
   const [linkState, linkAction, linkPending] = useActionState<LinkFormState, FormData>(
     linkStudentLoginAction,
     idleForm,
@@ -7691,10 +7726,14 @@ export function LoginCard({
     provisionStudentLoginAction,
     idleForm,
   );
-  const formRef = useRef<HTMLFormElement>(null);
   const pending = phase === 'link' ? linkPending : provPending;
 
-  // Switch the link/provision phase from the action results — state is
+  // Both fields are CONTROLLED: React 19 auto-resets uncontrolled fields
+  // after EVERY completed form action — including the needsProvision reply —
+  // which would wipe the e-mail the admin just typed the moment the
+  // provisioning fields appear. Controlled values survive; on success the
+  // page revalidation flips hasLogin and unmounts the form, and the success
+  // branches below clear the values as belt-and-braces. Phase switching is
   // adjusted during render (React's recommended pattern; the repo's lint
   // rules forbid synchronous setState inside effects). provBase pins the
   // provision slot at phase entry so an error from an EARLIER provisioning
@@ -7707,11 +7746,19 @@ export function LoginCard({
       setPhase('provision');
       setProvBase(provState);
     }
+    if (linkState.success) {
+      setEpost('');
+      setFulltNavn('');
+    }
   }
   const [prevProvState, setPrevProvState] = useState(provState);
   if (prevProvState !== provState) {
     setPrevProvState(provState);
-    if (provState.success) setPhase('link');
+    if (provState.success) {
+      setPhase('link');
+      setEpost('');
+      setFulltNavn('');
+    }
   }
   const error =
     phase === 'link'
@@ -7747,7 +7794,6 @@ export function LoginCard({
           </div>
         ) : (
           <form
-            ref={formRef}
             action={phase === 'link' ? linkAction : provAction}
             className="flex flex-col gap-4"
           >
@@ -7764,6 +7810,8 @@ export function LoginCard({
                 required
                 maxLength={254}
                 placeholder="navn@eksempel.no"
+                value={epost}
+                onChange={(event) => setEpost(event.target.value)}
               />
             </Field>
             {phase === 'provision' ? (
@@ -7773,7 +7821,14 @@ export function LoginCard({
                   (innlogging aktiveres senere).
                 </p>
                 <Field label="Fullt navn" htmlFor="login-navn">
-                  <Input id="login-navn" name="fulltNavn" required maxLength={120} />
+                  <Input
+                    id="login-navn"
+                    name="fulltNavn"
+                    required
+                    maxLength={120}
+                    value={fulltNavn}
+                    onChange={(event) => setFulltNavn(event.target.value)}
+                  />
                 </Field>
               </>
             ) : null}
@@ -8034,7 +8089,7 @@ npm run typecheck && npm run lint && npm run build 2>&1 | tail -5
 rm -rf .next && npm run dev
 ```
 
-Browser check as AAL2 admin, on `/admin/elever/fe000000-0000-0000-0000-000000000004` (Zaynab): «Skjermet» chip; guardian Fatima Yusuf (Mor, Betaler); class Klasse 3 with enroll date; no login → link form. Full flows: register a scratch student from `/admin/elever/ny` → lands on the one-glance page; add guardian by the seed e-mail `forelder2@test.local` (link path); add another with a fresh e-mail (provision path reveals the name field); toggle payer; enroll into Klasse 1; meld ut (two-step: Meld ut → Bekreft utmelding); cancel a provisioning attempt mid-way, start a new one → NO stale error appears; give the student a two-line note → line breaks preserved on the detail page; delete the scratch student (two-step) → back on the registry. Then `supabase db reset` + `npm run test:api 2>&1 | tail -3` to confirm the world is clean (**116 passing**).
+Browser check as AAL2 admin, on `/admin/elever/fe000000-0000-0000-0000-000000000004` (Zaynab): «Skjermet» chip; guardian Fatima Yusuf (Mor, Betaler); class Klasse 3 with enroll date; no login → link form. Full flows: register a scratch student from `/admin/elever/ny` → lands on the one-glance page; add guardian by the seed e-mail `forelder2@test.local` (link path); add another with a fresh e-mail (provision path reveals the name field); toggle payer; enroll into Klasse 1; meld ut (two-step: Meld ut → Bekreft utmelding); cancel a provisioning attempt mid-way, start a new one → NO stale error appears; the typed e-mail (and relasjon/betaler) SURVIVES the flip into provisioning (React 19 auto-reset is defeated by the controlled fields) and a provision validation error keeps the typed name; give the student a two-line note → line breaks preserved on the detail page; delete the scratch student (two-step) → back on the registry. Then `supabase db reset` + `npm run test:api 2>&1 | tail -3` to confirm the world is clean (**116 passing**).
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
