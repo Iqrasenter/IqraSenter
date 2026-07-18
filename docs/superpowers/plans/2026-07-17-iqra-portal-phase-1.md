@@ -4211,19 +4211,23 @@ export async function updateTermAction(
   if (!id.success) return { error: 'Ugyldig termin.' };
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('terms')
     .update({
       name: parsed.data.navn,
       starts_on: parsed.data.start,
       ends_on: parsed.data.slutt,
     })
-    .eq('id', id.data);
+    .eq('id', id.data)
+    .select('id');
   if (error) {
     if (error.code === '23505') {
       return { error: 'En termin med dette navnet finnes allerede.' };
     }
     throw new Error(`Kunne ikke oppdatere termin: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Terminen finnes ikke lenger.' };
   }
   revalidatePath('/admin/terminer');
   redirect('/admin/terminer');
@@ -4245,12 +4249,19 @@ export async function setCurrentTermAction(formData: FormData): Promise<void> {
   if (clearError) {
     throw new Error(`Kunne ikke fjerne nåværende termin: ${clearError.message}`);
   }
-  const { error: setError } = await supabase
+  const { data: setData, error: setError } = await supabase
     .from('terms')
     .update({ is_current: true })
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
   if (setError) {
+    if (setError.code === '23505') {
+      throw new Error('Nåværende termin ble nettopp endret av noen andre. Prøv igjen.');
+    }
     throw new Error(`Kunne ikke sette nåværende termin: ${setError.message}`);
+  }
+  if (!setData || setData.length === 0) {
+    throw new Error('Terminen finnes ikke lenger.');
   }
   revalidatePath('/admin/terminer');
   revalidatePath('/admin');
@@ -4332,19 +4343,23 @@ export async function updateSubjectAction(
   if (!id.success) return { error: 'Ugyldig fag.' };
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('subjects')
     .update({
       name: parsed.data.navn,
       sort: parsed.data.sort,
       quran_tracking: formData.get('koranspor') === 'on',
     })
-    .eq('id', id.data);
+    .eq('id', id.data)
+    .select('id');
   if (error) {
     if (error.code === '23505') {
       return { error: 'Et fag med dette navnet finnes allerede.' };
     }
     throw new Error(`Kunne ikke oppdatere fag: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Faget finnes ikke lenger.' };
   }
   revalidatePath('/admin/fag');
   return { error: null, success: true };
@@ -4417,6 +4432,9 @@ export async function createClassAction(
     if (error?.code === '23505') {
       return { error: 'En klasse med dette navnet finnes allerede i terminen.' };
     }
+    if (error?.code === '23503') {
+      return { error: 'Terminen finnes ikke lenger.' };
+    }
     throw new Error(`Kunne ikke opprette klasse: ${error?.message ?? 'ukjent'}`);
   }
   revalidatePath('/admin/klasser');
@@ -4435,15 +4453,19 @@ export async function updateClassAction(
   if (!id.success) return { error: 'Ugyldig klasse.' };
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('classes')
     .update({ name: parsed.data.navn, room: parsed.data.rom })
-    .eq('id', id.data);
+    .eq('id', id.data)
+    .select('id');
   if (error) {
     if (error.code === '23505') {
       return { error: 'En klasse med dette navnet finnes allerede i terminen.' };
     }
     throw new Error(`Kunne ikke oppdatere klasse: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Klassen finnes ikke lenger.' };
   }
   revalidatePath(`/admin/klasser/${id.data}`);
   return { error: null, success: true };
@@ -4545,6 +4567,9 @@ export async function saveClassSubjectsAction(
       })),
     );
     if (insertError) {
+      if (insertError.code === '23503') {
+        return { error: 'Klassen eller ett av fagene finnes ikke lenger.' };
+      }
       throw new Error(`Kunne ikke lagre fag: ${insertError.message}`);
     }
   }
@@ -4577,6 +4602,9 @@ export async function addScheduleSlotAction(
     }
     if (error.code === '23514') {
       return { error: 'Sluttid må være etter starttid.' };
+    }
+    if (error.code === '23503') {
+      return { error: 'Klassen finnes ikke lenger.' };
     }
     throw new Error(`Kunne ikke legge til økt: ${error.message}`);
   }
@@ -4638,14 +4666,18 @@ export async function unenrollStudentAction(formData: FormData): Promise<void> {
     klasseId: formData.get('klasseId'),
   });
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('class_students')
     .update({ left_on: todayOsloISO() })
     .eq('class_id', parsed.klasseId)
     .eq('student_id', parsed.elevId)
-    .is('left_on', null);
+    .is('left_on', null)
+    .select('class_id');
   if (error) {
     throw new Error(`Kunne ikke melde ut elev: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    throw new Error('Eleven har ingen aktiv plass i denne klassen.');
   }
   revalidatePath(`/admin/klasser/${parsed.klasseId}`);
   revalidatePath(`/admin/elever/${parsed.elevId}`);
@@ -4675,14 +4707,19 @@ vi.mock('next/navigation', async () => {
 
 import {
   addScheduleSlotAction,
+  createClassAction,
+  saveClassSubjectsAction,
   saveClassTeachersAction,
+  unenrollStudentAction,
+  updateClassAction,
 } from '@/app/(portal)/admin/klasser/actions';
 import {
   createTermAction,
   deleteTermAction,
   setCurrentTermAction,
+  updateTermAction,
 } from '@/app/(portal)/admin/terminer/actions';
-import { createSubjectAction } from '@/app/(portal)/admin/fag/actions';
+import { createSubjectAction, updateSubjectAction } from '@/app/(portal)/admin/fag/actions';
 import { getClassForAdmin } from '@/lib/dal/classes';
 import { getCurrentTerm } from '@/lib/dal/terms';
 import { createServerClientMock, signInAs, signInAsAAL2, signOut } from './harness';
@@ -4690,6 +4727,10 @@ import { createServerClientMock, signInAs, signInAsAAL2, signOut } from './harne
 const K1 = 'fc000000-0000-0000-0000-000000000001';
 const LAERER_ID = '22222222-2222-2222-2222-222222222222';
 const HOST_2026 = 'f1000000-0000-0000-0000-000000000001';
+// Idris: forelder2@'s child, STOPPED, no class (seed.sql) — has zero
+// class_students rows, so any unenroll target for him is a clean "no
+// active enrollment" case with nothing to restore afterwards.
+const STOPPED_STUDENT_NO_CLASS = 'fe000000-0000-0000-0000-000000000005';
 
 function form(fields: Record<string, string | string[]>): FormData {
   const fd = new FormData();
@@ -4850,6 +4891,108 @@ describe('actions: class teachers are pre-validated (no destructive delete)', ()
     expect(restored?.teachers.map((t) => t.full_name)).toEqual(['Leila Ahmed']);
   });
 });
+
+describe('actions: confirm affected rows and map stale-reference errors', () => {
+  it('updateTermAction on a nonexistent id reports it is gone (no redirect)', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      updateTermAction(
+        { error: null },
+        form({
+          id: crypto.randomUUID(),
+          navn: 'Spøkelsestermin',
+          start: '2027-01-01',
+          slutt: '2027-06-01',
+        }),
+      ),
+    ).resolves.toEqual({ error: 'Terminen finnes ikke lenger.' });
+  });
+
+  it('updateSubjectAction on a nonexistent id reports it is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      updateSubjectAction(
+        { error: null },
+        form({ id: crypto.randomUUID(), navn: 'Spøkelsesfag', sort: '1' }),
+      ),
+    ).resolves.toEqual({ error: 'Faget finnes ikke lenger.' });
+  });
+
+  it('updateClassAction on a nonexistent id reports it is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      updateClassAction(
+        { error: null },
+        form({ id: crypto.randomUUID(), navn: 'Spøkelsesklasse', rom: '' }),
+      ),
+    ).resolves.toEqual({ error: 'Klassen finnes ikke lenger.' });
+  });
+
+  it('setCurrentTermAction on a nonexistent id throws, leaving the previous term restorable', async () => {
+    await signInAsAAL2('admin@test.local');
+    // Statement 1 (clear old current) always runs and succeeds before
+    // statement 2 fails on the bad id, so the current term must be
+    // captured up front and restored here even if the assertion fails.
+    const previous = await getCurrentTerm();
+    try {
+      await expect(
+        setCurrentTermAction(form({ id: crypto.randomUUID() })),
+      ).rejects.toThrow('Terminen finnes ikke lenger.');
+    } finally {
+      if (previous) {
+        const client = await createServerClientMock();
+        await client.from('terms').update({ is_current: true }).eq('id', previous.id);
+      }
+    }
+  });
+
+  it('createClassAction with a nonexistent term_id reports the term is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      createClassAction(
+        { error: null },
+        form({ terminId: crypto.randomUUID(), navn: 'Spøkelsesklasse', rom: '' }),
+      ),
+    ).resolves.toEqual({ error: 'Terminen finnes ikke lenger.' });
+  });
+
+  it('addScheduleSlotAction with a nonexistent class id reports the class is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      addScheduleSlotAction(
+        { error: null },
+        form({ klasseId: crypto.randomUUID(), ukedag: '2', start: '09:00', slutt: '10:00' }),
+      ),
+    ).resolves.toEqual({ error: 'Klassen finnes ikke lenger.' });
+  });
+
+  it('saveClassSubjectsAction with a nonexistent subject id reports the stale reference', async () => {
+    await signInAsAAL2('admin@test.local');
+    const client = await createServerClientMock();
+    const { data: klasse } = await client
+      .from('classes')
+      .insert({ term_id: HOST_2026, name: 'Testklasse for fagvalidering', room: null })
+      .select('id')
+      .single();
+    try {
+      await expect(
+        saveClassSubjectsAction(
+          { error: null },
+          form({ klasseId: klasse!.id, fag: [crypto.randomUUID()] }),
+        ),
+      ).resolves.toEqual({ error: 'Klassen eller ett av fagene finnes ikke lenger.' });
+    } finally {
+      await client.from('classes').delete().eq('id', klasse!.id);
+    }
+  });
+
+  it('unenrollStudentAction for a student with no active enrollment in that class throws', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      unenrollStudentAction(form({ elevId: STOPPED_STUDENT_NO_CLASS, klasseId: K1 })),
+    ).rejects.toThrow('Eleven har ingen aktiv plass i denne klassen.');
+  });
+});
 ```
 
 - [ ] **Step 7: Verify GREEN, then commit**
@@ -4863,7 +5006,7 @@ git add src/lib/validation/ src/lib/dates.ts src/lib/dates.test.ts 'src/app/(por
 git commit -m "feat: validated admin actions for terms, subjects, classes and schedule"
 ```
 
-Expected: ~93 Vitest; **91** test:api (80 + 11). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
+Expected: 96 Vitest; **99** test:api (80 + 19). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
 
 ---
 
