@@ -7980,7 +7980,7 @@ npm run typecheck && npm run lint && npm run build 2>&1 | tail -5
 rm -rf .next && npm run dev
 ```
 
-Browser check as AAL2 admin, on `/admin/elever/fe000000-0000-0000-0000-000000000004` (Zaynab): «Skjermet» chip; guardian Fatima Yusuf (Mor, Betaler); class Klasse 3 with enroll date; no login → link form. Full flows: register a scratch student from `/admin/elever/ny` → lands on the one-glance page; add guardian by the seed e-mail `forelder2@test.local` (link path); add another with a fresh e-mail (provision path reveals the name field); toggle payer; enroll into Klasse 1; meld ut; delete the scratch student (two-step) → back on the registry. Then `supabase db reset` + `npm run test:api 2>&1 | tail -3` to confirm the world is clean (**94 passing**).
+Browser check as AAL2 admin, on `/admin/elever/fe000000-0000-0000-0000-000000000004` (Zaynab): «Skjermet» chip; guardian Fatima Yusuf (Mor, Betaler); class Klasse 3 with enroll date; no login → link form. Full flows: register a scratch student from `/admin/elever/ny` → lands on the one-glance page; add guardian by the seed e-mail `forelder2@test.local` (link path); add another with a fresh e-mail (provision path reveals the name field); toggle payer; enroll into Klasse 1; meld ut; delete the scratch student (two-step) → back on the registry. Then `supabase db reset` + `npm run test:api 2>&1 | tail -3` to confirm the world is clean (**116 passing**).
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
