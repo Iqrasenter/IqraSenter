@@ -5042,6 +5042,7 @@ import {
   linkStudentLoginAction,
   provisionGuardianAction,
   provisionStudentLoginAction,
+  setGuardianPayerAction,
   unlinkStudentLoginAction,
   updateStudentAction,
 } from '@/app/(portal)/admin/elever/actions';
@@ -5049,6 +5050,7 @@ import {
   enrollStudentAction,
   unenrollStudentAction,
 } from '@/app/(portal)/admin/klasser/actions';
+import { adminFindUserByEmail } from '@/lib/admin/users';
 import {
   getStudentForAdmin,
   listStudentsWithoutActiveClass,
@@ -5246,6 +5248,84 @@ describe('actions: the registry lifecycle', () => {
     ).rejects.toThrow('NEXT_REDIRECT:/ingen-tilgang');
   });
 });
+
+describe('actions: registry stale-reference guards', () => {
+  it('updateStudentAction on a nonexistent id reports it is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      updateStudentAction(
+        { error: null },
+        form({
+          id: randomUUID(),
+          fornavn: 'Spøkelse',
+          etternavn: 'Elev',
+          fodselsaar: '2014',
+          notat: '',
+          status: 'active',
+        }),
+      ),
+    ).resolves.toEqual({ error: 'Eleven finnes ikke lenger.' });
+  });
+
+  it('setGuardianPayerAction on a nonexistent guardian-student pair reports it is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      setGuardianPayerAction(
+        form({ elevId: randomUUID(), guardianId: randomUUID(), betaler: 'true' }),
+      ),
+    ).rejects.toThrow('Foresatt-koblingen finnes ikke lenger.');
+  });
+
+  it('unlinkStudentLoginAction on a nonexistent student reports it is gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      unlinkStudentLoginAction(form({ elevId: randomUUID() })),
+    ).rejects.toThrow('Eleven finnes ikke lenger.');
+  });
+
+  it('linkGuardianAction with a real guardian but a nonexistent student maps the stale FK', async () => {
+    await signInAsAAL2('admin@test.local');
+    // forelder2@test.local already holds the parent role (seed.sql) —
+    // adminGrantRole is an idempotent upsert, so re-granting it here is a
+    // harmless no-op and the insert itself fails on the student_id FK.
+    await expect(
+      linkGuardianAction(
+        { error: null },
+        form({
+          elevId: randomUUID(),
+          epost: 'forelder2@test.local',
+          relasjon: 'mor',
+          betaler: 'on',
+        }),
+      ),
+    ).resolves.toEqual({ error: 'Eleven eller kontoen finnes ikke lenger.' });
+  });
+
+  it('provisionStudentLoginAction with a nonexistent student provisions the account then reports it gone', async () => {
+    await signInAsAAL2('admin@test.local');
+    const loginEmail = `elev-${randomUUID()}@test.local`;
+    const service = scaffoldingServiceClient();
+    try {
+      await expect(
+        provisionStudentLoginAction(
+          { error: null },
+          form({
+            elevId: randomUUID(),
+            epost: loginEmail,
+            fulltNavn: 'Spøkelse Elev',
+          }),
+        ),
+      ).resolves.toEqual({ error: 'Eleven finnes ikke lenger.' });
+    } finally {
+      // adminProvisionUser succeeds before linkLogin discovers the student
+      // is gone, so the account is real and must be cleaned up here.
+      const provisioned = await adminFindUserByEmail(loginEmail);
+      if (provisioned) {
+        await service.auth.admin.deleteUser(provisioned.userId);
+      }
+    }
+  });
+});
 ```
 
 Run `npm run test:api 2>&1 | tail -5` — expect resolution failure for `@/app/(portal)/admin/elever/actions`.
@@ -5328,7 +5408,7 @@ export async function updateStudentAction(
   if (!id.success) return { error: 'Ugyldig elev.' };
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('students')
     .update({
       first_name: parsed.data.fornavn,
@@ -5338,9 +5418,13 @@ export async function updateStudentAction(
       protected: parsed.data.skjermet,
       status: parsed.data.status,
     })
-    .eq('id', id.data);
+    .eq('id', id.data)
+    .select('id');
   if (error) {
     throw new Error(`Kunne ikke oppdatere elev: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Eleven finnes ikke lenger.' };
   }
   revalidatePath(`/admin/elever/${id.data}`);
   revalidatePath('/admin/elever');
@@ -5388,6 +5472,9 @@ export async function linkGuardianAction(
     if (error.code === '23505') {
       return { error: 'Allerede registrert som foresatt.' };
     }
+    if (error.code === '23503') {
+      return { error: 'Eleven eller kontoen finnes ikke lenger.' };
+    }
     throw new Error(`Kunne ikke koble foresatt: ${error.message}`);
   }
   revalidatePath(`/admin/elever/${parsed.data.elevId}`);
@@ -5434,6 +5521,9 @@ export async function provisionGuardianAction(
     is_payer: parsed.data.betaler,
   });
   if (error) {
+    if (error.code === '23503') {
+      return { error: 'Kontoen ble opprettet, men eleven finnes ikke lenger.' };
+    }
     throw new Error(`Konto opprettet, men kobling feilet: ${error.message}`);
   }
   revalidatePath(`/admin/elever/${parsed.data.elevId}`);
@@ -5462,13 +5552,17 @@ export async function setGuardianPayerAction(formData: FormData): Promise<void> 
   const guardianId = uuidField.parse(formData.get('guardianId'));
   const betaler = formData.get('betaler') === 'true';
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('guardian_student')
     .update({ is_payer: betaler })
     .eq('student_id', elevId)
-    .eq('guardian_id', guardianId);
+    .eq('guardian_id', guardianId)
+    .select('student_id');
   if (error) {
     throw new Error(`Kunne ikke endre betaler: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    throw new Error('Foresatt-koblingen finnes ikke lenger.');
   }
   revalidatePath(`/admin/elever/${elevId}`);
 }
@@ -5525,15 +5619,19 @@ export async function provisionStudentLoginAction(
 
 async function linkLogin(elevId: string, userId: string): Promise<LinkFormState> {
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('students')
     .update({ student_user_id: userId })
-    .eq('id', elevId);
+    .eq('id', elevId)
+    .select('id');
   if (error) {
     if (error.code === '23505') {
       return { error: 'Denne kontoen er allerede koblet til en annen elev.' };
     }
     throw new Error(`Kunne ikke koble elevinnlogging: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    return { error: 'Eleven finnes ikke lenger.' };
   }
   revalidatePath(`/admin/elever/${elevId}`);
   return { error: null, success: true };
@@ -5543,12 +5641,16 @@ export async function unlinkStudentLoginAction(formData: FormData): Promise<void
   await requireStaffRole('admin');
   const elevId = uuidField.parse(formData.get('elevId'));
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('students')
     .update({ student_user_id: null })
-    .eq('id', elevId);
+    .eq('id', elevId)
+    .select('id');
   if (error) {
     throw new Error(`Kunne ikke fjerne elevinnlogging: ${error.message}`);
+  }
+  if (!data || data.length === 0) {
+    throw new Error('Eleven finnes ikke lenger.');
   }
   revalidatePath(`/admin/elever/${elevId}`);
   // Deliberately does NOT revoke the student role — role revocation is a
@@ -5566,7 +5668,7 @@ git add src/lib/validation/school.ts 'src/app/(portal)/admin/elever/actions.ts' 
 git commit -m "feat: registry actions for students, guardians, enrollment and student logins"
 ```
 
-Expected: **96** test:api (91 + 5 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
+Expected: **109** test:api (99 + 10 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
 
 ---
 
