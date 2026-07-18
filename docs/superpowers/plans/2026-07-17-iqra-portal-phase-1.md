@@ -5032,25 +5032,38 @@ export interface LinkFormState extends FormState {
 
 - [ ] **Step 2: Write the failing lifecycle tests**
 
-Append to `tests/api/school-actions.test.ts` — new imports:
+In `tests/api/school-actions.test.ts`, the module import block below the `vi.mock` preamble becomes (byte-exact; note `enrollStudentAction` merges into the EXISTING klasser import — a second import statement from that module would redeclare `unenrollStudentAction`):
 
 ```ts
+import {
+  addScheduleSlotAction,
+  createClassAction,
+  enrollStudentAction,
+  saveClassSubjectsAction,
+  saveClassTeachersAction,
+  unenrollStudentAction,
+  updateClassAction,
+} from '@/app/(portal)/admin/klasser/actions';
+import {
+  createTermAction,
+  deleteTermAction,
+  setCurrentTermAction,
+  updateTermAction,
+} from '@/app/(portal)/admin/terminer/actions';
+import { createSubjectAction, updateSubjectAction } from '@/app/(portal)/admin/fag/actions';
 import {
   createStudentAction,
   deleteStudentAction,
   linkGuardianAction,
-  linkStudentLoginAction,
   provisionGuardianAction,
   provisionStudentLoginAction,
   setGuardianPayerAction,
   unlinkStudentLoginAction,
   updateStudentAction,
 } from '@/app/(portal)/admin/elever/actions';
-import {
-  enrollStudentAction,
-  unenrollStudentAction,
-} from '@/app/(portal)/admin/klasser/actions';
 import { adminFindUserByEmail } from '@/lib/admin/users';
+import { getClassForAdmin } from '@/lib/dal/classes';
+import { getCurrentTerm } from '@/lib/dal/terms';
 import {
   getStudentForAdmin,
   listStudentsWithoutActiveClass,
@@ -5059,9 +5072,10 @@ import { randomUUID } from 'node:crypto';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase/database.types';
 import { getPublicEnv } from '@/lib/env';
+import { createServerClientMock, signInAs, signInAsAAL2, signOut } from './harness';
 ```
 
-and the describes:
+and append the describes:
 
 ```ts
 const K3 = 'fc000000-0000-0000-0000-000000000002';
@@ -5087,6 +5101,12 @@ async function expectRedirect(promise: Promise<unknown>): Promise<string> {
 }
 
 describe('actions: the registry lifecycle', () => {
+  // This test performs ~25-30 sequential real round-trips against the local
+  // stack (AAL2 sign-in's TOTP enroll/challenge/verify dance, then the full
+  // create → guardian → enroll → move → provision-login → unlink → delete
+  // chain). Measured in isolation at ~27s — comfortably over the file's
+  // 15s default testTimeout (vitest.config.api.ts) but not a hang: raised
+  // per-test rather than lifting the shared default for every test.
   it('create → guardian → enroll → move → login → delete', async () => {
     await signInAsAAL2('admin@test.local');
     const service = scaffoldingServiceClient();
@@ -5193,7 +5213,7 @@ describe('actions: the registry lifecycle', () => {
         await service.auth.admin.deleteUser(provisionedLoginId);
       }
     }
-  });
+  }, 45000);
 
   it('offers provisioning when the guardian e-mail has no account', async () => {
     await signInAsAAL2('admin@test.local');
