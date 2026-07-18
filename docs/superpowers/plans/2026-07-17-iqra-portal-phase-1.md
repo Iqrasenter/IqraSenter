@@ -8426,10 +8426,13 @@ export default async function ElevDashboard() {
 
 - [ ] **Step 5: Admin dashboard on real counts**
 
-In `src/app/(portal)/admin/page.tsx`: add the imports and replace the `EmptyState` block (the `loadAuditEntries` helper and «Siste hendelser» section stay exactly as they are):
+In `src/app/(portal)/admin/page.tsx`, edit the import block and the `AdminDashboard` body (the `loadAuditEntries` helper and the «Siste hendelser» `<section>` stay byte-for-byte as they are). The `EmptyState` import becomes unused once the block below replaces its only call site — drop it, or `npm run lint` fails on the unused import. The final import block reads exactly:
 
 ```tsx
+import type { Metadata } from 'next';
 import { PillLink } from '@/components/ui/PillLink';
+import { AdminAccessDenied } from '@/lib/admin/quarantine';
+import { adminListAuditLog, type AuditLogEntry } from '@/lib/admin/audit-log';
 import { getAdminOverview } from '@/lib/dal/dashboard';
 ```
 
