@@ -5055,9 +5055,11 @@ import {
   createStudentAction,
   deleteStudentAction,
   linkGuardianAction,
+  linkStudentLoginAction,
   provisionGuardianAction,
   provisionStudentLoginAction,
   setGuardianPayerAction,
+  unlinkGuardianAction,
   unlinkStudentLoginAction,
   updateStudentAction,
 } from '@/app/(portal)/admin/elever/actions';
@@ -5207,7 +5209,16 @@ describe('actions: the registry lifecycle', () => {
       studentId = '';
     } finally {
       if (studentId) {
-        await service.from('students').delete().eq('id', studentId);
+        // The audit triggers make service-role deletes on students fail with
+        // 42501 — surface that loudly instead of leaving silent residue, but
+        // never throw from a finally (it would mask the primary failure).
+        const { error } = await service.from('students').delete().eq('id', studentId);
+        if (error) {
+          console.error(
+            'Lifecycle cleanup failed: scratch student row not deleted.',
+            error.message,
+          );
+        }
       }
       if (provisionedLoginId) {
         await service.auth.admin.deleteUser(provisionedLoginId);
@@ -5345,6 +5356,212 @@ describe('actions: registry stale-reference guards', () => {
       }
     }
   });
+});
+
+describe('actions: registry wall-1 sweep and role-grant coverage', () => {
+  // Every exported registry action with a minimal invocation. The
+  // requireStaffRole('admin') gate is each action's FIRST statement, so it
+  // fires before any FormData parsing — empty forms are sufficient, and a
+  // sweep failure means the gate itself moved or vanished.
+  const registryActions: ReadonlyArray<[string, () => Promise<unknown>]> = [
+    ['createStudentAction', () => createStudentAction({ error: null }, form({}))],
+    ['updateStudentAction', () => updateStudentAction({ error: null }, form({}))],
+    ['deleteStudentAction', () => deleteStudentAction(form({}))],
+    ['linkGuardianAction', () => linkGuardianAction({ error: null }, form({}))],
+    ['provisionGuardianAction', () => provisionGuardianAction({ error: null }, form({}))],
+    ['unlinkGuardianAction', () => unlinkGuardianAction(form({}))],
+    ['setGuardianPayerAction', () => setGuardianPayerAction(form({}))],
+    ['linkStudentLoginAction', () => linkStudentLoginAction({ error: null }, form({}))],
+    [
+      'provisionStudentLoginAction',
+      () => provisionStudentLoginAction({ error: null }, form({})),
+    ],
+    ['unlinkStudentLoginAction', () => unlinkStudentLoginAction(form({}))],
+  ];
+
+  // The outcome object carries the action's name into the assertion diff, so
+  // a sweep failure names the culprit instead of pointing at the loop line.
+  async function sweepOutcome(name: string, invoke: () => Promise<unknown>) {
+    return invoke().then(
+      (resolved) => ({ name, resolved }),
+      (error: unknown) => ({ name, message: (error as Error).message }),
+    );
+  }
+
+  // Timeouts: a 10-action sweep is 30+ real round-trips (the AAL1 sweep pays
+  // a bcrypt password grant per action) — measured 12-14.4s in ISOLATION,
+  // over the 15s default under full-suite load. Raised per test, like the
+  // lifecycle test above, instead of lifting the file-wide default.
+  it('turns an AAL2 teacher away from every registry action', async () => {
+    await signInAsAAL2('laerer@test.local');
+    for (const [name, invoke] of registryActions) {
+      expect(await sweepOutcome(name, invoke)).toEqual({
+        name,
+        message: 'NEXT_REDIRECT:/ingen-tilgang',
+      });
+    }
+  }, 30000);
+
+  it('sends a password-only admin to MFA from every registry action', async () => {
+    signInAs('admin@test.local');
+    for (const [name, invoke] of registryActions) {
+      expect(await sweepOutcome(name, invoke)).toEqual({
+        name,
+        message: expect.stringMatching(/^NEXT_REDIRECT:\/mfa\//),
+      });
+    }
+  }, 30000);
+
+  it('grants the parent role before inserting the guardian link, and unlink cleans up', async () => {
+    await signInAsAAL2('admin@test.local');
+    const service = scaffoldingServiceClient();
+    // laerer@ holds ONLY the teacher role in the seed, so a successful link
+    // proves adminGrantRole ran BEFORE the guardian_student insert — the
+    // with_check would refuse a guardian who does not hold the parent role.
+    const teacher = await adminFindUserByEmail('laerer@test.local');
+    if (!teacher) throw new Error('laerer@test.local mangler i seeden.');
+    let studentId = '';
+    try {
+      const target = await expectRedirect(
+        createStudentAction(
+          { error: null },
+          form({
+            fornavn: 'Rollebevis',
+            etternavn: 'Testelev',
+            fodselsaar: '2015',
+            notat: '',
+          }),
+        ),
+      );
+      studentId = target.replace('/admin/elever/', '');
+
+      await expect(
+        linkGuardianAction(
+          { error: null },
+          form({
+            elevId: studentId,
+            epost: 'laerer@test.local',
+            relasjon: 'mor',
+            betaler: '',
+          }),
+        ),
+      ).resolves.toEqual({ error: null, success: true });
+
+      const { data: roleRows } = await service
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', teacher.userId)
+        .eq('role', 'parent');
+      expect(roleRows).toHaveLength(1);
+      const { data: linkRows } = await service
+        .from('guardian_student')
+        .select('guardian_id')
+        .eq('student_id', studentId)
+        .eq('guardian_id', teacher.userId);
+      expect(linkRows).toHaveLength(1);
+    } finally {
+      // Cleanup runs through the authenticated actions for the audited tables
+      // (the service role cannot delete students/guardian_student rows) and
+      // doubles as unlinkGuardianAction's happy-path coverage.
+      if (studentId) {
+        await unlinkGuardianAction(
+          form({ elevId: studentId, guardianId: teacher.userId }),
+        );
+        const { data: leftover } = await service
+          .from('guardian_student')
+          .select('guardian_id')
+          .eq('student_id', studentId)
+          .eq('guardian_id', teacher.userId);
+        expect(leftover).toHaveLength(0);
+      }
+      // Restore the seed invariant (laerer@ without parent). user_roles has no
+      // audit trigger, so the service delete is sanctioned; deleting a row the
+      // grant never created is a harmless 0-row delete.
+      await service
+        .from('user_roles')
+        .delete()
+        .eq('user_id', teacher.userId)
+        .eq('role', 'parent');
+      if (studentId) {
+        await expectRedirect(deleteStudentAction(form({ id: studentId })));
+      }
+    }
+  }, 30000);
+
+  it('offers provisioning when the student-login e-mail has no account', async () => {
+    await signInAsAAL2('admin@test.local');
+    await expect(
+      linkStudentLoginAction(
+        { error: null },
+        form({
+          elevId: 'fe000000-0000-0000-0000-000000000001',
+          epost: `ukjent-${randomUUID()}@test.local`,
+        }),
+      ),
+    ).resolves.toEqual({ error: null, needsProvision: true });
+  });
+
+  it('links an existing passwordless account as student login and grants the role', async () => {
+    await signInAsAAL2('admin@test.local');
+    const service = scaffoldingServiceClient();
+    const loginEmail = `elev-${randomUUID()}@test.local`;
+    let scratchUserId: string | null = null;
+    let studentId = '';
+    try {
+      const { data: created, error: createError } = await service.auth.admin.createUser({
+        email: loginEmail,
+        email_confirm: true,
+      });
+      if (createError || !created.user) {
+        throw new Error(
+          `Klarte ikke å opprette scratch-brukeren: ${createError?.message ?? 'ukjent'}`,
+        );
+      }
+      scratchUserId = created.user.id;
+
+      const target = await expectRedirect(
+        createStudentAction(
+          { error: null },
+          form({
+            fornavn: 'Kobling',
+            etternavn: 'Testelev',
+            fodselsaar: '2013',
+            notat: '',
+          }),
+        ),
+      );
+      studentId = target.replace('/admin/elever/', '');
+
+      await expect(
+        linkStudentLoginAction(
+          { error: null },
+          form({ elevId: studentId, epost: loginEmail }),
+        ),
+      ).resolves.toEqual({ error: null, success: true });
+
+      const { data: studentRow } = await service
+        .from('students')
+        .select('student_user_id')
+        .eq('id', studentId)
+        .single();
+      expect(studentRow?.student_user_id).toBe(scratchUserId);
+      const { data: roleRows } = await service
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', scratchUserId)
+        .eq('role', 'student');
+      expect(roleRows).toHaveLength(1);
+    } finally {
+      if (studentId) {
+        await unlinkStudentLoginAction(form({ elevId: studentId }));
+        await expectRedirect(deleteStudentAction(form({ id: studentId })));
+      }
+      if (scratchUserId) {
+        // Cascades the trigger-created profiles row and the granted role.
+        await service.auth.admin.deleteUser(scratchUserId);
+      }
+    }
+  }, 30000);
 });
 ```
 
@@ -5688,7 +5905,7 @@ git add src/lib/validation/school.ts 'src/app/(portal)/admin/elever/actions.ts' 
 git commit -m "feat: registry actions for students, guardians, enrollment and student logins"
 ```
 
-Expected: **109** test:api (99 + 10 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
+Expected: **114** test:api (99 + 15 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
 
 ---
 
