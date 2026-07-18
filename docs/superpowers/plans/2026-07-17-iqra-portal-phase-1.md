@@ -7531,22 +7531,33 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
     idleForm,
   );
   const formRef = useRef<HTMLFormElement>(null);
-  const state = phase === 'link' ? linkState : provState;
   const pending = phase === 'link' ? linkPending : provPending;
 
   // Switch the link/provision phase from the action results — state is
   // adjusted during render (React's recommended pattern; the repo's lint
-  // rules forbid synchronous setState inside effects).
+  // rules forbid synchronous setState inside effects). provBase pins the
+  // provision slot at phase entry so an error from an EARLIER provisioning
+  // attempt never resurfaces when a new attempt reveals the fields.
   const [prevLinkState, setPrevLinkState] = useState(linkState);
+  const [provBase, setProvBase] = useState(provState);
   if (prevLinkState !== linkState) {
     setPrevLinkState(linkState);
-    if (linkState.needsProvision) setPhase('provision');
+    if (linkState.needsProvision) {
+      setPhase('provision');
+      setProvBase(provState);
+    }
   }
   const [prevProvState, setPrevProvState] = useState(provState);
   if (prevProvState !== provState) {
     setPrevProvState(provState);
     if (provState.success) setPhase('link');
   }
+  const error =
+    phase === 'link'
+      ? linkState.error
+      : provState === provBase
+        ? null
+        : provState.error;
   useEffect(() => {
     if (linkState.success) formRef.current?.reset();
   }, [linkState]);
@@ -7597,7 +7608,7 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
         <input type="checkbox" name="betaler" className="size-5 accent-primary" />
         Er betaler for eleven
       </label>
-      <FormError error={state.error} />
+      <FormError error={error} />
       <div className="flex gap-2">
         <Button type="submit" variant="secondary" loading={pending}>
           {phase === 'link' ? 'Koble til foresatt' : 'Opprett konto og koble til'}
@@ -7681,22 +7692,33 @@ export function LoginCard({
     idleForm,
   );
   const formRef = useRef<HTMLFormElement>(null);
-  const state = phase === 'link' ? linkState : provState;
   const pending = phase === 'link' ? linkPending : provPending;
 
   // Switch the link/provision phase from the action results — state is
   // adjusted during render (React's recommended pattern; the repo's lint
-  // rules forbid synchronous setState inside effects).
+  // rules forbid synchronous setState inside effects). provBase pins the
+  // provision slot at phase entry so an error from an EARLIER provisioning
+  // attempt never resurfaces when a new attempt reveals the fields.
   const [prevLinkState, setPrevLinkState] = useState(linkState);
+  const [provBase, setProvBase] = useState(provState);
   if (prevLinkState !== linkState) {
     setPrevLinkState(linkState);
-    if (linkState.needsProvision) setPhase('provision');
+    if (linkState.needsProvision) {
+      setPhase('provision');
+      setProvBase(provState);
+    }
   }
   const [prevProvState, setPrevProvState] = useState(provState);
   if (prevProvState !== provState) {
     setPrevProvState(provState);
     if (provState.success) setPhase('link');
   }
+  const error =
+    phase === 'link'
+      ? linkState.error
+      : provState === provBase
+        ? null
+        : provState.error;
 
   return (
     <section className="flex flex-col gap-3">
@@ -7755,7 +7777,7 @@ export function LoginCard({
                 </Field>
               </>
             ) : null}
-            <FormError error={state.error} />
+            <FormError error={error} />
             <div className="flex gap-2">
               <Button type="submit" variant="secondary" loading={pending}>
                 {phase === 'link' ? 'Koble til konto' : 'Opprett konto og koble til'}
@@ -7781,7 +7803,7 @@ Create `src/app/(portal)/admin/elever/EnrollCard.tsx`:
 ```tsx
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { PillLink } from '@/components/ui/PillLink';
 import type { AdminClassOverview } from '@/lib/dal/classes';
@@ -7790,6 +7812,42 @@ import { formatDateNb } from '@/lib/dates';
 import { idleForm } from '@/lib/validation/school';
 import { enrollStudentAction, unenrollStudentAction } from '../klasser/actions';
 import { FormError, selectClasses } from './StudentForms';
+
+/**
+ * Two-step confirm (spec §7) — mirrors klasser/ClassForms' UnenrollForm:
+ * the class_students PK makes same-class re-enroll impossible, so a stray
+ * single click here would be permanent.
+ */
+function UnenrollConfirm({
+  elevId,
+  klasseId,
+}: {
+  elevId: string;
+  klasseId: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return (
+      <Button variant="ghost" onClick={() => setConfirming(true)}>
+        Meld ut
+      </Button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <form action={unenrollStudentAction}>
+        <input type="hidden" name="klasseId" value={klasseId} />
+        <input type="hidden" name="elevId" value={elevId} />
+        <Button type="submit" variant="secondary" className="text-danger-ink">
+          Bekreft utmelding
+        </Button>
+      </form>
+      <Button variant="ghost" onClick={() => setConfirming(false)}>
+        Avbryt
+      </Button>
+    </div>
+  );
+}
 
 // formatDateNb is imported here rather than passed from the server page:
 // functions can never cross the RSC boundary as props.
@@ -7819,13 +7877,9 @@ export function EnrollCard({
             <span className="text-sm text-ink/60">
               innmeldt {formatDateNb(active.enrolled_on)}
             </span>
-            <form action={unenrollStudentAction} className="ms-auto">
-              <input type="hidden" name="elevId" value={elevId} />
-              <input type="hidden" name="klasseId" value={active.class_id} />
-              <Button type="submit" variant="ghost">
-                Meld ut
-              </Button>
-            </form>
+            <div className="ms-auto">
+              <UnenrollConfirm elevId={elevId} klasseId={active.class_id} />
+            </div>
           </div>
         ) : currentTermClasses.length === 0 ? (
           <p className="text-sm text-ink/60">
@@ -7930,7 +7984,7 @@ export default async function ElevPage({
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Notat</h2>
-        <p className="max-w-2xl leading-relaxed text-ink/80">
+        <p className="max-w-2xl whitespace-pre-line leading-relaxed text-ink/80">
           {student.note ?? 'Ingen notater.'}
         </p>
       </section>
@@ -7980,7 +8034,7 @@ npm run typecheck && npm run lint && npm run build 2>&1 | tail -5
 rm -rf .next && npm run dev
 ```
 
-Browser check as AAL2 admin, on `/admin/elever/fe000000-0000-0000-0000-000000000004` (Zaynab): «Skjermet» chip; guardian Fatima Yusuf (Mor, Betaler); class Klasse 3 with enroll date; no login → link form. Full flows: register a scratch student from `/admin/elever/ny` → lands on the one-glance page; add guardian by the seed e-mail `forelder2@test.local` (link path); add another with a fresh e-mail (provision path reveals the name field); toggle payer; enroll into Klasse 1; meld ut; delete the scratch student (two-step) → back on the registry. Then `supabase db reset` + `npm run test:api 2>&1 | tail -3` to confirm the world is clean (**116 passing**).
+Browser check as AAL2 admin, on `/admin/elever/fe000000-0000-0000-0000-000000000004` (Zaynab): «Skjermet» chip; guardian Fatima Yusuf (Mor, Betaler); class Klasse 3 with enroll date; no login → link form. Full flows: register a scratch student from `/admin/elever/ny` → lands on the one-glance page; add guardian by the seed e-mail `forelder2@test.local` (link path); add another with a fresh e-mail (provision path reveals the name field); toggle payer; enroll into Klasse 1; meld ut (two-step: Meld ut → Bekreft utmelding); cancel a provisioning attempt mid-way, start a new one → NO stale error appears; give the student a two-line note → line breaks preserved on the detail page; delete the scratch student (two-step) → back on the registry. Then `supabase db reset` + `npm run test:api 2>&1 | tail -3` to confirm the world is clean (**116 passing**).
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
