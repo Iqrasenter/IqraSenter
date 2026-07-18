@@ -4666,14 +4666,35 @@ export async function unenrollStudentAction(formData: FormData): Promise<void> {
     klasseId: formData.get('klasseId'),
   });
   const supabase = await createClient();
+  // A placement cancelled before term start gets left_on = enrolled_on: a
+  // zero-duration membership row — the historical record stays, and the
+  // one-active index frees up for re-enrollment.
+  const { data: active, error: readError } = await supabase
+    .from('class_students')
+    .select('enrolled_on')
+    .eq('class_id', parsed.klasseId)
+    .eq('student_id', parsed.elevId)
+    .is('left_on', null)
+    .maybeSingle();
+  if (readError) {
+    throw new Error(`Kunne ikke melde ut elev: ${readError.message}`);
+  }
+  if (!active) {
+    throw new Error('Eleven har ingen aktiv plass i denne klassen.');
+  }
+  const today = todayOsloISO();
+  const leftOn = active.enrolled_on > today ? active.enrolled_on : today;
   const { data, error } = await supabase
     .from('class_students')
-    .update({ left_on: todayOsloISO() })
+    .update({ left_on: leftOn })
     .eq('class_id', parsed.klasseId)
     .eq('student_id', parsed.elevId)
     .is('left_on', null)
     .select('class_id');
   if (error) {
+    if (error.code === '23514') {
+      throw new Error('Utmeldingsdatoen kan ikke være før innmeldingsdatoen.');
+    }
     throw new Error(`Kunne ikke melde ut elev: ${error.message}`);
   }
   if (!data || data.length === 0) {
@@ -4992,6 +5013,34 @@ describe('actions: confirm affected rows and map stale-reference errors', () => 
       unenrollStudentAction(form({ elevId: STOPPED_STUDENT_NO_CLASS, klasseId: K1 })),
     ).rejects.toThrow('Eleven har ingen aktiv plass i denne klassen.');
   });
+
+  it('unenrollStudentAction cancels a not-yet-started placement (left_on clamps to enrolled_on)', async () => {
+    // Yusuf's seeded K1 enrollment starts 2026-08-20 — in the future for
+    // the suite's clock. Cancelling it must resolve (not trip the
+    // leave_after_enroll check) and leave a zero-duration membership row.
+    await signInAsAAL2('admin@test.local');
+    const YUSUF = 'fe000000-0000-0000-0000-000000000001';
+    const client = await createServerClientMock();
+    try {
+      await expect(
+        unenrollStudentAction(form({ elevId: YUSUF, klasseId: K1 })),
+      ).resolves.toBeUndefined();
+      const { data: row } = await client
+        .from('class_students')
+        .select('enrolled_on, left_on')
+        .eq('class_id', K1)
+        .eq('student_id', YUSUF)
+        .single();
+      expect(row?.left_on).toBe(row?.enrolled_on);
+    } finally {
+      // Admin-session restore (service role cannot write audited tables).
+      await client
+        .from('class_students')
+        .update({ left_on: null })
+        .eq('class_id', K1)
+        .eq('student_id', YUSUF);
+    }
+  });
 });
 ```
 
@@ -5006,7 +5055,7 @@ git add src/lib/validation/ src/lib/dates.ts src/lib/dates.test.ts 'src/app/(por
 git commit -m "feat: validated admin actions for terms, subjects, classes and schedule"
 ```
 
-Expected: 96 Vitest; **99** test:api (80 + 19). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
+Expected: 96 Vitest; **100** test:api (80 + 20). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
 
 ---
 
@@ -5905,7 +5954,7 @@ git add src/lib/validation/school.ts 'src/app/(portal)/admin/elever/actions.ts' 
 git commit -m "feat: registry actions for students, guardians, enrollment and student logins"
 ```
 
-Expected: **114** test:api (99 + 15 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
+Expected: **115** test:api (100 + 15 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
 
 ---
 
@@ -8304,7 +8353,7 @@ git add src/lib/dal/dashboard.ts 'src/app/(portal)/forelder/page.tsx' 'src/app/(
 git commit -m "feat: parent, student and admin dashboards on live registry data"
 ```
 
-Expected: **98** test:api (96 + 2).
+Expected: **117** test:api (115 + 2).
 
 ---
 
