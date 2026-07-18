@@ -8472,7 +8472,7 @@ export default async function AdminDashboard() {
     <div className="flex flex-col gap-8">
       <h1 className="text-2xl font-semibold">Administrasjon</h1>
 
-      <section className="rounded-lg border border-hairline bg-surface-tint/60 px-5 py-4">
+      <section className="flex flex-wrap items-baseline gap-x-8 gap-y-3 rounded-lg border border-hairline bg-surface-tint/60 px-5 py-4">
         <dl className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
           <div>
             <dt className="text-sm text-ink/60">Aktive elever</dt>
@@ -8492,11 +8492,11 @@ export default async function AdminDashboard() {
               {overview.current_term_name ?? 'Ikke satt'}
             </dd>
           </div>
-          <div className="ms-auto flex flex-wrap gap-2">
-            <PillLink href="/admin/elever">Elevregisteret</PillLink>
-            <PillLink href="/admin/klasser">Klasser</PillLink>
-          </div>
         </dl>
+        <div className="ms-auto flex flex-wrap gap-2">
+          <PillLink href="/admin/elever">Elevregisteret</PillLink>
+          <PillLink href="/admin/klasser">Klasser</PillLink>
+        </div>
       </section>
       {/* …the existing «Siste hendelser» section continues unchanged… */}
 ```
@@ -8585,6 +8585,8 @@ Expected: CI green on the branch (typecheck/lint/unit/build + pgTAP jobs; `test:
 9. **Phase 7 audit-viewer consumer contract (BINDING, from T1 security review F1):** the viewer/alerting MUST classify the reserved namespace with a **case-sensitive, anchored** predicate only — `action LIKE 'admin.%'` / `action LIKE 'system.%'`. Never `ILIKE`, `lower()`/`upper()`, `trim()`, or any UI case-collapsing for the authority decision. The T1 guard is now normalization-agnostic (rejects case/whitespace variants too), so this is belt-and-braces — but it must be stated in the Phase 7 plan, not assumed.
 11. **`adminProvisionUser` isn't atomic (LOW, from T8 security review N1):** it spans GoTrue `createUser` + `user_roles` upsert + audit insert with no cross-store transaction (GoTrue is a separate API, not in the DB tx). A failure after `createUser` throws (fail-fast) but can leave an orphaned password-less user (roles-upsert fails) or a provisioned+roled-but-unaudited user (audit fails). Blast radius minimal — the orphan CAN'T log in (password-less) and a retry with the same e-mail hits `EmailAlreadyRegistered`, so the admin sees it. True atomicity across GoTrue+Postgres isn't achievable cheaply; accepted for Phase 1. Revisit if provisioning volume grows (a compensating delete-on-roles-failure, or a reconcile job). Task 10 consumers must surface `EmailAlreadyRegistered` and let `AdminAccessDenied` propagate.
 10. **Dual-role-with-admin `.eq` coverage (LOW, from T6/T7 security reviews):** the wall-1 relationship `.eq` filters (`listMyTeachingClasses` teacher_id, `listChildrenForGuardian` guardian_id, `getOwnStudentRecord` student_user_id, `getRosterForTeacher` teacher_id) are load-bearing ONLY for a caller who ALSO holds admin (RLS admin-permissive lets them read all rows; a pure-role caller is already RLS-scoped). Severity is CORRECTNESS not leak — an admin already sees all via the registry, so over-return discloses nothing new; RLS is the real Bergen wall for non-admins (T7 mutation-proved: removing every `.eq`, pure-role users still saw only their own rows). COVERED so far: admin+teacher (`listMyTeachingClasses`, T6 test) + admin+parent (`listChildrenForGuardian`, T7 test). STILL uncovered (accepted low-severity): admin+student (`getOwnStudentRecord` — fails closed via maybeSingle-on-many) and admin+teacher (`getRosterForTeacher` — same principle as the covered `listMyTeachingClasses`). Add tests if a real admin+student/admin+teacher persona appears, or during a Phase-7 hardening sweep. **Scaffolding gotcha:** build such a dual role by granting an EXISTING role-holder the second role via service_role on `user_roles` — NOT by inserting into an AUDITED school-core table (students/guardian_student/class_students): those fire `private.audit_row_change`→`private.audit`, and **service_role lacks USAGE on schema `private`**, so the insert 42501s. This also means retention/anonymization jobs (Phase 7) cannot mutate the audited tables via the service role — they must run through an authenticated path or the audit-trigger grants must be revisited.
+
+12. **T16 dashboard polish (from quality review, deferred):** (a) `elev/page.tsx` doesn't render the student's own «Sluttet» status chip though the sibling `forelder/page.tsx` does — deliberate-looking asymmetry, and moot now (student logins are password-less pre-cloud, so no real student reaches `/elev`). Decide the student-status UX when student logins go live. (b) `admin/page.tsx`'s `loadAuditEntries` `'locked'` branch + its comment are stale dead code — the admin layout's `requireStaffRole('admin')` AAL2 gate (post-c81b765) means AAL1 admins never reach the page; harmless defense-in-depth, correct or remove in a cleanup pass. (c) `getAdminOverview` runs the current-term lookup and student-count sequentially — could `Promise.all`. (d) the class-name+schedule JSX ternary is duplicated verbatim in `elev`/`forelder` — extract a helper on rule-of-three. The invalid-`<dl>` markup finding (PillLinks nested as a dt/dd-less div) was FIXED in the T16 fix round, not deferred.
 
 ## Coverage self-check (spec §9 Phase 1: «Terms, classes, subjects, students, guardians, enrollment; admin registry + one-glance page»)
 
