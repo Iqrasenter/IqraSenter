@@ -2784,6 +2784,18 @@ describe('wall 1: the admin registry', () => {
     expect(result).toHaveLength(5); // stripped to empty -> unfiltered list
   });
 
+  it('matches a full name across the two name columns', async () => {
+    await signInAsAAL2('admin@test.local');
+    const full = await listStudentsForAdmin({ search: 'Yusuf Farah' });
+    expect(full.map((s) => `${s.first_name} ${s.last_name}`)).toEqual([
+      'Yusuf Farah',
+    ]);
+    const reversed = await listStudentsForAdmin({ search: 'Farah Amira' });
+    expect(reversed.map((s) => `${s.first_name} ${s.last_name}`)).toEqual([
+      'Amira Farah',
+    ]);
+  });
+
   it('composes the one-glance detail: guardians, enrollment, login', async () => {
     await signInAsAAL2('admin@test.local');
     const zaynab = await getStudentForAdmin(
@@ -3079,9 +3091,16 @@ export async function listStudentsForAdmin(
   if (filters.search) {
     // PostgREST's .or() parses commas/parens, and ilike treats %/_ as
     // wildcards. Names never contain these — strip rather than escape.
-    const q = filters.search.replace(/[%_,()]/g, '').trim();
-    if (q) {
-      query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%`);
+    // Tokenize so a full name («Yusuf Farah») matches across the two name
+    // columns: chained .or() filters AND together in PostgREST.
+    const tokens = filters.search
+      .replace(/[%_,()]/g, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    for (const token of tokens) {
+      query = query.or(
+        `first_name.ilike.%${token}%,last_name.ilike.%${token}%`,
+      );
     }
   }
   const { data, error } = await query;
@@ -3236,7 +3255,7 @@ git add src/lib/dal/students.ts tests/api/school-core.test.ts
 git commit -m "feat: students DAL with guardian, roster and registry reads at wall 1"
 ```
 
-Expected: **69** test:api (52 + 17). The two Bergen-critical tests to eyeball in the output: `never returns another family's student ids` and `does NOT give the dual-role user her child's class as teacher`.
+Expected: **70** test:api (52 + 18). The two Bergen-critical tests to eyeball in the output: `never returns another family's student ids` and `does NOT give the dual-role user her child's class as teacher`.
 
 ---
 
@@ -3786,7 +3805,7 @@ git add supabase/migrations/*_admin_user_lookup.sql supabase/tests/10_admin_look
 git commit -m "feat: admin-module user provisioning, role grants and service-only email lookup"
 ```
 
-Expected: **80** test:api (69 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
+Expected: **81** test:api (70 + 11); 75 Vitest; 177 pgTAP (from Step 2). The security review for this task MUST probe live: AAL1 denial before any GoTrue write, non-admin AAL2 denial, audit entries for provision/grant/lookup, and that `admin_lookup_user_by_email` is uncallable as `authenticated` (pgTAP 10 pins it, re-verify by hand via `psql` if in doubt).
 
 ---
 
@@ -5055,7 +5074,7 @@ git add src/lib/validation/ src/lib/dates.ts src/lib/dates.test.ts 'src/app/(por
 git commit -m "feat: validated admin actions for terms, subjects, classes and schedule"
 ```
 
-Expected: 96 Vitest; **100** test:api (80 + 20). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
+Expected: 96 Vitest; **101** test:api (81 + 20). NB: the actions are not yet reachable from any page — that is Tasks 11–12; wall-1 correctness is already fully proven here.
 
 ---
 
@@ -5954,7 +5973,7 @@ git add src/lib/validation/school.ts 'src/app/(portal)/admin/elever/actions.ts' 
 git commit -m "feat: registry actions for students, guardians, enrollment and student logins"
 ```
 
-Expected: **115** test:api (100 + 15 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
+Expected: **116** test:api (101 + 15 new tests). The security review MUST verify live: the lifecycle audit trail (`students.insert` → `guardian_student.insert` → `class_students.*` → `admin.user.provisioned` → `students.delete`, all with the admin as actor) and that `adminGrantRole` runs BEFORE the `guardian_student` insert so the with_check invariant never fires for the happy path.
 
 ---
 
@@ -7316,19 +7335,27 @@ export default async function EleverPage({
         </Button>
       </form>
 
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((filter) => {
-          const href = filter.value
-            ? `/admin/elever?${new URLSearchParams({ ...(q ? { q } : {}), status: filter.value })}`
-            : `/admin/elever${q ? `?${new URLSearchParams({ q })}` : ''}`;
-          const active = statusFilter === filter.value;
-          return (
-            <PillLink key={filter.label} href={href} active={active}>
-              {filter.label}
-            </PillLink>
-          );
-        })}
-      </div>
+      <nav aria-label="Filtrer på status">
+        <ul className="flex flex-wrap gap-2">
+          {FILTERS.map((filter) => {
+            const href = filter.value
+              ? `/admin/elever?${new URLSearchParams({ ...(q ? { q } : {}), status: filter.value })}`
+              : `/admin/elever${q ? `?${new URLSearchParams({ q })}` : ''}`;
+            const active = statusFilter === filter.value;
+            return (
+              <li key={filter.label}>
+                <PillLink
+                  href={href}
+                  active={active}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  {filter.label}
+                </PillLink>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
 
       {students.length === 0 ? (
         isFiltered ? (
@@ -7396,7 +7423,7 @@ npm run typecheck && npm run lint && npm run build 2>&1 | tail -5
 rm -rf .next && npm run dev
 ```
 
-Browser check as AAL2 admin: `/admin/elever` lists 5 students; Zaynab carries «Skjermet», Idris carries «Sluttet» and «Ikke i klasse»; search «Farah» → 2 rows; filter «Sluttet» → Idris; register a scratch student → lands on their (not yet built — expect 404 until Task 14) detail URL; delete via Task 14 later or `supabase db reset` to restore seeds.
+Browser check as AAL2 admin: `/admin/elever` lists 5 students; Zaynab carries «Skjermet», Idris carries «Sluttet» and «Ikke i klasse»; search «Farah» → 2 rows; full name «Yusuf Farah» → exactly Yusuf; filter «Sluttet» → Idris (active pill carries `aria-current`); register a scratch student → lands on their (not yet built — expect 404 until Task 14) detail URL; delete via Task 14 later or `supabase db reset` to restore seeds.
 
 ```bash
 cd /Users/daodilyas/dev/iqra-portal
@@ -8353,7 +8380,7 @@ git add src/lib/dal/dashboard.ts 'src/app/(portal)/forelder/page.tsx' 'src/app/(
 git commit -m "feat: parent, student and admin dashboards on live registry data"
 ```
 
-Expected: **117** test:api (115 + 2).
+Expected: **118** test:api (116 + 2).
 
 ---
 
@@ -8369,9 +8396,9 @@ npm test -- --run 2>&1 | tail -3        # ~96 unit tests
 npm run build 2>&1 | tail -6            # all routes compile
 supabase db reset 2>&1 | tail -4        # migrations 7 + seeds apply
 supabase test db 2>&1 | tail -14        # 177 pgTAP across 11 files
-npm run test:api 2>&1 | tail -4         # 98 live wall-1 tests
+npm run test:api 2>&1 | tail -4         # 118 live wall-1 tests
 npm audit --audit-level=high            # exit 0
-git log --oneline main..feat/phase-1 | wc -l   # 16 commits (one per task)
+git log --oneline main..feat/phase-1    # one feat commit per task + its review-fix commits — nothing stray/foreign
 ```
 
 Any mismatch is a defect to fix BEFORE proceeding — never adjust the expectation to match the output without understanding why.
