@@ -7458,15 +7458,24 @@ function GuardianAddForm({ elevId }: { elevId: string }) {
   const state = phase === 'link' ? linkState : provState;
   const pending = phase === 'link' ? linkPending : provPending;
 
-  useEffect(() => {
+  // Switch the link/provision phase from the action results — state is
+  // adjusted during render (React's recommended pattern; the repo's lint
+  // rules forbid synchronous setState inside effects).
+  const [prevLinkState, setPrevLinkState] = useState(linkState);
+  if (prevLinkState !== linkState) {
+    setPrevLinkState(linkState);
     if (linkState.needsProvision) setPhase('provision');
+  }
+  const [prevProvState, setPrevProvState] = useState(provState);
+  if (prevProvState !== provState) {
+    setPrevProvState(provState);
+    if (provState.success) setPhase('link');
+  }
+  useEffect(() => {
     if (linkState.success) formRef.current?.reset();
   }, [linkState]);
   useEffect(() => {
-    if (provState.success) {
-      setPhase('link');
-      formRef.current?.reset();
-    }
+    if (provState.success) formRef.current?.reset();
   }, [provState]);
 
   return (
@@ -7565,7 +7574,7 @@ Create `src/app/(portal)/admin/elever/LoginCard.tsx`:
 ```tsx
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
 import { Field } from '@/components/ui/Field';
@@ -7599,12 +7608,19 @@ export function LoginCard({
   const state = phase === 'link' ? linkState : provState;
   const pending = phase === 'link' ? linkPending : provPending;
 
-  useEffect(() => {
+  // Switch the link/provision phase from the action results — state is
+  // adjusted during render (React's recommended pattern; the repo's lint
+  // rules forbid synchronous setState inside effects).
+  const [prevLinkState, setPrevLinkState] = useState(linkState);
+  if (prevLinkState !== linkState) {
+    setPrevLinkState(linkState);
     if (linkState.needsProvision) setPhase('provision');
-  }, [linkState]);
-  useEffect(() => {
+  }
+  const [prevProvState, setPrevProvState] = useState(provState);
+  if (prevProvState !== provState) {
+    setPrevProvState(provState);
     if (provState.success) setPhase('link');
-  }, [provState]);
+  }
 
   return (
     <section className="flex flex-col gap-3">
