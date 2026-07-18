@@ -7152,6 +7152,22 @@ const textareaClasses =
   'placeholder:text-ink/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 function StudentFields({ student }: { student?: AdminStudentDetail }) {
+  // Every field is CONTROLLED. React 19 auto-resets UNCONTROLLED fields after
+  // EVERY completed form action — including the validation-error return from
+  // create/updateStudentAction — so a single bad field (e.g. a fødselsår out
+  // of range) would wipe the fornavn, etternavn and notat the admin already
+  // filled in correctly. Controlled values survive that reset. There is no
+  // clear-on-success branch: both actions redirect() on success, so the form
+  // unmounts and never sees a success state. Same fix as GuardianCard.tsx /
+  // LoginCard.tsx (commit f79c3bd), minus the clear-on-success those inline
+  // (non-redirecting) flows still need.
+  const [fornavn, setFornavn] = useState(student?.first_name ?? '');
+  const [etternavn, setEtternavn] = useState(student?.last_name ?? '');
+  const [fodselsaar, setFodselsaar] = useState(
+    student?.birth_year != null ? String(student.birth_year) : '',
+  );
+  const [notat, setNotat] = useState(student?.note ?? '');
+  const [skjermet, setSkjermet] = useState(student?.protected ?? false);
   return (
     <>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -7159,7 +7175,8 @@ function StudentFields({ student }: { student?: AdminStudentDetail }) {
           <Input
             id="elev-fornavn"
             name="fornavn"
-            defaultValue={student?.first_name}
+            value={fornavn}
+            onChange={(event) => setFornavn(event.target.value)}
             required
             maxLength={60}
           />
@@ -7168,7 +7185,8 @@ function StudentFields({ student }: { student?: AdminStudentDetail }) {
           <Input
             id="elev-etternavn"
             name="etternavn"
-            defaultValue={student?.last_name}
+            value={etternavn}
+            onChange={(event) => setEtternavn(event.target.value)}
             required
             maxLength={60}
           />
@@ -7181,7 +7199,8 @@ function StudentFields({ student }: { student?: AdminStudentDetail }) {
           type="number"
           min={1900}
           max={2100}
-          defaultValue={student?.birth_year}
+          value={fodselsaar}
+          onChange={(event) => setFodselsaar(event.target.value)}
           required
           placeholder="2015"
           className="w-32"
@@ -7191,7 +7210,8 @@ function StudentFields({ student }: { student?: AdminStudentDetail }) {
         <textarea
           id="elev-notat"
           name="notat"
-          defaultValue={student?.note ?? ''}
+          value={notat}
+          onChange={(event) => setNotat(event.target.value)}
           maxLength={2000}
           className={textareaClasses}
         />
@@ -7200,7 +7220,8 @@ function StudentFields({ student }: { student?: AdminStudentDetail }) {
         <input
           type="checkbox"
           name="skjermet"
-          defaultChecked={student?.protected}
+          checked={skjermet}
+          onChange={(event) => setSkjermet(event.target.checked)}
           className="size-5 accent-primary"
         />
         Skjermet elev (holdes utenfor eksporter og alle flater utenfor egen
@@ -7227,6 +7248,9 @@ export function StudentCreateForm() {
 
 export function StudentEditForm({ student }: { student: AdminStudentDetail }) {
   const [state, formAction, pending] = useActionState(updateStudentAction, idleForm);
+  // Controlled for the same reason as StudentFields — survives React 19's
+  // post-action reset; updateStudentAction redirect()s on success so no clear.
+  const [status, setStatus] = useState(student.status);
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
       <input type="hidden" name="id" value={student.student_id} />
@@ -7235,7 +7259,8 @@ export function StudentEditForm({ student }: { student: AdminStudentDetail }) {
         <select
           id="elev-status"
           name="status"
-          defaultValue={student.status}
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
           className={selectClasses}
         >
           {Object.entries(STATUS_LABELS).map(([value, label]) => (
