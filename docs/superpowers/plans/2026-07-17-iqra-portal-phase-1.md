@@ -6381,6 +6381,7 @@ export function SubjectRow({ subject }: { subject: Subject }) {
             <Button variant="ghost" onClick={() => setConfirming(false)}>
               Avbryt
             </Button>
+            <FormError error={deleteState.error} />
           </>
         ) : (
           <Button variant="ghost" onClick={() => setConfirming(true)}>
@@ -6388,7 +6389,6 @@ export function SubjectRow({ subject }: { subject: Subject }) {
           </Button>
         )}
       </div>
-      <FormError error={deleteState.error} />
     </li>
   );
 }
