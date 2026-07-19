@@ -16,7 +16,7 @@
 | D2 | **Historical roster** | **Preserve, interval-based** | A lesson's roster = students whose enrollment interval covers the lesson date; recorded attendance persists. Correct, complete attendance history rather than a current-enrollment snapshot that silently drops leavers. |
 | D3 | **Former-student name visibility** | **Additive `students` RLS policy** via `private.taught_student_ever`; **protected students excluded** from the historical path | Idiomatic (mirrors the existing `teaches_student` predicate minus the `left_on` filter), RLS-native, avoids a PII-returning `security definer`. "Skjermet" is the most sensitive flag + "least privilege everywhere" is a spec rule, so historical teacher visibility stops at unenrollment for protected students only. |
 | D4 | **Teacher entry point** | Dedicated **"I dag"** aggregate view | Spec §5 "Today → one-tap attendance". Aggregates today's lessons across all the teacher's classes; class-detail page links into the same marking screen. |
-| D5 | **Pre-report ↔ attendance** | Shown as **prefill**; confirm → `excused` | Spec §5 "pre-reported absences shown". A covering `absence_notice` marks the student "Forhåndsmeldt fravær" and prefills `excused`; teacher confirms/overrides. Opening the lesson flips `seen_by_teacher`. |
+| D5 | **Pre-report ↔ attendance** | Shown as **prefill**; confirm → `excused` | Spec §5 "pre-reported absences shown". A covering `absence_notice` marks the student "Forhåndsmeldt fravær" and prefills `excused`; teacher confirms/overrides. **Saving** the lesson (marking attendance) flips `seen_by_teacher` — a write, so it lives in the marking action, not the read. |
 | D6 | **Lesson cancellation/edit** | **Admin-only** | Spec §5 "class management incl. lesson cancellations". Teachers mark attendance; they do not cancel lessons. |
 | D7 | **Surface scope** | Student read-only history **in**; economy **out**; admin cockpit **lightweight** | Student "R self" is cheap and completes the matrix. Economy sees no pedagogy. The admin cockpit ships a small "i dag / fraværsbilde" widget, not rich analytics (deferred). |
 
@@ -123,7 +123,7 @@ This OR-s into the existing `students_select_related` (additive-policy pattern).
 1. Parent (or admin) files **Meld fravær** → `absence_notices` row over `[date_from, date_to]`, future dates allowed, optional note.
 2. When a teacher opens a lesson, for each rostered student the DAL checks for an active notice covering `lesson.date`; a match renders a **"Forhåndsmeldt fravær"** chip and prefills that student's status to `excused`.
 3. On save, the marking action upserts one `attendance` row per rostered student (`on conflict (lesson_id, student_id) do update`): default `present`, pre-reported → `excused`, teacher overrides win.
-4. Opening the lesson flips the covering notices' `seen_by_teacher` to `true` (so the parent's report is acknowledged; admin cockpit can surface unseen notices).
+4. **Saving** the lesson (marking attendance) flips the covering notices' `seen_by_teacher` to `true` (so the parent's report is acknowledged; admin cockpit surfaces unseen notices). Because the flip is a write, it lives in the marking action — `getLessonForMarking` stays a pure read. It runs under the teacher's own session via a column-scoped `update (seen_by_teacher)` grant + a `teaches_student` policy, so no `SECURITY DEFINER` path is needed.
 
 ---
 
