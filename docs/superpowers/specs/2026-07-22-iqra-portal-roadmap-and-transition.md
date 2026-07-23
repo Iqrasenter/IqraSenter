@@ -78,3 +78,45 @@ Phase 3 is specced and planned in this docs set:
 - Implementation plan: `docs/superpowers/plans/2026-07-22-iqra-portal-phase-3.md`
 
 Execution model per the 2026-07-21 policy: Opus 4.8 session, subagent-driven (fresh implementer per task → spec review → quality review → fix loop → controller live-verify), TDD, one commit per task, security tasks get the focused security lens; the phase PR gets the full panel.
+
+## 5. Addendum 2026-07-23 — demo-redesign features folded into the roadmap
+
+**Input:** `feat/demo-redesign` @ `6042a37` (pushed to `daodiii/iqra-portal`; gate: unit **118/118**, `NEXT_PUBLIC_DEMO=1` build **37/37 routes**). A UI/UX redesign of the pitch demo (vertical-sidebar shell, Fraunces ceremony type, Starbucks-style white+deep-green surface roles) plus **8 new pitch features** built after this roadmap froze. This addendum assigns each feature to its phase as a **named mining target** and separates the **ready-to-port assets** (pure, tested, reusable as-is) from the mine-at-spec-time rebuilds. **For Phases 3 & 6 the demo mining reference is now `feat/demo-redesign`, not `bc318b5`.** These features do not change the phase order or the branch strategy (§2); they add scope to Phases 3, 6, 7 and are formally tracked here so each phase spec picks them up at planning time.
+
+### 5.1 Ready-to-port assets (pure, TDD-tested, zero demo/DAL deps)
+
+Verified 2026-07-23: these five modules import **no** `src/lib/demo/**` or DAL code (only client-safe vocab/types), and each ships with a passing unit test. They are genuine reference implementations, **not** fake-data mockups — they lift onto `real` verbatim (with their tests) as each phase's first task; the phase's pgTAP/DAL layer then feeds them real rows. Cheaper than the §2.2 "rebuild from scratch" default because the hard logic already exists, tested.
+
+| Module | Test | Ports to |
+|---|---|---|
+| `lib/quran/surahs.ts` — canonical 114-surah table (6236-ayah checksum asserted) | `mushaf.test.ts` | Phase 3 |
+| `lib/quran/mushaf.ts` — per-surah done/current/partial/none fold + verse totals | `mushaf.test.ts` | Phase 3 |
+| `lib/quran/murajaah.ts` — sabaq/sabqi/manzil week derivation (`saturdayOf`) | `murajaah.test.ts` | Phase 3 |
+| `lib/economy/kid.ts` — MOD10/Luhn KID generator (hand-verified vectors) | `kid.test.ts` | Phase 6 |
+| `lib/economy/bankMatch.ts` — KID→invoice reconciliation (auto/avvik/ukjent, single-consume) | `bankMatch.test.ts` | Phase 6 |
+
+### 5.2 Feature → phase assignment
+
+**Phase 3 (Vurdering & fremdrift)** — 4 features, all reads over `quran_entries`; fold into the Phase-3 design spec when it re-plans on `real`:
+
+- **Mushaf-kart** — whole-Quran mosaic (green fill per memorised surah, honor-gold ring on current position), personal-journey only, **no cross-student comparison**. Real RLS: parent/student read own/guarded child only; the map is a pure fold (`mushaf.ts`) over the same `quran_entries` the phase already ships. Demo surfaces: `elev/fremdrift`, `forelder/fremdrift`, `laerer/elev/[studentId]` (teacher's map updates live on logging progress).
+- **Muraja'ah-planlegger** — spaced-repetition week strip derived from each surah's stage (`kind`); read-only, **no new table**. Same three surfaces.
+- **Milepælsdiplom** — print-ready A4 certificate per fully-passed surah. The demo's 404-on-not-own guard **becomes an RLS wall** on `real`. New route `forelder/fremdrift/diplom/[studentId]/[surah]`. Honor-gold is a hifz-ceremony-only token (design law in portal `DESIGN.md`; never a general accent).
+- **Terminrapport (print)** — §3 already lists "printable term report"; the demo adds a standalone `rapport/[studentId]` print route + a shared `reportMapping` so inline preview and print can't drift. Print CSS discipline: shell chrome `print:hidden`, content `print:p-0` (already in the shell).
+
+**Phase 6 (Økonomi)** — 2 features:
+
+- **KID + betalingsinfo** — every invoice carries a MOD10 KID + konto + beløp + forfall; "Slik betaler du" block on the parent invoice, KID/konto in the økonomi detail meta band, KID per invoice in fakturakjøring's confirm + done steps. One canonical `kid.ts` so fakturakjøring, both invoice views, and reconciliation agree on the same number. **Real build:** store the KID as an `invoices` column at creation (do not regenerate at read time — it must survive edits), real collection account in settings; extends §3 Phase-6 "payment registration".
+- **Bankavstemming** — bank-file import → KID auto-match → resolve exceptions (godkjenn delbetaling / velg faktura / hold utenfor) → book. **Highest real-build cost of the whole set:** needs real file parsing (**CAMT.053 / bank CSV**), a booking action that writes `payments` rows (double-bind + write-confirmation per §3 rules 1 & 3), and its own review pass. Closes the loop with fakturakjøring (creates KID) → parent pays (KID) → reconciliation (matches KID). Demo surface: `okonomi/avstemming`. **Vipps** stays the parked Phase-6+ follow-on.
+
+**Cross-cutting / Phase 7 (herding & polish):**
+
+- **⌘K-kommandopalett** — role-scoped search (elever/klasser/handlinger/sider). Demo ships the whole index to the client, which is fine for fake data but **must not** happen on `real`: production needs a **server-side, RLS-scoped search endpoint** — never ship a full roster to the browser. Slot with cockpit polish; treat the demo's scoping table (`searchIndex.ts`) as the per-role result-shape reference only.
+
+**Demo-only (does NOT ship on `real`):**
+
+- **Fortellermodus** — the 3-screen guided tour (`?historie=N`: forelder melder fravær → læreren ser flagget → admin-cockpiten samler bildet). A sales device for demonstrating role-isolation + data-flow to a board in 60 s; no place in the product. Stays on the demo branch only.
+
+### 5.3 Shell redesign — design reference, not phase scope
+
+The vertical-sidebar shell (`PortalShell` v2, single `shell/nav.ts` nav table, `shell/icons.tsx` icon set), the token evolution (surface ladder, house-green tier, honor gold, display type steps), and Fraunces ceremony type are **demo-branch presentation**. Not roadmap scope, but the **design reference** for the real line's eventual shell pass — the portal `DESIGN.md` (2. utgave) is the fasit. Fold into Phase 7 polish, or a dedicated design-system task at transition day (§2.3). Note: real Phase 2 chose a different attendance IA than the demo (integrated into role landings vs. `*/oppmote` routes) — the redesign does not change that; mine its **look**, not its route tree.
