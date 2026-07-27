@@ -19,6 +19,7 @@ This phase is driven by teacher requests, not only by the roadmap one-liner. The
 | **D7** | **Teacher-defined groups only this phase.** Pupil self-add to a group is deferred. | Pupil self-add opens a new RLS write wall where *children modify each other's* task membership, requiring safeguarding answers (unwanted adds, removals, teacher override, visible exclusion). The tables are identical either way, so it is purely additive later — **no migration**. Google keeps groups teacher-only for the same reason. |
 | **D8** | **Submission status is DERIVED, never stored; no auto-zero.** `Ikke levert` / `Levert` / `Levert etter frist` / `Vurdert`, computed from `due_on` + submission + review. | Classroom's auto-"missing" with a draft score of 0 is a documented source of teacher–parent friction. A derived status carries the same information with none of the disputes, and cannot drift from reality. |
 | **D9** | **`submissions` carries `student_id` XOR `assignment_group_id`** (DB CHECK, exactly one non-null). | One table serves individual and group hand-ins without a second near-identical table, while the CHECK makes "belongs to both / belongs to neither" unrepresentable. |
+| **D10** | **Assignment reuse ("gjenbruk oppgave") is IN scope.** Copies title, instructions, subject and **attachments** onto a new assignment; the teacher re-picks class, `due_on` and targeting. Never copies submissions, reviews or frozen group membership. | User decision, 2026-07-27. Classroom's single biggest prep-time saver, and the fit here is unusually strong: the same curriculum re-runs every year with volunteer-teacher turnover. Re-picking targeting (rather than resurrecting a frozen roster) is what keeps D1's semantics intact — see §3.1. |
 
 ## 2. Data model (new — keyed to master spec §4)
 
@@ -80,6 +81,22 @@ A class-wide assignment creates **no** `assignment_groups` rows at all; its rost
 **Copy-time validation** (app-side, per D2): each copied group must land 2–4 members. A template that has drifted outside that range blocks assignment creation with a mapped Norwegian error naming the group — it does not silently truncate.
 
 **Left-the-school case:** a pupil who leaves keeps their `assignment_group_members` row (history survives, matching `teaches_lesson`'s no-enrollment-filter precedent). Their `students.protected` flag still governs teacher reach through the existing `*_unprotected` helper family.
+
+### 3.1 Assignment reuse (D10)
+
+"Gjenbruk" opens the create form pre-filled from an existing assignment — the teacher's own, from **any** class and **any** term (the parallel-class and next-year cases are the whole point).
+
+| Copied | Re-picked by the teacher | Never copied |
+|---|---|---|
+| title, instructions, `subject_id`, `submission_type`, **attachments** | `class_id`, `due_on`, targeting (hele klassen / which templates) | submissions, reviews, `assignment_groups`, `assignment_group_members` |
+
+**Targeting is re-picked, not copied — deliberately.** A frozen `assignment_group_members` snapshot belongs to the assignment that froze it; resurrecting it would re-attach last year's pupils to this year's task and quietly violate D1. Re-picking runs the normal §3 copy against *today's* templates. Google Classroom also resets targeting on reuse; here it falls out of the design rather than being a wart.
+
+**Attachments are physically copied**, not shared. Because the storage path encodes the parent's UUID (§5), one object cannot serve two assignments without breaking the path-based policy. Reuse therefore issues a server-side `storage.copy()` per attachment into the new assignment's folder, then inserts fresh `assignment_attachments` rows pointing at the new paths. Consequences the plan must handle:
+
+- **Partial-copy safety:** the new assignment and its attachment rows commit only after every object copy succeeds; a failed copy rolls the whole reuse back and reports a mapped Norwegian error. A half-attached assignment must never be publishable.
+- **Re-validation is unnecessary** — the source objects passed the MIME/size allowlist when first uploaded, and copying cannot change their bytes. The size cap is *not* re-applied, so a reuse cannot fail on a file that was legal when uploaded.
+- **Storage cost is real:** reuse duplicates bytes. With video allowed at 50 MB, a heavily-reused assignment multiplies. Acceptable, and the honest alternative (shared objects) would cost the path-based security model.
 
 ## 4. RLS model (both walls; new helpers)
 
@@ -147,13 +164,15 @@ create policy "assignments_objects_select"
 
 **Create (the sub-minute loop):** class → subject → title → due date → *hele klassen* or pick groups → optional attachment → publish.
 
+**Reuse (D10, the prep-time loop):** «Gjenbruk» → pick one of your own past assignments → the form opens pre-filled (title, instructions, subject, attachments) → set class, due date and targeting → publish. The recurring-curriculum case, and the parallel-class case, both collapse to a few taps.
+
 **The review loop** is the phase's hero, and the gap the demo currently has: the teacher opens an assignment and sees **every** pupil on the roster, not only those who handed in.
 
 ## 7. Surfaces (per role; "C · Familie" system, phone-first)
 
 | Route | Role | Content |
 |---|---|---|
-| `laerer/oppgaver` | teacher | Assignment list across own classes; per-row `Ikke levert` count as the attention signal |
+| `laerer/oppgaver` | teacher | Assignment list across own classes; per-row `Ikke levert` count as the attention signal. Hosts both entry points: «Ny oppgave» and «Gjenbruk» (D10) — the reuse picker lists the teacher's own past assignments across all classes and terms, newest first, searchable by title. |
 | **`laerer/oppgaver/[assignmentId]`** | teacher | **Hero.** Roster-complete: `Ikke levert 7 · Levert 12 · Vurdert 5` as a segmented count-row, where **the count is the navigation** — selecting one filters to those names. Group tasks show one row per group with its members; non-submitters are rows, never an absence. Per-pupil review inline. |
 | `laerer/klasser/[id]/grupper` | teacher | Manage `class_groups` templates for the class (2–4 members each) |
 | `elev/lekser` | student | Own assignments with derived status, hand-in form + attachment. Group tasks show group-mates and the shared hand-in. |
@@ -173,7 +192,7 @@ Design law unchanged: the locked "C · Familie" system (tokens `src/app/globals.
 - `22_submissions_rls.sql` — hand-in double bind; the **group-member-A ≠ group-B** denial; author pinning; per-pupil review isolation
 - `23_assignment_storage.sql` — `storage.objects` policies per bucket, including cross-bucket and cross-assignment denial
 
-**`tests/api`** — new files for the DAL guards and the actions (create/copy-groups, hand-in, review, upload validation), following the existing harness (`signInAsAAL2`, seeded fixtures, real local Supabase).
+**`tests/api`** — new files for the DAL guards and the actions (create/copy-groups, hand-in, review, upload validation), following the existing harness (`signInAsAAL2`, seeded fixtures, real local Supabase). **Reuse (D10) gets its own coverage:** a teacher may reuse only their *own* assignments (a foreign assignment id is a quiet not-found, not an error leak); attachments land at new paths under the new assignment; submissions/reviews/groups are demonstrably **not** carried over; and a forced copy failure leaves **no** half-attached assignment behind.
 
 **Unit** — pure logic only: derived status from `due_on` + submission + review; group-size validation; MIME/size allowlist.
 
@@ -186,7 +205,6 @@ Design law unchanged: the locked "C · Familie" system (tokens `src/app/globals.
 - **In-browser audio/video recorder** — upload only. Pupils record with their phone's own app.
 - **Rubrics, originality reports, grading periods, engagement telemetry** — Classroom features judged overkill or GDPR-adverse for a volunteer-staffed supplementary school.
 - **Auto-zero / stored "missing" flag** (D8).
-- **Assignment reuse across terms** ("gjenbruk oppgave") — Classroom's biggest prep-time saver and cheap to add, but nobody asked for it. Named in §10 as a candidate, deliberately not built.
 - No economy, no messaging threads, no i18n.
 
 ## 10. Open items (non-blocking)
@@ -194,8 +212,8 @@ Design law unchanged: the locked "C · Familie" system (tokens `src/app/globals.
 1. **Ledger riders due this phase** (roadmap §3, assigned to Phase 4): `class_students` PK re-enroll block (surrogate key vs PK-including-date) **and** `status`↔enrollment decoupling — both **must land before the second enrollment wave**; plus teacher class-list term scoping (`listMyTeachingClasses` mixes terms once a 2nd term exists). These are schema decisions with their own risk; sequence them as early tasks so the assignment work builds on the settled shape.
 2. **Points scale for `assignment_reviews.points`** — free integer, or bounded by a setting like the Phase-3 grade scale? Defaulting to free integer with app-side non-negative validation; revisit if teachers want a cap.
 3. **Storage retention job** — objects must be deleted on erasure, not orphaned. Belongs to Phase 7 retention automation; this phase only guarantees cascade-safe rows and records the requirement.
-4. **`npm audit` CI gate is unsatisfiable** (no fixed `next` release exists; 7 of 12 findings need the deferred ESLint 10 major). Not this phase's work, but Phase 4's PR will show the same red step — see the standing note before diagnosing it as a code defect.
-5. **Assignment reuse** (§9) — decide with the teachers whether it earns a slot in Phase 5 or Phase 7.
+4. **`npm audit` CI gate** was unsatisfiable at spec time (no fixed `next` release exists; 7 of 12 findings need the deferred ESLint 10 major). Being reworked separately — production-scoped audit plus a dated exception list — so that by the time Phase 4 opens its PR, a red audit step means something again. If that work has not landed, do not diagnose the red step as a code defect.
+5. **Storage cost ceiling** — D10 duplicates attachment bytes on every reuse and D4 permits 50 MB video. No quota exists yet. Worth a settings-driven per-class or per-term ceiling before pilot; not needed to build the phase.
 
 ## 11. Task shape (input to writing-plans)
 
@@ -209,8 +227,10 @@ Suggested decomposition, one commit per task, security-review lens on 2–6:
 6. Upload/signed-URL server helpers (MIME + size + resumable), `tests/api`
 7. DAL reads — assignment lists, the roster-complete view, per-role fremdrift
 8. Actions — create+copy-groups, hand-in, review, attachment add/remove
-9. Teacher UI — list, hero roster screen, review inline
-10. Teacher UI — class group templates
-11. Pupil + parent UI — hand-in, on-behalf, group-mates
-12. Admin block + role-nav updates
-13. Exit gate — full suite, design audit (`web-design-guidelines`), browser verification per role
+9. Reuse (D10) — own-assignments picker read, the copy action incl. `storage.copy()` with all-or-nothing rollback
+10. Teacher UI — list, hero roster screen, review inline
+11. Teacher UI — «Gjenbruk» picker + pre-filled create form
+12. Teacher UI — class group templates
+13. Pupil + parent UI — hand-in, on-behalf, group-mates
+14. Admin block + role-nav updates
+15. Exit gate — full suite, design audit (`web-design-guidelines`), browser verification per role
