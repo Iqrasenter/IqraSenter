@@ -929,7 +929,7 @@ Create `supabase/tests/21_assignments_rls.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(20);
 
 -- assignments + assignment_groups + assignment_group_members, and the pivot
 -- helper student_in_assignment. The two targeting shapes must resolve through
@@ -1007,7 +1007,9 @@ insert into public.class_students (class_id, student_id, enrolled_on, left_on) v
   ('b9000000-0000-0000-0000-000000000021', 'b9000000-0000-0000-0000-000000000032', '2026-08-20', null),
   ('b9000000-0000-0000-0000-000000000021', 'b9000000-0000-0000-0000-000000000033', '2026-08-20', null),
   ('b9000000-0000-0000-0000-000000000022', 'b9000000-0000-0000-0000-000000000034', '2026-08-20', null),
-  ('b9000000-0000-0000-0000-000000000021', 'b9000000-0000-0000-0000-000000000035', '2026-08-20', '2026-09-01');
+  -- s5 leaves BEFORE the class-wide assignment's due_on (2026-08-28), which
+  -- is what makes the as-of-due_on assertion below actually test something.
+  ('b9000000-0000-0000-0000-000000000021', 'b9000000-0000-0000-0000-000000000035', '2026-08-20', '2026-08-25');
 
 -- ── Schema shape + helpers ──────────────────────────────────────────
 select has_table('public'::name, 'assignments'::name, 'assignments table exists');
@@ -1204,7 +1206,8 @@ comment on column public.assignment_groups.source_group_id is
   'Provenance only — lets the UI say "fra Halaqa A". Nullable and set null on delete; NOTHING reads it for access control. assignment_group_members is the sole authority on membership.';
 
 revoke all on table public.assignment_groups from anon, authenticated, service_role;
-grant select, insert, update, delete on public.assignment_groups to authenticated;
+-- No `update`: the frozen copy is immutable by design (see the policy note).
+grant select, insert, delete on public.assignment_groups to authenticated;
 grant select, delete on public.assignment_groups to service_role;
 
 alter table public.assignment_groups enable row level security;
@@ -1355,16 +1358,16 @@ create policy "assignment_groups_insert_teacher_or_admin"
     private.has_role((select auth.uid()), 'admin')
     or private.teaches_assignment((select auth.uid()), assignment_id)
   );
-create policy "assignment_groups_update_teacher_or_admin"
-  on public.assignment_groups for update to authenticated
-  using (
-    private.has_role((select auth.uid()), 'admin')
-    or private.teaches_assignment((select auth.uid()), assignment_id)
-  )
-  with check (
-    private.has_role((select auth.uid()), 'admin')
-    or private.teaches_assignment((select auth.uid()), assignment_id)
-  );
+-- NO UPDATE policy, and no `update` in the grant above. This is D1 enforced
+-- rather than merely intended: an updatable assignment_id lets a teacher of
+-- two classes re-point a frozen group at the OTHER class's assignment and
+-- carry its whole pupil set across — and since student_in_assignment is the
+-- single question every downstream policy asks, that reaches the shared
+-- hand-in and its Storage objects too. Nothing in Phase 4 ever updates this
+-- table (Task 8 inserts, Task 9 creates fresh, Task 12 renames class_groups
+-- templates instead), so removing it is pure subtraction. Consequence,
+-- accepted: a mis-targeted assignment is discarded and re-created
+-- (discard_empty_assignment, Task 9), never repaired in place.
 create policy "assignment_groups_delete_admin"
   on public.assignment_groups for delete to authenticated
   using (private.has_role((select auth.uid()), 'admin'));
@@ -1448,6 +1451,8 @@ cd /Users/daodilyas/dev/iqra-portal && git add supabase/migrations/2026072809200
 ## Task 4: `submissions` (XOR) + `assignment_reviews` — the double bind and per-pupil review
 
 D3 + D9. One `submissions` row per hand-in, individual **or** group, enforced by a CHECK. `assignment_reviews` is always `(assignment_id, student_id)` — so a shared group hand-in still produces a mark per child, which is what keeps "parent A ↛ child B" intact exactly where a shared artefact would otherwise leak it.
+
+**Decision to make in this task (raised by Task 3's review):** `student_in_assignment` has **no submission-based retention branch**, unlike its Phase-3 cousins. `guardian_sees_test`/`student_sees_test` each begin with "a result row exists for my child", so access survives an enrolment change. Here, because `due_on` is mutable and the class-wide roster is *derived* from it, a teacher editing a due date past a pupil's `left_on` silently revokes that pupil's access to work they already handed in — their own submission becomes unreadable to them. Now that `submissions` exists, decide explicitly: either add an `exists (select 1 from public.submissions …)` branch to the pivot mirroring the Phase-3 precedent, or accept the revocation and document why. Do not leave it undecided — a pupil losing sight of their own hand-in is a real user-visible failure, and the Phase-3 precedent says the answer is retention.
 
 **Files:**
 - Create: `supabase/migrations/20260728093000_submissions_reviews.sql`
@@ -5545,7 +5550,7 @@ describe('reuseAssignment (D10)', () => {
 
 Add `reuseAssignment` to the import list at the top of the file.
 
-Append to `supabase/tests/21_assignments_rls.sql` — raise `plan(19)` to `plan(22)` and add before `select * from finish();`:
+Append to `supabase/tests/21_assignments_rls.sql` — raise `plan(20)` to `plan(23)` and add before `select * from finish();`:
 
 ```sql
 -- ── discard_empty_assignment: the reuse rollback path (D10) ─────────
