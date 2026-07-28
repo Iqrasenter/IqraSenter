@@ -3531,6 +3531,36 @@ cd /Users/daodilyas/dev/iqra-portal && npm run test:api -- assignments-storage
 
 Expected: PASS, 6/6. If the "disallowed type" test passes the upload, the bucket's `allowed_mime_types` did not apply — re-check migration `20260728094000` before continuing; that assertion is the only proof the bucket enforces anything.
 
+> **Execution ledger — corrected during Task 6 (2026-07-29).** Two defects in the
+> text above were found by the implementer and confirmed against the seed and the
+> live stack before being fixed.
+>
+> 1. **"★ BERGEN #1" was over-determined and could not fail.** The fixture
+>    `f9000000-…0001` is Yusuf's individual hand-in, and `seed.sql:293-297` gives
+>    him a `godkjent` review on `f8000000-…0001` — so `private.writes_submission`
+>    is false for *everyone*, and the ticket is denied by the approval lock long
+>    before the family check is reached. Probed empirically: the plan's fixture
+>    denies **both** the own family and the foreign one, so the assertion would
+>    have passed identically with the family check deleted from
+>    `can_write_submission`. Fixed by moving to the unreviewed group hand-in
+>    `f9000000-…0002` (open, so the family check is the only variable) and adding
+>    a **positive control** on the same path: `forelder@` mints, `forelder2@` is
+>    refused. The api file is therefore 7 tests, not 6. Contrast "★ refuses a
+>    ticket for a foreign assignment folder", which was already sound —
+>    `laererforelder@` teaches Klasse 3, the assignments policy has no lock
+>    concept, and test 1 is its positive control on the same folder.
+> 2. **`reviewSchema` did not typecheck as written.** `z.coerce.number()` defaults
+>    its *input* type to `unknown`, and Zod 4's `.pipe()` demands a target that
+>    accepts the source's output (`string | null`). Runtime was always correct —
+>    the unit tests pass either way. Pinned to `z.coerce.number<string>(...)`; the
+>    type parameter is erased, so behaviour is unchanged.
+>
+> **Not a defect: knip fails after this task, deliberately.** `STATUS_ORDER`,
+> `osloDateOf`, `submissionSchema` and `reuseSchema` have no consumer until
+> Tasks 7, 7, 8 and 9 respectively. knip is a CI/PR gate here, not a per-task one,
+> and this branch is not pushed per task — so the exports stay and no ignore entry
+> is added. Re-check at Task 9's close: anything still flagged there is new.
+
 - [ ] **Step 9: Commit**
 
 ```bash
