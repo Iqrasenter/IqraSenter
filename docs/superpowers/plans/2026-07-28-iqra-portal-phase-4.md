@@ -110,11 +110,17 @@ Every pgTAP file is hermetic: it wipes the seed rows, builds its own fixtures, a
 
 **Order is load-bearing.** `tests.subject_id` and — new this phase — `assignments.subject_id` **and** `assignments.class_id` are `on delete restrict`, so `assignments` and `tests` must be gone before `subjects` and `classes` can be deleted. A file that skips them fails at the first `delete from public.subjects` with a 23503, not with a useful message. Paste this block verbatim into each of `20`–`24` immediately after `select plan(N);`:
 
+**Two things discovered while executing this, both load-bearing:**
+
+- **`storage.objects` carries a `BEFORE DELETE FOR EACH STATEMENT` trigger (`storage.protect_delete`)** that raises 42501 on *any* direct delete — including one matching zero rows. Precede the storage delete with `select set_config('storage.allow_delete_query', 'true', true);`. That GUC is the guard's own escape hatch and, being `set local`, dies with the transaction. Do **not** disable RLS to work around it.
+- **14 pre-existing pgTAP files (`06`–`20`, `24`) needed `delete from public.assignments;` added** to their own teardowns once the seed started carrying assignments — `assignments.class_id` and `.subject_id` are `RESTRICT` by design, so any file deleting `classes`/`subjects` fails with 23503 without it. One line suffices; assignments cascades to groups, hand-ins, reviews and attachments.
+
 ```sql
 -- Hermetic fixtures (seed independence, header gotcha 13): children before
 -- parents. assignments/tests come out before subjects and classes because
 -- their subject_id/class_id are RESTRICT — history must not be silently
 -- shredded by a cascade.
+select set_config('storage.allow_delete_query', 'true', true);
 delete from storage.objects where bucket_id in ('assignments', 'submissions');
 delete from public.submission_attachments;
 delete from public.assignment_attachments;
