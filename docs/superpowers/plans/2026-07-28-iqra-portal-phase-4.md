@@ -1452,7 +1452,7 @@ cd /Users/daodilyas/dev/iqra-portal && git add supabase/migrations/2026072809200
 
 D3 + D9. One `submissions` row per hand-in, individual **or** group, enforced by a CHECK. `assignment_reviews` is always `(assignment_id, student_id)` — so a shared group hand-in still produces a mark per child, which is what keeps "parent A ↛ child B" intact exactly where a shared artefact would otherwise leak it.
 
-**Decision to make in this task (raised by Task 3's review):** `student_in_assignment` has **no submission-based retention branch**, unlike its Phase-3 cousins. `guardian_sees_test`/`student_sees_test` each begin with "a result row exists for my child", so access survives an enrolment change. Here, because `due_on` is mutable and the class-wide roster is *derived* from it, a teacher editing a due date past a pupil's `left_on` silently revokes that pupil's access to work they already handed in — their own submission becomes unreadable to them. Now that `submissions` exists, decide explicitly: either add an `exists (select 1 from public.submissions …)` branch to the pivot mirroring the Phase-3 precedent, or accept the revocation and document why. Do not leave it undecided — a pupil losing sight of their own hand-in is a real user-visible failure, and the Phase-3 precedent says the answer is retention.
+**Decision made (raised by Task 3's review, settled at planning time):** add a **submission-based retention branch** to `private.student_in_assignment`, via `create or replace` **in this task's migration** — the pivot lives in Task 3's migration but cannot reference `submissions` there, so replacing it after the table exists is the correct sequencing. The branch is `exists (select 1 from public.submissions s where s.assignment_id = aid and s.student_id = sid)`. It is strictly additive and cannot bootstrap access: writing the first submission still requires `can_write_submission`, which requires the pivot to be true already by roster or group membership. Group hand-ins carry `student_id = null`, so they are covered by the membership branch, not here. The reasoning below is why: `guardian_sees_test`/`student_sees_test` each begin with "a result row exists for my child", so access survives an enrolment change. Here, because `due_on` is mutable and the class-wide roster is *derived* from it, a teacher editing a due date past a pupil's `left_on` silently revokes that pupil's access to work they already handed in — their own submission becomes unreadable to them. Now that `submissions` exists, decide explicitly: either add an `exists (select 1 from public.submissions …)` branch to the pivot mirroring the Phase-3 precedent, or accept the revocation and document why. Do not leave it undecided — a pupil losing sight of their own hand-in is a real user-visible failure, and the Phase-3 precedent says the answer is retention.
 
 **Files:**
 - Create: `supabase/migrations/20260728093000_submissions_reviews.sql`
@@ -1465,7 +1465,7 @@ Create `supabase/tests/22_submissions_rls.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(24);
+select plan(28);
 
 -- submissions + assignment_reviews (D3, D8, D9).
 --
@@ -1967,10 +1967,13 @@ revoke execute on function private.reads_submission(uuid, uuid) from public;
 grant execute on function private.reads_submission(uuid, uuid) to authenticated;
 
 -- Write side keyed by an existing submission — "may this caller still change
--- this hand-in?". A review of 'godkjent' LOCKS it (Classroom's turn-in
--- behaviour: handing in revokes edit rights until the work is returned);
--- 'ny_innlevering' deliberately re-opens it, because asking for a new hand-in
--- that the pupil cannot make would be absurd.
+-- this hand-in?". Locked only when the work is genuinely CLOSED: individually,
+-- that pupil is 'godkjent'; for a group, EVERY member is. A single
+-- 'ny_innlevering' anywhere in the group re-opens the shared artefact —
+-- locking on ANY approval would freeze the very row the teacher just asked a
+-- member to redo, which is what that status exists to request. Accepted
+-- consequence: re-editing changes work another member may already have had
+-- approved; that is inherent to one shared artefact.
 create or replace function private.writes_submission(uid uuid, sub_id uuid)
 returns boolean
 language sql stable security definer set search_path = ''
