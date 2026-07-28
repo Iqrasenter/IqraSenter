@@ -7633,6 +7633,12 @@ Add to the PR description:
 - **`assignment_reviews.points`:** free non-negative integer, no scale. Revisit if teachers ask for a cap.
 - **D7:** pupil self-add to groups stays deferred — purely additive, no migration.
 
+**Ledger items found during Task 1's review (record, do not fix this phase):**
+
+- **Same-day re-enrolment is still blocked.** R3 made same-class re-enrolment *possible*, but the classic mis-click — enrol today, unenrol today — still cannot be undone until tomorrow: `left_on` becomes today, `enrollStudentAction` always inserts `enrolled_on = today`, and that collides with `class_students_interval_unique`. There is no UI to edit or delete a `class_students` row. The schema affords the fix (that is the surrogate key's whole rationale); nothing in the app performs it. Wants either an editable `enrolled_on` or a same-day unenrol that deletes rather than stamps.
+- **Overlapping intervals are not prevented.** `class_students_interval_unique` forbids *identical* intervals, not *overlapping* ones, and R3 makes multiple rows per (class, pupil) possible for the first time. Unreachable today — `enrolled_on` is never set explicitly anywhere in `src/`, it always takes the DB default. But if back-dating is ever introduced, an as-of-date roster read returns the same pupil twice, inflating counts in `lessons.ts` and duplicating rows in `attendance.ts`, `assessment.ts` and both marking actions. **This matters more after Phase 4**, because assignments read rosters as-of `due_on` too. The real fix is an exclusion constraint (`daterange` + `btree_gist`), not another unique index.
+- **`tests/api` still does not run in CI** (pre-existing, Phase-7 ledger). R4 and the term filter are therefore proven only by a local run; `24_enrollment_riders.sql` does run in CI via the `db` job. Worth remembering when judging how much the green suite actually guarantees.
+
 ---
 
 ## Self-review
