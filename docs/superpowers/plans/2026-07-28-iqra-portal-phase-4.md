@@ -5484,6 +5484,21 @@ cd /Users/daodilyas/dev/iqra-portal && git add supabase/migrations/2026072809500
 
 The prep-time saver, and the one place where a database transaction is not enough: `storage.copy()` is an HTTP call outside the transaction. The rule from §3.1 is that **a half-attached assignment must never be publishable**, so the copy runs after creation and a failure discards the whole new assignment.
 
+> ⚠ **Path-shape rider — carried forward from Task 6's review (2026-07-29).** This
+> task is where new object paths are *constructed* rather than merely read, so
+> the hazard lands here. Task 5 established that a path with no `/` is safe:
+> `storage.foldername(name)` returns an empty array, `[1]` is NULL, the `::uuid`
+> cast yields NULL and the policy denies. **A segment-1 that exists but is not a
+> uuid is not safe** — `(storage.foldername(name))[1]::uuid` *raises* 22P02
+> rather than returning false, and because `service_role` bypasses RLS entirely,
+> a single malformed object name written with the service key would break SELECTs
+> over that bucket **for every user**. `attachmentPath` sanitizes its filename but
+> trusts `parentId` (deliberately — Task 6's review flagged it and it was left
+> alone rather than growing defensive code the plan had not asked for). Every
+> Task-9 call site must therefore pass a `parentId` that came from a database row,
+> never from form input, and the reuse path should be asserted to be uuid-shaped
+> before any copy is issued.
+
 **Files:**
 - Create: `supabase/migrations/20260728096000_assignment_reuse.sql`
 - Modify: `src/app/(portal)/laerer/oppgaver/actions.ts`
