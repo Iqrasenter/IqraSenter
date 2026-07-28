@@ -929,7 +929,7 @@ Create `supabase/tests/21_assignments_rls.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(19);
 
 -- assignments + assignment_groups + assignment_group_members, and the pivot
 -- helper student_in_assignment. The two targeting shapes must resolve through
@@ -1460,7 +1460,7 @@ Create `supabase/tests/22_submissions_rls.sql`:
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(24);
 
 -- submissions + assignment_reviews (D3, D8, D9).
 --
@@ -5545,7 +5545,7 @@ describe('reuseAssignment (D10)', () => {
 
 Add `reuseAssignment` to the import list at the top of the file.
 
-Append to `supabase/tests/21_assignments_rls.sql` — raise `plan(18)` to `plan(21)` and add before `select * from finish();`:
+Append to `supabase/tests/21_assignments_rls.sql` — raise `plan(19)` to `plan(22)` and add before `select * from finish();`:
 
 ```sql
 -- ── discard_empty_assignment: the reuse rollback path (D10) ─────────
