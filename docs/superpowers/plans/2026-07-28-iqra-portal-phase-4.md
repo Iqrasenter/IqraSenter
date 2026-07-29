@@ -4353,7 +4353,8 @@ cd /Users/daodilyas/dev/iqra-portal && npm run test:api -- assignments-core && n
 Expected: PASS, 11/11, typecheck clean. If a nested-select type mismatch appears, regenerate types first: `npm run db:types`.
 
 > **Execution ledger — corrected during Task 7 (2026-07-29).** The count above is
-> wrong: the file is **12 tests**, confirmed by the runner and by
+> wrong: the file ends at **13 tests** (the plan's 11 was already wrong at 12
+> before the Oslo-boundary test was added), confirmed by the runner and by
 > `grep -c "  it("`. `database.types.ts` needed no regeneration.
 >
 > ### ★ The DAL above leaked one child's assignments onto another child's screen
@@ -4380,6 +4381,38 @@ Expected: PASS, 11/11, typecheck clean. If a nested-select type mismatch appears
 > must re-resolve targeting itself. RLS answers "may the caller see this row?",
 > never "does this row belong to the pupil being asked about". Every remaining
 > per-child read in Tasks 8–13 owes the same check.
+>
+> **The same defect then turned up a second time, in the other direction.**
+> Review caught that `resolveTargets` — the hero read's own roster builder —
+> mirrored branches 1 and 3 but **not** the retention branch, so the two reads in
+> one file disagreed about who is in an assignment. A pupil who handed in and
+> whose enrolment later stopped covering `due_on` (the teacher pushes the frist,
+> or an admin stamps `left_on`) had their submission **fetched and then silently
+> dropped**: no roster row, no count, unreachable from the only screen the teacher
+> reviews from — while the pupil still saw their own work, because RLS retains
+> them. Worse than the leak in one respect: not "a non-submitter is missing" but
+> "a pupil who *did* hand in is missing", in a read whose entire premise is that
+> nobody is silently absent. **Fixing one call site of a mirrored predicate is not
+> fixing the mirror — grep for every site.**
+>
+> ### `group_mates` returns `['']` — always, for every pupil
+>
+> `students` RLS gives a pupil only their own row and a guardian only their own
+> children (`20260717164230:201-208`); `students_select_taught_ever` is
+> teacher-only. A group mate is by definition another family's child, so the
+> nested `students` embed is `null` and the name interpolates to `''`. Verified
+> against the live stack. No test asserted the field, which is why it shipped.
+> The `assignment_groups` policy comment (`20260728092000:212-214`) states the
+> intent it serves — the pupil surface showing «du er i gruppe Halaqa A med …» —
+> so Tasks 12–13 would have rendered blank chips.
+>
+> Interim fix: the field became `{ student_id: string; name: string | null }[]`,
+> which is honest and forward-compatible. **Showing mates' names needs a new RLS
+> policy on `students`, i.e. exposing one family's child's name to another
+> family — a child-data privacy expansion and a new security wall. That is the
+> user's decision, deliberately not taken by an implementer.** If approved it
+> should follow the `students_select_taught_ever` precedent, including its
+> `and protected = false` guard, and the phase PR's full review panel covers it.
 >
 > ### Other corrections
 >
