@@ -4352,6 +4352,73 @@ cd /Users/daodilyas/dev/iqra-portal && npm run test:api -- assignments-core && n
 
 Expected: PASS, 11/11, typecheck clean. If a nested-select type mismatch appears, regenerate types first: `npm run db:types`.
 
+> **Execution ledger — corrected during Task 7 (2026-07-29).** The count above is
+> wrong: the file is **12 tests**, confirmed by the runner and by
+> `grep -c "  it("`. `database.types.ts` needed no regeneration.
+>
+> ### ★ The DAL above leaked one child's assignments onto another child's screen
+>
+> `readAssignmentsForStudent` re-resolved targeting for the **group** shape only
+> (`if (groups.length > 0 && !myGroup) continue;`). But RLS narrows `assignments`
+> to what the **caller** may see, and for a guardian that is the UNION across
+> every child they have — so the visible set is not the requested pupil's set. A
+> **class-wide** assignment in a sibling's class passed the filter untouched and
+> rendered on this pupil's screen as *Ikke levert*: homework they were never set,
+> shown as missing, on the most sensitive surface in the app. The plan's own
+> comment claimed the property the code did not deliver. Caught by the plan's own
+> `listAssignmentsForChild(AMIRA)` test on the first run — Yusuf's Klasse 1
+> assignment surfaced for Amira in Klasse 3.
+>
+> Fixed by mirroring `private.student_in_assignment` (as redefined at
+> `20260728093000_submissions_reviews.sql:115`) **branch for branch**: frozen
+> group membership → own hand-in (the retention branch) → class roster as of
+> `due_on` with `left_on` exclusive. Group hand-ins carry `student_id = null`, so
+> they fall to branch 1 and never to the retention branch. Verified against the
+> SQL by the controller, not just by the passing test.
+>
+> **Standing rule this generalises to:** any DAL read that takes a `studentId`
+> must re-resolve targeting itself. RLS answers "may the caller see this row?",
+> never "does this row belong to the pupil being asked about". Every remaining
+> per-child read in Tasks 8–13 owes the same check.
+>
+> ### Other corrections
+>
+> - **The `'…' + '…'` select strings do not typecheck** — 41 `GenericStringError`
+>   / implicit-any errors. TypeScript does not constant-fold `+` on string
+>   literals, so postgrest-js's type parser receives `string`. Use multi-line
+>   **template literals**; postgrest-js strips unquoted whitespace before the
+>   request (`PostgrestQueryBuilder.ts:933-949`), so newlines cost nothing.
+> - **`ReviewRow.status` needs narrowing.** `assignment_reviews.status` is `text`
+>   + CHECK, so the generated type is `string`. A `toReviewRow()` helper shared by
+>   both readers, matching the plan's own `submission_type as 'digital' | 'none'`
+>   idiom.
+> - **Use `PG_ERROR.INVALID_TEXT`, not a bare `'22P02'`** — `src/lib/pg-error.ts`
+>   exists to keep SQLSTATE literals out of the DAL.
+> - **`export { STATUS_ORDER };` at the end of this task is dead code — delete it.**
+>   Task 11 imports `STATUS_ORDER` from `@/lib/assignments` directly, so the
+>   re-export has no consumer anywhere in the plan. knip resolves re-export
+>   chains, so a pass-through never reduces the unused count — it only relocates
+>   the entry to the re-export site. Consume `STATUS_ORDER` in `emptyCounts()`
+>   instead, which also stops a hand-written status list there from drifting.
+>
+> ### Assertions that cannot fail — two accepted, one closed
+>
+> Thirteen mutants were run against this task; ten were killed. Of the three
+> survivors:
+> - **Closed:** substituting the raw `submitted_at` for `osloDateOf(...)` changed
+>   nothing, because every seeded hand-in is months from its due date. Closed in
+>   the test by temporarily moving one hand-in's `submitted_at` across the Oslo
+>   day boundary and restoring it. **Use the unreviewed group hand-in** — a review
+>   makes `deriveStatus` return `vurdert` regardless, which would re-create the
+>   very problem being fixed.
+> - **Accepted:** dropping `.eq('created_by', user.id)` from the reuse picker
+>   changes nothing, since both seeded assignments are that teacher's and RLS
+>   already scopes her. It bites only for a dual-role admin+teacher, and proving
+>   it needs a temporary role grant that mutates shared auth state.
+> - **Accepted, moved to Task 8:** `expect(gruppe.review).toBeNull()` cannot fail,
+>   because A_GRUPPE has no review rows — deliberately, per Task 4's seed comment.
+>   See the rider on Task 8.
+
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -4363,6 +4430,24 @@ cd /Users/daodilyas/dev/iqra-portal && git add src/lib/dal/assignments.ts tests/
 ## Task 8: Actions — create with frozen groups, hand-in, review, attachments
 
 Creating a group assignment is **one transaction** (§3). Doing it as three sequential PostgREST calls has a specific, dangerous failure: if the assignment row lands and the group rows do not, the result is an assignment with zero `assignment_groups` — which is the encoding for **class-wide**. A half-failed group task would silently become visible to the whole class. That is why this task adds an RPC.
+
+> ⚠ **Riders carried forward from Task 7's review (2026-07-29).**
+>
+> 1. **D3 owes a real per-pupil review assertion, and this is the task that can
+>    pay it.** Task 7's `expect(gruppe.review).toBeNull()` cannot fail: A_GRUPPE
+>    has no review rows, deliberately — Task 4's seed comment keeps the group
+>    assignment unreviewed so per-pupil review across a shared hand-in can be
+>    proven from a clean start, and seeding a mark would pre-decide it. Now that
+>    reviews can be **created**, assert the thing itself: review member A of a
+>    shared group hand-in, then read member B and prove B's review is still null
+>    and B's status is unchanged. That is D3's headline claim and nothing has
+>    tested it yet.
+> 2. **Every per-child read must re-resolve targeting itself.** Task 7 shipped a
+>    cross-child leak because RLS answers "may the caller see this row?", never
+>    "does this row belong to the pupil being asked about" — and for a guardian
+>    the visible set is the union across all their children. Any action or read
+>    added here that takes a `studentId` owes the same
+>    `private.student_in_assignment` mirror. See the Task 7 ledger.
 
 **Files:**
 - Create: `supabase/migrations/20260728095000_create_assignment_rpc.sql`
