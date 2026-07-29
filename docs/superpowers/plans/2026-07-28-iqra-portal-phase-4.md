@@ -4481,6 +4481,28 @@ Creating a group assignment is **one transaction** (§3). Doing it as three sequ
 >    the visible set is the union across all their children. Any action or read
 >    added here that takes a `studentId` owes the same
 >    `private.student_in_assignment` mirror. See the Task 7 ledger.
+> 3. **A group assignment must never acquire an individual hand-in.**
+>    `can_write_submission` permits `sid` non-null with `agid` null whenever
+>    `student_in_assignment` is true, and branch 1 makes that true for every group
+>    member — so the row is reachable today and `submissions_owner_xor` allows it.
+>    Task 7 resolved it *read-tolerantly* (`byGroup.get(gid) ?? byStudent.get(sid)`,
+>    so a stray row is visible rather than silently dropped). **This task owes the
+>    strict half:** the hand-in action must attach to the pupil's frozen group when
+>    one exists, never to the pupil, and a test must prove it. Read tolerantly,
+>    write strictly — the read cannot be the only guard, because before Task 7's
+>    fix the list and the detail screen disagreed (`not_submitted_count: 1` against
+>    `ikke_levert: 2`) with the actual hand-in rendered nowhere.
+> 4. **Validate `due_on` inside the class's term at creation.** `assignments.due_on`
+>    is a bare `date not null` (`20260728092000:32`) with no CHECK against
+>    `classes.term_id`'s range, and Task 7's two reads now scope by **different
+>    things** — `listAssignmentsForTeacher` by `classes.term_id`, the pupil/parent
+>    read by a `due_on` window (it cannot join `classes`; see the Task 7 ledger).
+>    So holiday homework due 2027-01-05 against a term ending 2026-12-20 stays on
+>    the teacher's list while vanishing from the pupil's and parent's entirely,
+>    taking any already-submitted work with it. Validating at creation makes the
+>    two scopings equivalent by construction, which a CHECK constraint cannot do
+>    (it would need a join). Reject with a Norwegian message naming the term's
+>    dates.
 
 **Files:**
 - Create: `supabase/migrations/20260728095000_create_assignment_rpc.sql`
