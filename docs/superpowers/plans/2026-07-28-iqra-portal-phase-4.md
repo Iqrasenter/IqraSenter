@@ -7865,17 +7865,26 @@ Teacher: list → hero (counts filter to names; non-submitters are rows) → cre
 
 - [ ] **Step 5: Confirm the commit list and open the PR**
 
+> ⚠ **The branch is `feat/phase-4-oppgaver`, not `feat/phase-4`.** PR #14 (the
+> audit-hardening series) merged into `real` with `--rebase` on 2026-07-28 22:07Z,
+> giving every commit a new SHA, so the original `feat/phase-4` became a
+> stale-SHA duplicate of work already in `real`. Tasks 6 and 7 were cherry-picked
+> onto a fresh branch off `origin/real` @ `f873430` on 2026-07-29 — a clean
+> replay, since `git diff` between the two bases was empty. The old branch and
+> `origin/feat/phase-4` still exist; delete them once this PR is open.
+
 ```bash
-cd /Users/daodilyas/dev/iqra-portal && git log --oneline real..feat/phase-4
+cd /Users/daodilyas/dev/iqra-portal && git log --oneline real..feat/phase-4-oppgaver
 ```
 
-Expected: 15 commits, one per task.
+Expected: 10 commits — Tasks 6–15, one per task. (Tasks 1–5b shipped in `real`
+via PR #14, so they are not in this range.)
 
 ```bash
-cd /Users/daodilyas/dev/iqra-portal && git push -u origin feat/phase-4
+cd /Users/daodilyas/dev/iqra-portal && git push -u origin feat/phase-4-oppgaver
 ```
 
-Open the PR `feat/phase-4 → real`. **This PR gets the full multi-agent review panel** — Storage and child-data RLS are new walls (2026-07-21 review policy).
+Open the PR `feat/phase-4-oppgaver → real`. **This PR gets the full multi-agent review panel** — Storage and child-data RLS are new walls (2026-07-21 review policy).
 
 - [ ] **Step 6: Record what this phase leaves open**
 
