@@ -6039,6 +6039,86 @@ cd /Users/daodilyas/dev/iqra-portal && supabase db reset && supabase test db && 
 
 Expected: `21_assignments_rls.sql` 21/21, all api assignment suites green.
 
+> **Execution ledger — corrected during Task 9 (2026-07-29).** The expected count
+> is wrong twice over: `21_assignments_rls.sql` was at `plan(20)`, not 21, and
+> ends at **`plan(27)`**. Shipped as two commits. Final gate: pgTAP **573**
+> (29 files) · `test:api` **314** (11 files) · `assignments-actions` **41** ·
+> unit 311 · typecheck 0 · lint 0 · knip **0**.
+>
+> ### ★ CI would have failed on first push, and not for a legible reason
+>
+> Found while the task was in flight, fixed in a separate commit. `ci.yml` started
+> the stack with `-x …,storage-api,…` under a comment saying the API suite "never
+> uses Storage" — true when written, **false since Task 5**. Both
+> `assignments-storage.test.ts` and this task's reuse tests drive the Storage HTTP
+> API. Measured against a stack started with the job's exact flags rather than
+> reasoned about: old list → no storage container, **7 of 9 storage tests fail**
+> with `StorageApiError 503 "name resolution failed"`; corrected list → **68/68**
+> across all three assignments files.
+>
+> **The CLI trap that hid it, worth keeping:** `supabase start --help` advertises
+> one set of excludable names (`analytics, db, functions, inbucket, meta, rest,
+> storage, …`) and the **runtime validator accepts a different set**
+> (`edge-runtime, gotrue, logflare, mailpit, postgres-meta, postgrest,
+> storage-api, supavisor, …`). An unrecognised name is a **WARNING with exit 0**,
+> never an error. So a name copied from the help text silently *starts* the
+> container it was meant to stop, while only a validator name stops anything.
+> `inbucket` and `pg-meta` had been no-ops all along; `storage-api` was real.
+> `23_assignment_storage.sql` is why nobody noticed — it asserts against the
+> storage **schema** in Postgres, which exists whether or not the container runs,
+> so `supabase test db` stayed green throughout.
+>
+> ### The rollback test could hollow itself out, and the obvious fix was vacuous too
+>
+> The all-or-nothing assertion only bites if the good attachment is copied before
+> the orphan, which held solely because of an `.order('created_at')` on the source
+> read — a line nothing asserted. Deleting it left the suite green while the test
+> proved nothing about `removeObject` (measured: the mutant **survived**). The
+> reviewer's suggested fix — read the attachments again in a check query and
+> assert their order — was **also** vacuous, because a separate query carries its
+> own `ORDER BY` and cannot observe the action's. Fixed instead by building the
+> fixture so heap order and `created_at` order deliberately **disagree** (orphan
+> row inserted first, stamped a day later) and asserting the sweep count from the
+> action's own diagnostic. The test now carries a `★★ DO NOT "TIDY"` comment, since
+> the natural simplification restores the vacuity.
+>
+> This is the seventh unfailable assertion on this branch and the second where the
+> *proposed* fix would also have been unfailable. **Mutate the fix, not just the
+> original.**
+>
+> ### `discard_empty_assignment` guards were raceable
+>
+> The four `exists` guards read at READ COMMITTED while the `delete` ran on a
+> later snapshot, and every child FK is `ON DELETE CASCADE` — so a hand-in
+> committing in that window was destroyed, and the function is granted to
+> `authenticated` and takes an arbitrary uuid, so it is not confined to
+> seconds-old reuse leftovers. Closed with `perform 1 … for update` before the
+> guards: a child INSERT takes `FOR KEY SHARE` on the parent, which conflicts.
+> ⚠ Its pgTAP assertion is **a pin, not proof** — the race needs two sessions
+> committing in a controlled order, which neither pgTAP (one session, one
+> transaction) nor the PostgREST harness can stage. Labelled as such in the file.
+>
+> ### Shipped unproven, deliberately
+>
+> The attachment-row cleanup before the discard (closing the case where the row
+> insert commits but its response is lost) **cannot be tested here** — supabase-js
+> cannot produce that state, so no fixture distinguishes the cleanup from its
+> absence. Shipped with the gap stated rather than dressed up; the alternative was
+> shipping the hole it closes. Likewise the uuid half of `pathBelongsTo` fires
+> nowhere today (both call sites take `parentId` from a uuid column or
+> `randomUUID()`), so it is pinned by unit tests only, and the code says so.
+>
+> ### Two incidental facts now recorded in code
+>
+> - `assignment_attachments.created_at` is **teacher-writable through PostgREST** —
+>   the insert policy constrains only `assignment_id` and `uploaded_by`, so every
+>   other column is client-supplied. Harmless today, and it is the sole mechanism
+>   that lets the rebuilt fixture make heap order and timestamp order disagree.
+> - A well-formed uuid that is not a subject reached the teacher as a raw English
+>   FK violation through `mapCreateError`'s fallback. **Pre-existing**, not
+>   introduced by reuse; now mapped, because reuse is the first path that can hit
+>   it without a hand-crafted request (`class_subjects` is app-enforced per §4).
+
 - [ ] **Step 6: Commit**
 
 ```bash
