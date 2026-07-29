@@ -5612,6 +5612,97 @@ cd /Users/daodilyas/dev/iqra-portal && supabase db reset && supabase test db && 
 
 Expected: pgTAP all ok; typecheck clean; `assignments-actions` 11/11, `assignments-core` and `assignments-storage` still green.
 
+> **Execution ledger — corrected during Task 8 (2026-07-29).** The count above is
+> wrong: the file ends at **30 tests**, not 11 — the riders and the review's
+> additions roughly tripled it. Shipped as two commits, not one. Final gate:
+> pgTAP **560** (29 files, up from 531/28) · `test:api` **303** · typecheck 0 ·
+> lint 0 errors · knip 1 (`reuseSchema`, Task 9's).
+>
+> ### ★ The plan's `student_in_assignment_check` was an oracle over other families' children
+>
+> The plan specified a bare `security definer` wrapper and a comment asserting it
+> "exposes a boolean the caller could already derive… so it leaks nothing new".
+> That comment was **false**, and the function is reachable by every
+> `authenticated` role. `private.student_in_assignment(sid, aid)` answers for
+> *any* pair, and a `definer` wrapper runs as `postgres`, which carries
+> `rolbypassrls` — so RLS never narrows it. A guardian can already read their own
+> child's group mates' student ids through `assignment_group_members_select_related`,
+> so they hold real ids to probe with, and could then ask the wrapper about any
+> assignment id they encountered. Verified caller-by-caller against the live
+> stack: as `forelder@`, the bare pivot returns **true** for another family's
+> child; the bound wrapper returns **false**.
+>
+> Fixed by binding the answer to the caller's own relationship — admin, teaches
+> the assignment, is the linked pupil, or is the guardian. All three call sites
+> have already established exactly one of those links before calling, so the bind
+> costs them nothing. It fails closed on a null `auth.uid()` (`NULL and …` → NULL
+> → rejected).
+>
+> **The bind then shipped proven by nothing.** Deleting those six lines left the
+> entire suite green: both negative tests reject on the *pivot* half and never
+> reach the bind. This is discipline #0 exactly — the fixture you need is one
+> where the pivot says **true** and your code must say **false**, and no such
+> fixture existed. Now pinned by `supabase/tests/28_assignment_rpc.sql`;
+> re-verified by the controller, not just claimed — stripping the bind fails
+> assertions **17** and **20** and nothing else.
+>
+> **Standing rule:** `00_grant_firewall.sql` sweeps only `relkind in ('r','p','v','m','S')` —
+> tables and sequences, **never functions**. A forgotten `revoke … from anon` on a
+> new function therefore fails no test. Every function a task adds owes its own
+> `prosecdef`, `proconfig` (`search_path=""`) and `anon`-has-no-EXECUTE assertions,
+> with the `authenticated` positive half so an over-broad revoke cannot hide.
+>
+> ### `saveClassGroup` walked back into the replace-set data loss the repo had already fixed
+>
+> Membership was maintained as update → DELETE-all → INSERT across three
+> autocommitting PostgREST round trips — the exact defect `25_replace_set_atomicity.sql`
+> and `replace_class_teachers` / `replace_class_subjects` exist to prevent. One
+> rejected insert (a pupil whose `left_on` was stamped between the roster read and
+> the insert trips `class_group_members_insert_teacher_or_admin`, and it is one
+> statement so one bad id loses all of them) leaves the template **empty**, with no
+> UPDATE policy and no recovery but re-entering the names. A dropped connection
+> does the same with no race at all. Fixed as the third member of that family,
+> `public.replace_class_group`, with the **stored count** as the success signal —
+> the action rejects `stored !== student_ids.length` rather than trusting "no
+> error". That count is also what proves the action goes *through* the function
+> rather than alongside it.
+>
+> ### A retried upload-confirm deleted the file and kept the row
+>
+> Inherited verbatim from the plan (Steps 4 and 5): `removeObject` ran **before**
+> the 23505 branch. Both attachment tables have `UNIQUE (path)`, so a double-click
+> or a retry after a slow first response deleted the object the first call had
+> already recorded — row surviving, child's recording gone, permanently broken
+> link. Three comments in the plan's own code stated the opposite invariant, one
+> of them describing precisely the rule the code two functions above broke.
+>
+> ### Two things the plan asserts that are simply wrong
+>
+> - The `FOREACH` "careful" note (reusing `v_group_id` as loop variable and
+>   `returning` target) describes a bug that does not exist: `FOREACH` re-assigns
+>   the loop variable at the top of every iteration. Settled with a plpgsql probe
+>   that clobbers it mid-body, not by reading the manual. The two-variable form is
+>   still what shipped, because it is clearer.
+> - `mapCreateError`'s `split('|')` ternary was dropped entirely rather than
+>   fixed. The RPC's raise already carries the group/term name, so an action-side
+>   copy of the size/foreign/term rules renders the same sentence from the same
+>   payload — a check no test could distinguish and no mutant could reveal.
+>
+> ### Scope notes
+>
+> - **Rider 4 lives in the RPC, and it is a consistency gate, not a security
+>   control.** `assignments_insert_teacher_or_admin` has no `due_on` term, so a
+>   teacher can still POST any frist straight to `/rest/v1/assignments`. The
+>   comment says so; per ledger rule, a comment that overstated it would be worse
+>   than none.
+> - `writeHandIn` and the attachment helpers live in `src/lib/dal/submissions.ts`,
+>   not in the action files: `'use server'` makes every export a public endpoint,
+>   and these take an already-authorized `userId`. `action-guards.test.ts` (now 60)
+>   refuses them in an action file, correctly.
+> - **Deferred to the exit gate:** `'Du underviser ikke denne oppgaven.'` is not
+>   idiomatic bokmål — one teaches a class or a subject, not an assignment. The
+>   string is shared with Task 7, so it is a cross-task sweep, not a Task 8 patch.
+
 - [ ] **Step 7: Commit**
 
 ```bash
