@@ -7390,6 +7390,61 @@ The pupil hands in; the parent hands in on behalf. Group tasks show group-mates 
 **Files:**
 - Create: `src/app/(portal)/elev/lekser/page.tsx`, `HandInForm.tsx`
 - Create: `src/app/(portal)/forelder/lekser/page.tsx`, `ChildHandIn.tsx`
+- **Rider below:** create `supabase/migrations/2026_________group_comember_names.sql`; modify `src/lib/dal/assignments.ts`, `src/lib/assignments.ts` (+ its test), `supabase/tests/22_*.sql`
+
+> ### ⚠ Rider — group-mate names (user decision, 2026-07-29: **first name + last initial**)
+>
+> Task 7 shipped `group_mates` as an array of empty strings and nobody noticed,
+> because `students` RLS gives a pupil only their own row and a guardian only
+> their own children — a group mate is by definition another family's child. The
+> interim fix made the field `{ student_id: string; name: string | null }[]`,
+> which is honest but still renders nothing. **This rider makes it render, and it
+> must land before the pupil/parent surfaces are built on top of a blank field.**
+>
+> **The decision, and why it is not the privacy expansion it looks like.**
+> `private.reads_submission` (`20260728093000:184-215`) already grants **every
+> group member and every member's guardian** read access to the shared hand-in
+> row *including its `body`* — that is D3, deliberate and already shipped. Family
+> B can therefore already read text family A's child wrote. Withholding the name
+> leaves the absurd result that they read the work but cannot know who wrote it.
+> A first name plus a last initial is **strictly less** exposure than what is
+> already in production, and is the minimum that lets a nine-year-old work out
+> who they are recording an ayah with. Full surnames were considered and rejected
+> under Art. 5(1)(c) data minimisation; the initial disambiguates two pupils
+> sharing a first name, which a bare first name does not.
+>
+> **Migration — one policy, tightly scoped:**
+> - `students_select_group_comember`, `for select to authenticated`.
+> - Admits a `students` row only when the caller is a member of, or a guardian of
+>   a member of, **the same frozen `assignment_group`** as that row's pupil. Not
+>   the class. Not the school. The group is teacher-created, 2–4 pupils, and
+>   frozen at creation, so the exposure set cannot drift after the fact.
+> - **`and protected = false`**, following the `students_select_taught_ever`
+>   precedent (`20260721120712_attendance_visibility.sql:79`). A protected child
+>   stays invisible even to their own group. Non-negotiable.
+> - Resolve membership through a `private.` helper, not an inline subquery on
+>   `assignment_group_members` — that table is RLS-protected and the house rule
+>   forbids inlining it (the same correction Task 4's review made to `submissions`).
+>
+> **DAL + formatting:**
+> - `readAssignmentsForStudent` selects `first_name, last_name` for members and
+>   formats through a new pure `shortName(firstName, lastName)` in
+>   `src/lib/assignments.ts`, unit-tested beside `safeStorageName`.
+> - `shortName('Yusuf', 'Ahmed')` → `'Yusuf A.'`. An empty or whitespace-only
+>   surname yields the first name alone with **no trailing period**. A hyphenated
+>   or particled surname takes the first letter as written (`'Al-Hassan'` → `'A.'`).
+> - ⚠ Take the initial with `[...lastName][0]`, **not** `lastName[0]` — the Task 6
+>   lone-surrogate trap, one file over. Uppercase it (`'å'` → `'Å'`).
+> - `name` stays `string | null`: null is what a **protected** mate resolves to,
+>   and the surfaces must render a placeholder for that case rather than a blank.
+>
+> **pgTAP (append to the Task 4 file, and fix its `plan()` count — count with
+> grep):** all three directions, each mutation-tested. A co-member's guardian
+> reads the row; a family in the same *class* but not the same *group* does not;
+> a `protected` pupil is invisible **even to their own group mates**. If deleting
+> the `protected = false` clause does not turn a test red, that test is not
+> testing it — this branch has already shipped four assertions that could not
+> fail, and a new RLS wall is the last place to add a fifth.
 
 - [ ] **Step 1: Write the pupil surface**
 
