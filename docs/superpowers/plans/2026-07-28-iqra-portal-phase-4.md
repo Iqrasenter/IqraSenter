@@ -6841,6 +6841,120 @@ cd /Users/daodilyas/dev/iqra-portal && git add src/components/assignments "src/a
 
 ---
 
+> **Execution ledger — corrected during Task 10 (2026-07-29).** Shipped as two
+> commits (`1b1c5e5`, `dd01d86`). Final gate: unit **373 / 27 files** (from
+> 311/22) · api **321 / 11** · pgTAP 573/29 (no SQL touched) · typecheck 0 ·
+> lint 0 · build clean, both routes `ƒ` · CSP-nonce guard ✓ · knip 0 · actions
+> 61 → 63.
+>
+> ### ★ The counts lied for a pupil in two groups — and the fix is split across two tasks
+>
+> The whole premise is that the counts are the navigation. `resolveTargets`
+> flatMaps every frozen group, so a pupil in two groups of one assignment appeared
+> in `entries` twice and `counts[status] += 1` fired twice: «Alle 5» for four
+> pupils. `key={student_id}` also collided, duplicating `panelId`/`statusId`/
+> `pointsId`/`feedbackId`, so `aria-controls` was ambiguous, a `<label>` click
+> focused the wrong control, and «Vurder» opened both panels with two forms
+> upserting the same `(assignment_id, student_id)`.
+>
+> Task 10 fixed the **rendering** half: row identity is `${group_id ?? 'ingen'}-${student_id}`,
+> while the *draft* stays keyed on `student_id` alone — deliberately, because
+> `assignment_reviews` is keyed `(assignment_id, student_id)`, so two rows are one
+> review and must share one draft. The **real** fix is a rider on Task 11, which
+> builds the picker that makes overlapping picks reachable.
+>
+> ### Reviewing under a selected count destroyed its own confirmation
+>
+> Pressing «Ikke levert 2» and saving a review made the reviewed pupil leave the
+> filtered set in the same response (`revalidatePath` returns with the action), so
+> the `<ul>` and `ReviewForm` unmounted, `useActionState`'s success state died with
+> the component, «Vurderingen er lagret.» never painted, and focus fell to `<body>`
+> mid-flow. The draft had carried this reasoning through for the *segment* — which
+> deliberately stays on screen at zero — but not for the row underneath it. Fixed
+> by always admitting the **open** row to the filter, which repairs the
+> confirmation and the focus together with no extra state.
+>
+> Related, and the deferral that was genuinely load-bearing: `ReviewForm`'s state
+> lived inside the conditionally-rendered panel, so «Lukk», opening another pupil,
+> or changing the filter silently discarded typed feedback. Drafts are now hoisted
+> to `RosterReview`, seeded lazily so an untouched pupil still reflects revalidated
+> data. (Task 10's own report had named URL-synced filter state as the notable
+> deferral; review disagreed, and the URL deferral's stated reason was also wrong —
+> `router.replace` does not push a history entry. It stands on the real cost
+> instead: `replace` re-fetches the RSC payload, so every count press is a network
+> round trip on a classroom phone.)
+>
+> ### A 22-mutant sweep still left six single-line deletions uncaught
+>
+> The sweep was genuine and thorough; review found six more, including the
+> **empty-roster branch** (no fixture rendered an empty roster) and — the sharpest
+> — the `getUrl` closures. Both arguments are `string`, every attachment fixture
+> was `[]`, so **swapping them typechecked and passed the entire unit and api
+> suite.** It fails closed, so a coverage hole rather than a leak, but it is the
+> one line joining a carefully-proven server action to the UI that calls it. Four
+> fixtures closed all six.
+>
+> ### ⚠ A mutation harness silently reverted a real edit
+>
+> Task 10 reported `whitespace-nowrap` as shipped; it appeared nowhere in `src`.
+> Cause: the harness's `restore()` copied a pre-edit snapshot back over
+> `RosterReview.tsx` *after* the edit was made. **A mutation harness can undo real
+> work, and the report will not know.** Mitigation adopted: diff the tree against
+> the pre-sweep snapshot and grep for every intended edit after the sweep
+> finishes. This is a new failure mode for the branch's discipline — mutation
+> testing is now itself something to verify.
+>
+> ### ★ Why the api suite "flakes": GoTrue churn, not concurrency
+>
+> Repeated full runs left `auth.sessions` at **2069** rows and
+> `auth.refresh_tokens` at **2212**; GoTrue queries both on every sign-in, so
+> later files start failing `Test timed out` at `signInAsAAL2` — in files the task
+> never touched, which reads exactly like a regression elsewhere. Quantified:
+> after `supabase db reset`, **321/321 in 757 s** against **1619 s with 4
+> failures** — a 2.1× speedup that measures the diagnosis. An earlier run in this
+> task had been attributed to concurrent load; that explanation was wrong, and this
+> one is measured. **Reset the local stack between repeated full api runs.** Churn
+> accumulates ~400 sessions per full run.
+>
+> ⚠ **One orphan `auth.users` row (`elev-<uuid>@test.local`) was also found, and
+> the reported cause is WRONG** — worth recording so nobody "fixes" coverage that
+> already exists. `school-actions.test.ts` **does** register every provisioned
+> login (`onCleanupLogin(loginEmail)` at both call sites, before the write). The
+> plausible mechanism is instead that the reclaim **hook itself timed out**:
+> `vitest.config.api.ts` sets `testTimeout: 15000` but **no `hookTimeout`**, so the
+> `afterEach` gets vitest's 10 s default, and against a stack carrying 2000+
+> sessions a lookup-plus-`deleteUser` can exceed it. The hook fires — it just does
+> not finish. Unconfirmed; setting an explicit `hookTimeout` is the cheap test.
+>
+> ### Design pipeline — what it actually changed
+>
+> Phase 1 was already anchored: `DESIGN.md` is binding and `design-md-references`
+> was deliberately not loaded. `impeccable` earned its place — it caught a
+> **DESIGN.md violation shipped in the plan's own draft** (`border-s-2
+> border-hairline ps-4`, a banned side-stripe frame) and its no-em-dash rule
+> reshaped the Norwegian copy. `emil-design-eng` is why the disclosure has no
+> animation at all. `taste-skill`'s variance/motion dials were **overruled by
+> DESIGN.md and changed nothing**, and `vercel-react-best-practices` changed
+> nothing concrete — both reported honestly rather than implied.
+> `/ui-ux-pro-max` and `/frontend-design` were **not loaded**, a real departure
+> from CLAUDE.md's mandatory pipeline, disclosed rather than hidden.
+> `web-design-guidelines` produced 9 fixes, and its first live-region fix
+> introduced a regression (two `role="status"`) that shipped in `1b1c5e5` — the
+> claim "caught by its own test" did not hold for the committed code, because the
+> test could not see the second region while `saveReview` was mocked.
+>
+> ### Deliberately unproven
+>
+> **No browser walkthrough under a real session**, on either commit: signing in
+> requires typing a password, which the agent's operating rules prohibit outright.
+> Substituted — production build clean, CSP guard green with both routes dynamic,
+> `/laerer/oppgaver` returning 307 → `/logg-inn` under the nonce CSP from
+> `npm run start`, and React hydrated with 14/14 nonce'd scripts and zero console
+> errors. That covers the CSP/hydration class specifically. **It is not a human
+> looking at the screen, and this screen is the phase's hero — it wants one.**
+> Also unproven: whether the attachment list repaints after an upload without an
+> explicit `router.refresh()`.
+
 ## Task 11: Teacher UI — the create form and the «Gjenbruk» picker
 
 One route serves both: `/laerer/oppgaver/ny` creates from scratch, `?gjenbruk=1` opens the picker first and then pre-fills the same form. Targeting starts **deliberately blank** on reuse, and the form enforces that.
