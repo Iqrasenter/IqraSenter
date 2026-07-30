@@ -6845,6 +6845,34 @@ cd /Users/daodilyas/dev/iqra-portal && git add src/components/assignments "src/a
 
 One route serves both: `/laerer/oppgaver/ny` creates from scratch, `?gjenbruk=1` opens the picker first and then pre-fills the same form. Targeting starts **deliberately blank** on reuse, and the form enforces that.
 
+> ⚠ **Riders carried forward from Task 10's review (2026-07-29).**
+>
+> 1. **★ Overlapping group templates make the hero screen's counts lie, and this
+>    task builds the picker that makes it reachable.** `assignment_group_members`'
+>    PK is `(assignment_group_id, student_id)`, and
+>    `create_assignment_with_groups` copies each picked template **independently
+>    with no overlap guard** — so picking two templates that share a pupil creates
+>    two `assignment_groups` rows both containing them. `resolveTargets` flatMaps
+>    both, the pupil lands in `entries` twice, and `counts[status] += 1` fires
+>    twice: «Alle 5» for four pupils. That is the counts-are-the-navigation claim
+>    breaking, on the phase's hero screen. Task 10 fixed the *rendering* half
+>    (rows and field ids keyed on `${group_id}-${student_id}`, so React keys and
+>    `aria-controls` no longer collide); **this task owes the real fix.** Either
+>    refuse overlapping picks — in the RPC, so every caller inherits it, with a
+>    Norwegian message naming the two groups — or `distinct on (student_id)` the
+>    resolved targets. Prefer refusing: silently de-duplicating would leave the
+>    teacher with an assignment whose targeting is not what they picked. A test
+>    must prove the refusal, and the fixture is cheap — the seed's Halaqa A plus a
+>    second template sharing one pupil.
+> 2. **`/laerer/oppgaver/ny` must exist before this task closes, and Task 10's
+>    already-shipped links must be verified live.** Task 10 added `Oppgaver` to
+>    `LaererNav` and three CTAs («Ny oppgave», «Gjenbruk», «Lag den første
+>    oppgaven») that currently 404 because this route does not exist yet. That was
+>    accepted as sequencing rather than patched with throwaway placeholders, so
+>    **this task owes the verification**: after building the route, confirm all
+>    three entry points resolve, and that `?gjenbruk=1` opens the picker rather
+>    than the blank form.
+
 **Files:**
 - Create: `src/app/(portal)/laerer/oppgaver/ny/page.tsx`, `NewAssignmentForm.tsx`, `ReusePicker.tsx`
 
