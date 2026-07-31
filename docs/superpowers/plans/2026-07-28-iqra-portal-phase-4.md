@@ -7414,6 +7414,83 @@ cd /Users/daodilyas/dev/iqra-portal && git add "src/app/(portal)/laerer/oppgaver
 
 ---
 
+> **Execution ledger — corrected during Task 11 (2026-07-29).** Shipped as two
+> commits (`ea90d73`, `34ae6f7`). Final gate: pgTAP **577 / 29** ·
+> api **326 / 11** · unit **407 / 31** · typecheck 0 · lint 0 · build clean with
+> `/laerer/oppgaver/ny` in the route table · CSP guard ✓ · knip 0 · actions 63.
+> Both riders paid.
+>
+> ### ★★ The defect was live for two tasks, and the test suite was concealing it
+>
+> Rider 1's overlap bug was not hypothetical. The **pre-existing** test
+> *«copies every chosen template, not just the first»* built its fixture from
+> `{Yusuf, Bilal}` and `{Bilal, Idris}` — **Bilal in both** — and passed. It had
+> been creating assignments with a pupil in two frozen groups since Task 8, which
+> is exactly the state that makes the hero screen's counts over-report. Confirmed
+> by the controller against `1b1c5e5` and `dd01d86` before the fix was accepted.
+> **A test whose fixture accidentally contains the defect it is adjacent to will
+> pass, and its name will read as coverage.**
+>
+> Fixed by refusal, not de-duplication (`GROUP_OVERLAP|<a>|<b>`), in a new
+> migration `…097000` via `create or replace` — one migration per task is the
+> convention, and a new file makes the delta legible instead of hiding it inside a
+> diff of shipped code. Review verified: 097000 sorts last of the three migrations
+> touching the function so `db reset` ends on the guarded version; the live ACL
+> carries no `public`/`anon`; and the function body is **byte-identical** to
+> 095000's from the first insert to `end;` with comments stripped, so Task 8/9's
+> term, size, class, enrolment and subject rules survived untouched. The predicate
+> was replayed against seven synthetic fixtures (3 templates overlapping only
+> 1st↔3rd, all-disjoint, same template twice, single, zero-member, empty, NULL) —
+> a full pairwise scan with `(name, id)` as a strict total order, no evasion found.
+> The form disables conflicting groups as the affordance in front of the wall.
+>
+> ### An "unproven" item closed by argument instead of a fixture
+>
+> The implementer flagged the guard's `class_id = p_class_id` scoping as untestable,
+> since the fixture would need a pupil actively enrolled in two classes and
+> `class_students_one_active` (a partial unique index on `(student_id) WHERE
+> left_on IS NULL`) forbids it. **No fixture is needed:** for two groups to be
+> frozen at all, both must already pass `v_template.class_id <> p_class_id →
+> GROUP_FOREIGN` in the loop, so any pair that can reach the copy is inside the
+> guard's scope. The filter is redundant-but-harmless and cannot produce a false
+> negative. **Worth generalising — when a fixture is forbidden by a constraint,
+> ask whether the constraint itself is the proof.**
+>
+> ### ★ Two new failure modes in mutation testing itself
+>
+> 1. **A surviving mutant can be a defect in the harness, not a gap in the tests.**
+>    N9 first came back SURVIVED; the mutant had been written to add an inert
+>    `.neq` rather than to remove the `created_by` narrowing. Rewritten to actually
+>    drop the filter, it dies. That was the **second** time in this task that a
+>    survivor was a harness bug. Interrogate a survivor before believing it.
+> 2. **A naive string-replace inverse corrupts files.** An empty-string mutant made
+>    the inverse *prepend* instead of restore, and a mutant whose text already
+>    occurred earlier in the file made the inverse restore the wrong occurrence.
+>    Both aborted loudly and were restored from pre-sweep copies with sha verified
+>    — the sha check added after Task 10 silently lost an edit, earning its place
+>    on its first outing. The harness now refuses empty mutants and mutants whose
+>    text already occurs.
+>
+> ### Why the guidelines audit missed two of its own rules
+>
+> `web-design-guidelines` was run and still missed a `disabled` that removed a
+> blocked group from the tab order (in a file arguing the opposite principle 200
+> lines earlier) and three render branches with no `<h1>`. The implementer's own
+> diagnosis, worth keeping: **single-branch reasoning applied to a multi-branch
+> component** — the ruleset was read against the file as written, in one pass, so
+> "does this page have an `h1`" was checked on the branch in view and generalised
+> to branches never enumerated. The re-run **enumerated 16 render branches first,
+> then applied the rules per branch**, and immediately surfaced a further miss (the
+> new subject warning was visible-only, now `role="status"`). Audit multi-branch
+> components branch-by-branch, not file-by-file.
+>
+> ### Still unproven
+>
+> **Nobody has clicked this feature under a real session** — entering a password is
+> prohibited, so no implementer on this phase can do it. Also: a `|` typed inside
+> the *second* group name misplaces a quote in one sentence (cannot turn a refusal
+> into a pass; disclosed at both ends).
+
 ## Task 12: Teacher UI — class group templates
 
 **Files:**
