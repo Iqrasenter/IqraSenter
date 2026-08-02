@@ -8219,6 +8219,55 @@ cd /Users/daodilyas/dev/iqra-portal && npm run typecheck && npm run lint && npm 
 cd /Users/daodilyas/dev/iqra-portal && git add "src/app/(portal)/laerer/LaererNav.tsx" "src/app/(portal)/elev/ElevNav.tsx" "src/app/(portal)/forelder/ForelderNav.tsx" "src/app/(portal)/admin/page.tsx" src/lib/dal/assignments.ts && git commit -m "feat(oppgaver): role navigation entries and admin oversight block"
 ```
 
+> **Execution ledger — corrected during Task 14 (2026-08-02).** Shipped as
+> `c387330`. The plan above was wrong in four places, each verified against the
+> code before anything changed.
+>
+> 1. ★ **Step 1's `LaererNav` instruction was already done.** Task 10 shipped
+>    `{ href: '/laerer/oppgaver', … }`. Adding it again gives `ITEMS` two members
+>    with the same `href` and therefore the same React `key`. A new
+>    `LaererNav.test.tsx` pins the entry at exactly one; both its tests passed
+>    before any source edit, which is the measurement proving the step was a
+>    no-op. Only `ElevNav` and `ForelderNav` needed entries.
+> 2. The item literals omit `exact`, contradicting the same step's sentence
+>    "matching each file's existing item shape" — `item.exact` is read
+>    unconditionally in all three navs. Shipped with `exact: false`.
+> 3. ★★ **`awaiting_review` cannot be computed the way Step 2 computes it.**
+>    `assignment_reviews` is keyed `(assignment_id, student_id)` — one review per
+>    PUPIL, stated in its own table comment — while a group's hand-in is ONE
+>    `submissions` row shared by up to four pupils. So
+>    `submissions.length > assignment_reviews.length` compares different units:
+>    a 4-member group with one member marked yields `1 > 1` and the dashboard
+>    reports "nothing waiting" while three pupils are unmarked. Reviews may also
+>    exist for a pupil who never handed in (a review is keyed on the pupil, not
+>    the hand-in), which offsets genuinely-unreviewed work in the other
+>    direction. **User decision: ship the two sound counters now, defer this to
+>    the exit gate with its real definition recorded.**
+> 4. The proposed markup (bare `<section>` + inline `<p>`) matches nothing on the
+>    admin dashboard, which uses `<dl>/<dt>/<dd>` stat cards — the same
+>    "match that page's styling" impossibility as Task 12's Step 3. It also
+>    awaited the new read sequentially instead of joining the page's existing
+>    `Promise.all`.
+>
+> Further corrections: `due_soon` → **`due_ahead`**, because the filter is
+> `due_on >= today` with no window and the old name promised one; counts use
+> `{ count: 'exact', head: true }` rather than pulling rows and taking `.length`,
+> since PostgREST's `max_rows` is 1000 and truncates **silently**; and the read
+> lives in `dal/dashboard.ts` beside the other admin counters, not in
+> `dal/assignments.ts`.
+>
+> ★ **Assignment fixtures must be inserted as an authenticated ADMIN, not with
+> the service key.** `00_grant_firewall` leaves `service_role` only DELETE +
+> SELECT on `public.assignments` — writing one is a teacher/admin act. The first
+> draft of the test used the service client and died on `42501`. Cleanup on the
+> service client is fine. (`classes`/`terms` do have full CRUD there.)
+>
+> ★ Today (2026-08-02) precedes the term start (2026-08-15), so every seeded
+> assignment is due ahead and `due_ahead == total`. Absolute assertions cannot
+> separate the two counters; the tests assert **deltas** across a fixture pair
+> straddling today, and a mutant deleting `.gte('due_on', …)` is killed by
+> exactly that test.
+
 ---
 
 ## Task 15: Exit gate
