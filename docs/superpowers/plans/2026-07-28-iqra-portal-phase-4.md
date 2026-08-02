@@ -8272,6 +8272,61 @@ cd /Users/daodilyas/dev/iqra-portal && git add "src/app/(portal)/laerer/LaererNa
 
 ## Task 15: Exit gate
 
+> **Execution ledger — the SQL items, 2026-08-02.** Shipped as `1909068`
+> (migration `20260802000000`), covering accumulated exit-gate items 4, 5 and 9
+> in one migration so the stack is reset once rather than three times.
+>
+> ★ **Two of the three are SECURITY INVOKER, deliberately.** Task 8's finding
+> was that a definer wrapper over a private predicate is an oracle unless it is
+> bound to the caller; the cheapest way to stay bound to the caller is never to
+> leave their permissions. RLS already answers "may I write this hand-in?" and
+> "how much is waiting for me to assess?" correctly, so elevating would have
+> added a wall to audit for no gain. Verified first that RLS admits admin on
+> every table the backlog joins — `classes_select_admin_or_teacher` and
+> `terms_select_authenticated` — because an INVOKER function over a table that
+> refuses the caller returns 0 SILENTLY, which is exactly the vacuous metric
+> Task 14 rejected.
+>
+> ★ **Caught in plan review, before any SQL was written.**
+> `22_submissions_rls.sql` does `delete from public.terms` and then inserts its
+> own term with `is_current` defaulting to FALSE. A retention bound keyed on the
+> current term would have made every mate-name assertion in that file return
+> nothing — and the NEGATIVES there ("a stranger resolves no names") would have
+> gone on passing while proving nothing. The fixture now sets `is_current`,
+> which is what a file modelling a live term always meant.
+>
+> ★★ **A failing test changed the design of item 9.** The first cut let any
+> authenticated caller run the backlog. Running the new pgTAP showed a PUPIL
+> receiving a non-zero number: `assignment_reviews` RLS hides a group mate's
+> review, so the mate read as unassessed and the count was inflated by a row the
+> caller was never allowed to see. Not a leak — an invented number, which on a
+> dashboard is its own defect. The contract is now "hand-ins waiting for ME to
+> assess", guarded on admin-or-teacher, so 0 is the true answer for anyone who
+> assesses nothing. `private.is_staff` was rejected: it admits `economy`.
+>
+> ★ **Item 9 also needed a staleness rule that was not in the recorded
+> definition.** `dal/submissions.ts` moves `submitted_at` forward on every edit,
+> so the ordinary redo cycle leaves a STALE mark on fresh work. "Waiting" is
+> therefore `reviewed_at >= submitted_at`, not "a review row exists" — the
+> weaker test would call a re-submission assessed and drop it from the backlog
+> silently, which is the same class of lie as the row-count version the item
+> exists to replace.
+>
+> Retention (item 4) is bounded to the CURRENT TERM as a window on `due_on` —
+> deliberately the same window the pupil and guardian reads already apply, so
+> the tightest available bound costs no functionality at all. Bounding by the
+> class's term would have been looser, keeping names alive for assignments no
+> screen shows. It is a retention DECISION and loosening it is one line.
+>
+> Gate: typecheck 0 · lint 0 err · unit 483/40 · api 350/12 · pgTAP 624/31 ·
+> build clean · knip 0, tables back at baseline.
+>
+> ⛔ Step 1's expectation below is stale in one number: it says 26 pgTAP files.
+> There are now **31**, and `supabase db reset` exits 1 with
+> `storage container is not ready: starting` even on success — that is the
+> CLI racing storage's own ~20 s migration window, so verify the state instead
+> of re-running.
+
 - [ ] **Step 1: Full suite from a clean database**
 
 ```bash
