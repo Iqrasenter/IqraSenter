@@ -3025,3 +3025,110 @@ diagnose.
   would look for it.
 - `.single()` on the thread insert cannot silently see 0 rows from RLS — for
   INSERT the SELECT policy is a WITH CHECK (error), never a filter.
+
+## Tasks 10, 11 — done. Plan 1 is code-complete.
+
+| | Commit | Subject |
+|---|---|---|
+| Task 10 | `d0726cb` | feat(meldinger): the office reads everything, and the reading is on the record |
+| blocking fix | `0dd56ca` | fix(meldinger): no thread could be created by anyone, and the reason was RETURNING |
+| Task 11 | `02e3d1d` | test(meldinger): wall-1 assertions for thread entitlement and the oversight audit |
+| review follow-ups | `61190aa` | test(meldinger): three review findings — a marker that could not fail, and two blocks with no control |
+
+**Final gate:** pgTAP **37 files / 741 assertions** · `npm test` **587 / 53
+files** · `npm run test:api` **13 files / 360 tests** · typecheck **0** · lint
+**0 errors** (5 pre-existing warnings) · knip **at baseline** · `next build`
+**clean** · `action-guards.test.ts` **73**.
+
+Two deviations, both sound:
+
+- **The admin reads live in `src/lib/admin/threads.ts`, not the DAL.** The audit
+  row is a service-role insert and `quarantine.ts` states that key never leaves
+  `src/lib/admin/` (spec §3/§6). `listThreads` is still exported and *called*, so
+  the counterpart batching stays in one place.
+- **`sendAdminMessageAction` was added** (count 72 → 73). Without it D23 is dead:
+  `writes_thread` admits an admin on a `kontor` thread, and `/admin/meldinger` is
+  the only surface where one is reachable — the office channel would have been
+  **write-only**.
+
+The implementer independently reproduced all three of the panel's findings
+against its own code before fixing them, rather than taking them on trust. It
+also hit a third mutation-harness failure: a perl substitution mangled the file
+into a parse error, vitest printed no per-test lines, and the grep for failures
+matched nothing — **indistinguishable from a passing run**. That is now three
+distinct harness failure modes on this project in one night.
+
+---
+
+# ☀️ MORNING HANDOFF
+
+## What exists
+
+Working teacher↔family messaging, anchored to one pupil, with an office channel
+the pupil's teachers cannot read. Schema, RLS, DAL, actions and all four role
+surfaces. **11 tasks, 12 commits, on `feat/phase-5-meldinger`, nothing pushed.**
+
+## What is NOT done, deliberately
+
+- **Nobody has clicked any of it.** Synthetic clicks do not fire this app's
+  React handlers, so no surface has been visually verified. Everything below.
+- No notifications, no e-mail, no announcements (plans 2 and 3).
+- Parents and pupils still cannot log in unless an admin sets a password by hand
+  (plan 4's 15-series). Use the seeded `forelder@test.local` /
+  `elev@test.local`, both `test-passord-123`.
+
+## ⛔ First: five open decisions — see the list further up
+
+Ranked, with executed proof for each. The top one is that a pupil changing class
+hands their new teacher the entire prior thread history. All five are **pinned by
+assertions**, so the current behaviour cannot drift while you decide.
+
+## 🖱 Then: the browser pass. Re-enrol MFA at `/mfa/registrer` FIRST
+
+Every `db reset` and every `test:api` run wipes enrolment. Budget it.
+
+**Do these five first — they are the ones no test can reach:**
+
+1. **Create a thread, as a teacher and as a parent.** This is what was completely
+   broken; it has only been proven at the SQL and DAL level.
+2. **The refusal path.** Force a creation to fail, then confirm **both** selects
+   still read what you chose. This is the wrong-child bug — the highest-severity
+   defect of the night, fixed twice, and never seen in a real browser.
+3. **The `kontor` wall, from the child's seat.** As `elev@test.local`, the
+   `laerer` thread is listed and the `kontor` thread is **not**.
+4. **The D5/D23 pair as admin:** cannot post in a `laerer` thread (the sentence
+   appears instead of a composer), **can** post in a `kontor` one.
+5. **The composer on refusal:** it empties on success and **keeps your text** on
+   a refusal.
+
+Then the rest: disclosure copy per role (`voksen` on parent screens with the
+phone number and the rektor line, `elev` on the pupil's, `ansatt` on staff —
+never «barnet ditt» to a teacher) · the parent `ny` form showing both children,
+grouped «Lærere»/«Kontoret», with the teacher swapping when the child does ·
+no compose control anywhere on the pupil surface and `/elev/meldinger/ny` 404 ·
+«Deg» on your own message and an Oslo timestamp · the byline reading «Annen
+deltaker» (say whether that is acceptable interim) · `/admin/meldinger` and the
+thread detail at **1280 and 375** · print (the «Ny melding» pill is
+`print:hidden`).
+
+## ⚠ Before this goes near `real`
+
+`0dd56ca` is an RLS change. It got a **two-lens** panel — including a 490-pair
+equivalence proof with zero mismatches — but not the full panel CLAUDE.md asks
+for. Both lenses' findings are fixed. It still deserves the full panel.
+
+## Known gaps, all documented in code
+
+- **Message bylines** read «Annen deltaker» for a sender the reader cannot name.
+  On the teacher surface that is the *common* case. Needs
+  `thread_message_senders`, a definer projection — schema + RLS, so panel.
+- **`writes_thread` is still the self-referential by-id form.** The composer is
+  safe (proved), but collapsing `startThreadAction`'s two round-trips into one
+  statement or one RPC walks straight back into the `RETURNING` outage through a
+  different door, and **nothing in the suite would say so**.
+- **`.delete().select(…)` silently under-deletes** at four sites outside this
+  phase, two of which key storage cleanup off the returned path. Spun off as its
+  own task.
+- Four `information_schema` assertions in `31_column_locks.sql` filter on
+  `table_name` with no `table_schema` — a live trap now that
+  `realtime.messages` exists.
