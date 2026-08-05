@@ -306,17 +306,18 @@ select plan(15);
 delete from public.notifications;
 
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+-- ⚠ full_name goes in raw_user_meta_data, NOT in a later profiles insert.
+-- private.handle_new_user (20260716170230:90-107) creates the profile the
+-- moment this row lands, so an `insert into public.profiles … on conflict do
+-- nothing` afterwards is DEAD CODE and the name never reaches the table.
+-- Harmless until the first assertion reads a name — files 35/37 do it this way.
 select '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated',
-       u.email, '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
+       u.email, '{"provider":"email","providers":["email"]}'::jsonb,
+       jsonb_build_object('full_name', u.full_name), now(), now()
 from (values
-  ('c1000000-0000-0000-0000-000000000001'::uuid, 'c1-eier@test.no'),
-  ('c1000000-0000-0000-0000-000000000002'::uuid, 'c1-annen@test.no')
-) as u(id, email)
-on conflict (id) do nothing;
-
-insert into public.profiles (id, full_name)
-values ('c1000000-0000-0000-0000-000000000001', 'C1 Eier'),
-       ('c1000000-0000-0000-0000-000000000002', 'C1 Annen')
+  ('c1000000-0000-0000-0000-000000000001'::uuid, 'c1-eier@test.no', 'C1 Eier'),
+  ('c1000000-0000-0000-0000-000000000002'::uuid, 'c1-annen@test.no', 'C1 Annen')
+) as u(id, email, full_name)
 on conflict (id) do nothing;
 
 -- Written as the table owner, because no client role may insert here at all —
@@ -610,7 +611,7 @@ pgTAP 857 -> 859."
 
 **Files:**
 - Create: `supabase/migrations/20260807122000_email_pings.sql`
-- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(15)` → `plan(27)`)
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(15)` → `plan(34)`)
 
 - [ ] **Step 1: Write the migration**
 
@@ -892,7 +893,7 @@ comment on function public.resolve_ping_address(uuid) is
 
 - [ ] **Step 2: Extend file 38 with the queue's assertions**
 
-In `supabase/tests/38_notifications_rls.sql` change `select plan(15);` to `select plan(27);` (12 new assertions, counted by hand) and append before `select * from finish();`:
+In `supabase/tests/38_notifications_rls.sql` change `select plan(15);` to `select plan(34);` (**19** new assertions, counted by hand — the lease, the retryable class, the late-outcome guard and the positive control all landed here in the review) and append before `select * from finish();`:
 
 ```sql
 -- ── 11. the three RPCs are reachable by service_role and NOBODY else ─
@@ -1018,16 +1019,74 @@ select is(
      from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
   true, 'femte forsøk gir failed med en feilkode — ingenting prøver i det uendelige');
 
+-- ⛔ MAKE IT DUE FIRST. The outcome above set next_attempt_at = now() + 32 min,
+-- so without this line the row is excluded by the BACKOFF and `and not
+-- q.failed` is never load-bearing — deleting that clause from the claim would
+-- leave this assertion green. The mutation must have only one explanation.
+update private.email_pings set next_attempt_at = now() - interval '1 minute'
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+
 select is(
   (select count(*)::int from public.claim_email_pings()),
-  0, 'og en failed rad plukkes aldri igjen');
+  0, 'og en failed rad plukkes aldri igjen — selv når tida er inne');
 
--- ── 18. opting out makes the address unresolvable ───────────────────
+-- ── 17b. ★ a RETRYABLE failure does not burn the ceiling ────────────
+-- The decision that makes D28 survivable: a missing API key is a
+-- configuration state, not a fact about the recipient.
+update private.email_pings
+   set pending = true, failed = false, attempts = 2, claimed_at = now(),
+       next_attempt_at = now() - interval '1 minute', last_error_code = null
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome(
+  'c1000000-0000-0000-0000-000000000001', false, 'NO_API_KEY', true);
+
+select is(
+  (select array[attempts, case when failed then 1 else 0 end]
+     from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
+  array[2, 0],
+  'en retrybar feil lar attempts stå og setter aldri failed — ellers ville et manglende API-nøkkel drepe køen på 75 minutter');
+
+-- ── 17c. ★ a late outcome cannot release a claim it does not hold ───
+update private.email_pings set claimed_at = null, attempts = 0
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome(
+  'c1000000-0000-0000-0000-000000000001', false, 'THREW', false);
+select is(
+  (select attempts from private.email_pings
+    where user_id = 'c1000000-0000-0000-0000-000000000001'),
+  0, 'et duplisert utfall på en uclaimet rad gjør ingenting — attempts kan ikke nå 6');
+
+-- ── 17d. ★ THE LEASE: a stranded claim is reclaimable ───────────────
+-- Without this, a drain killed mid-batch strands every remaining row FOREVER —
+-- invisible to the claim, to the admin screen and to reset_failed_ping.
+update private.email_pings
+   set pending = true, failed = false, claimed_at = now() - interval '20 minutes',
+       next_attempt_at = now() - interval '1 minute'
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+select is(
+  (select count(*)::int from public.claim_email_pings()),
+  1, 'en claim eldre enn leieperioden plukkes opp igjen — ingen rad blir stående for alltid');
+
+-- ── 18. opting out ──────────────────────────────────────────────────
+-- ⛔ THE POSITIVE CONTROL COMES FIRST. `null` is equally what a wholly broken
+-- resolve_ping_address returns — absent row, wrong join, a mis-spelled
+-- deleted_at — so the negative below proves nothing on its own. This file's
+-- own header demands an entitled reader over the identical row.
+select is(
+  public.resolve_ping_address('c1000000-0000-0000-0000-000000000001'),
+  'c1-eier@test.no',
+  'kontroll: en påmeldt bruker HAR en adresse — funksjonen virker');
+
 update public.profiles set email_pings_enabled = false
  where id = 'c1000000-0000-0000-0000-000000000001';
 select is(
   public.resolve_ping_address('c1000000-0000-0000-0000-000000000001'),
   null, 'en bruker som har slått av e-postvarsel har ingen adresse å sende til');
+
+-- ── 18b. ★ and the queue follows the preference, both ways ──────────
+select is(
+  (select count(*)::int from public.claim_email_pings()),
+  0, 'en avmeldt bruker plukkes ikke i det hele tatt');
 ```
 
 - [ ] **Step 3: Run and watch it fail**
@@ -1044,7 +1103,7 @@ Expected: FAIL — `relation "private.email_pings" does not exist`.
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
-Expected: `Files=39, Tests=871, PASS`.
+Expected: `Files=39, Tests=878, PASS`.
 
 - [ ] **Step 5: Watch the two assertions that carry the real defects fail**
 
@@ -1066,7 +1125,7 @@ nothing to collide with. attempts rises at exactly one point. The watermark
 keeps a message that arrives mid-send from being swallowed, and that is
 asserted rather than argued.
 
-pgTAP 859 -> 871."
+pgTAP 859 -> 878."
 ```
 
 ---
@@ -1075,7 +1134,7 @@ pgTAP 859 -> 871."
 
 **Files:**
 - Create: `supabase/migrations/20260807123000_thread_fanout.sql`
-- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(27)` → `plan(41)`)
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(34)` → `plan(54)`)
 
 ⛔ **D21 is the whole content of this task.** The spec's earlier draft hand-copied the recipient rule as «`teaches_student` ∪ guardians ∪ pupil-login, minus the sender» — and **it had already drifted from the wall in two places**: it pinged teachers a `kontor` thread excludes (telling them an office conversation about their pupil exists), and it pinged no admin ever. A restatement here is the defect, not the style. This function builds a **candidate set** and then filters every candidate through `private.reads_thread`.
 
@@ -1289,7 +1348,7 @@ create trigger messages_fan_out
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(27);` to `select plan(41);` (14 new assertions, counted by hand). Append before `select * from finish();`:
+Change `select plan(34);` to `select plan(54);` (**20** new assertions, counted by hand — includes the teaching-rektor trio and the pupil-mail trio added in review). Append before `select * from finish();`:
 
 ```sql
 -- ── 19-25. the fan-out, over a real thread with a real family ───────
@@ -1323,21 +1382,20 @@ delete from public.classes;
 delete from public.terms;
 
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+-- ⚠ full_name goes in raw_user_meta_data, NOT in a later profiles insert.
+-- private.handle_new_user (20260716170230:90-107) creates the profile the
+-- moment this row lands, so an `insert into public.profiles … on conflict do
+-- nothing` afterwards is DEAD CODE and the name never reaches the table.
+-- Harmless until the first assertion reads a name — files 35/37 do it this way.
 select '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated',
-       u.email, '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
+       u.email, '{"provider":"email","providers":["email"]}'::jsonb,
+       jsonb_build_object('full_name', u.full_name), now(), now()
 from (values
-  ('c1000000-0000-0000-0000-000000000011'::uuid, 'c1-laerer@test.no'),
-  ('c1000000-0000-0000-0000-000000000012'::uuid, 'c1-forelder@test.no'),
-  ('c1000000-0000-0000-0000-000000000013'::uuid, 'c1-admin@test.no'),
-  ('c1000000-0000-0000-0000-000000000014'::uuid, 'c1-fremmed@test.no')
-) as u(id, email)
-on conflict (id) do nothing;
-
-insert into public.profiles (id, full_name) values
-  ('c1000000-0000-0000-0000-000000000011', 'C1 Lærer'),
-  ('c1000000-0000-0000-0000-000000000012', 'C1 Forelder'),
-  ('c1000000-0000-0000-0000-000000000013', 'C1 Admin'),
-  ('c1000000-0000-0000-0000-000000000014', 'C1 Fremmed')
+  ('c1000000-0000-0000-0000-000000000011'::uuid, 'c1-laerer@test.no', 'C1 Lærer'),
+  ('c1000000-0000-0000-0000-000000000012'::uuid, 'c1-forelder@test.no', 'C1 Forelder'),
+  ('c1000000-0000-0000-0000-000000000013'::uuid, 'c1-admin@test.no', 'C1 Admin'),
+  ('c1000000-0000-0000-0000-000000000014'::uuid, 'c1-fremmed@test.no', 'C1 Fremmed')
+) as u(id, email, full_name)
 on conflict (id) do nothing;
 
 insert into public.user_roles (user_id, role) values
@@ -1588,7 +1646,7 @@ Expected: FAIL — `function private.thread_recipients(uuid) does not exist`.
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
-Expected: `Files=39, Tests=885, PASS`.
+Expected: `Files=39, Tests=898, PASS`.
 
 - [ ] **Step 5: Three named mutations — run one at a time, reset between**
 
@@ -1616,7 +1674,7 @@ Admins are excluded by default (bare oversight would mail the whole roster on
 every message) and re-admitted only as the thread's staff_id or, wholesale,
 when no staff reader other than oversight remains.
 
-pgTAP 871 -> 885."
+pgTAP 878 -> 898."
 ```
 
 ---
@@ -1625,7 +1683,7 @@ pgTAP 871 -> 885."
 
 **Files:**
 - Create: `supabase/migrations/20260807124000_announcement_fanout.sql`
-- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(41)` → `plan(53)`)
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(54)` → `plan(67)`)
 
 ⛔ `supabase/migrations/20260806122000_announcement_fanout_claim.sql` is **applied** — never edit it. `claim_due_announcements` is replaced here with `create or replace`, and its own header says exactly what must happen: *«Plan 3 must add its notification INSERT INSIDE THIS FUNCTION BODY … If the fan-out is a separate round trip, a crash between the two leaves an announcement marked as announced with no notifications, and the partial index will never serve it again.»*
 
@@ -1816,7 +1874,7 @@ grant execute on function public.claim_due_announcements() to service_role;
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(41);` to `select plan(53);` (12 new assertions, counted by hand). Append before `select * from finish();`:
+Change `select plan(54);` to `select plan(67);` (**13** new assertions, counted by hand — the entitled-reader control for the admin carve-out is the extra one). Append before `select * from finish();`:
 
 ```sql
 -- ── 30-37. the announcement fan-out, both trigger points ────────────
@@ -1965,7 +2023,7 @@ Expected: FAIL at assertion 31 — the immediate publish produces no notificatio
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
-Expected: `Files=39, Tests=897, PASS`.
+Expected: `Files=39, Tests=911, PASS`.
 
 - [ ] **Step 5: Three named mutations**
 
@@ -1995,7 +2053,7 @@ insert's transaction; and because the claim is service_role-only, so an
 action-level call would need a grant that lets any parent burn every pending
 fan-out.
 
-pgTAP 885 -> 897."
+pgTAP 898 -> 911."
 ```
 
 ---
@@ -2867,6 +2925,46 @@ In `src/proxy.ts`, insert **immediately after** the `DENIED_PATH` early return a
   if (path === '/api/varsler/drain') return respond();
 ```
 
+- [ ] **Step 8b: Assert the proxy exclusion in `src/proxy.test.ts`**
+
+⛔ **The plan's single most-emphasised hazard had no automated test.** `src/proxy.test.ts` already exists and already mocks `loadSession` and `@/lib/env`, and an earlier draft left it untouched — so the only verification was a one-off manual `curl`. A later refactor that moves the exclusion below `if (!user)`, or widens it to `startsWith('/api')`, stays green through typecheck, lint, build and CI. In the first case the cron 307s to `/logg-inn` forever and the queue looks drained because nothing ever claimed it; in the second, every future route handler is exempt from the session gate by default.
+
+Add to `src/proxy.test.ts`, following its existing mocking pattern:
+
+```typescript
+it('lets the cron drain through without a session', async () => {
+  const response = await proxy(requestFor('/api/varsler/drain', { user: null }));
+  // Not a 307. A redirect here means the exclusion sits below the !user branch
+  // and the drain would never run in production either.
+  expect(response.status).not.toBe(307);
+});
+
+it('does not exempt a neighbouring path', async () => {
+  const response = await proxy(requestFor('/api/varsler/drainx', { user: null }));
+  expect(response.status).toBe(307);
+});
+
+// A prefix exclusion would exempt every future route handler by default.
+it('does not exempt api routes in general', async () => {
+  const response = await proxy(requestFor('/api/annet', { user: null }));
+  expect(response.status).toBe(307);
+});
+```
+
+⚠ Also make the exclusion trailing-slash tolerant — `path === '/api/varsler/drain'` will not match `/api/varsler/drain/`, and if that form ever reaches `vercel.json` the cron 307s silently:
+
+```typescript
+  if (path.replace(/\/$/, '') === '/api/varsler/drain') return respond();
+```
+
+- [ ] **Step 8c: Set `CRON_SECRET` BEFORE the curl**
+
+⚠ `.env.local` currently holds only the three Supabase variables — **no `CRON_SECRET`** — and `getCronSecret()` throws without it. Run this first or Step 9 returns `503, 503, 503` rather than the documented `401, 401, 200`, and the message renders in `next dev`.
+
+```bash
+cd ~/dev/iqra-portal && printf '\nCRON_SECRET=%s\n' "$(openssl rand -hex 24)" >> .env.local && grep -c CRON_SECRET .env.local
+```
+
 - [ ] **Step 9: Verify the gate behaves**
 
 ```bash
@@ -2878,7 +2976,11 @@ cd ~/dev/iqra-portal && (npm run dev > /tmp/iqra-dev.log 2>&1 &) && sleep 12 && 
 
 Expected: `401`, `401`, then a JSON body and `200`.
 
-⛔ **`401` and not `307` is the assertion that matters.** A `307` means the proxy exclusion is in the wrong place — the request never reached the handler, and the drain would never have run in production either. Set `CRON_SECRET` in `.env.local` first (any 32+ char string).
+⛔ **`401` and not `307` is the assertion that matters.** A `307` means the proxy exclusion is in the wrong place — the request never reached the handler, and the drain would never have run in production either. (Step 8b now pins this in a unit test too; the curl proves the whole path end to end.)
+
+⚠ A `503` means `CRON_SECRET` is missing — go back to Step 8c. That it is distinguishable from `401` at all is the point of the `CronConfigError` branch.
+
+⛔ **This proves the handler agrees with ITSELF, not that it agrees with Vercel.** The header Vercel Cron actually sends could not be verified — firecrawl is out of credits and CLAUDE.md forbids the fallback — so per the standing rule it is treated as blocking, not as a caveat. Two mitigations are already in the code (the scheme is compared case-insensitively per RFC 7235, and only the token is hashed), and the residual risk is carried to plan 4 as a **post-deploy probe**: read the first real cron invocation's status from Vercel's log before declaring the schedule working. A permanent 401 there has no local symptom whatsoever.
 
 - [ ] **Step 10: Commit**
 
@@ -3742,7 +3844,7 @@ Change `expect(allActions.length).toBe(82);` to `83`, and add the nav entry `{ h
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -4 && npx tsc --noEmit && echo OK
 ```
 
-Expected: pgTAP `Files=39, Tests=897, PASS`, action-guards PASS with 83, `OK`.
+Expected: pgTAP `Files=39, Tests=911, PASS`, action-guards PASS with 83, `OK`.
 
 - [ ] **Step 4: Commit**
 
@@ -3829,7 +3931,7 @@ because nothing works at all is the failure this file is built against."
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npm test 2>&1 | tail -4 && npx tsc --noEmit && npm run lint 2>&1 | tail -4 && npm run build 2>&1 | tail -8
 ```
 
-Expected: pgTAP `Files=39, Tests=897` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
+Expected: pgTAP `Files=39, Tests=911` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
 
 - [ ] **Step 2: ★ Run the timezone-sensitive tests under `TZ=UTC`**
 
@@ -3875,8 +3977,9 @@ Run the audit skill over `VarselBell.tsx`, `profil/page.tsx` and `admin/varsler/
 
 1. **The real-delivery check (D28).** Confirm against a genuine delivered message that Resend's link-rewriting and open-tracking are **off**. `ping-email.test.ts` asserts over the template *before* the provider touches it and **structurally cannot** catch this. Needs IQRA's account and `varsler.iqrasenter.no`.
 2. **`CRON_SECRET` and `RESEND_API_KEY` in Vercel** before the first deploy. Without the first the drain 401s forever; without the second every ping ledgers as `NO_API_KEY`.
-3. **The `notifications` orphan sweep.** `entity_id` has no FK, so rows survive their entity. Phase 7's retention job must sweep them explicitly — the analogue of `private.storage_orphans`.
-4. **`private.email_pings` has no retention rule at all.** One permanent row per user, forever, including for users who leave.
+3. **The `notifications` orphan sweep — and what the orphans ARE.** `entity_id` has no FK, so rows survive their entity. Phase 7's retention job must sweep them explicitly (the analogue of `private.storage_orphans`). ⚠ State the content, not just the table: a surviving `(user_id, 'thread', entity_id, created_at)` row on a guardian's account, after the pupil's `students` row is deleted, is a durable record that **the school corresponded with this adult about a child, N times, ending at time T** — outliving the erasure meant to remove it, and still feeding a live badge. `notifications.user_id` cascades from `profiles`, so **erasing the pupil does not clear it; only erasing the guardian does.** The DPA's assist-with-deletion clause has no code path here today.
+4. **`private.email_pings` has no retention rule at all**, and it is personal data: `sent_at` + `failed` + `last_error_code` is permanent per-user communications metadata — when the school last e-mailed this family and whether it bounced. One permanent row per user, forever, including for users who leave.
+4b. **Resend's own logs, which nothing in this plan names.** `docs/databehandleravtale-iqra.md:150` records Resend as «Utsending fra EØS (Irland); konto- og loggdata i USA». Every ping puts a `(recipient address, timestamp)` pair into US-held provider logs. The content-free body is what makes that tolerable — and that is the strongest argument for this whole design — so **set Resend's log retention to the minimum** when the account is created. It needs the same account visit as the link-rewriting check in item 1. ✅ Pupil addresses are already out of this by the 2026-08-05 decision.
 5. **The Phase-2/3/4 emitters still do not exist** (absence → teacher, grade → family, assignment → family). Both phases deferred their pings to «Phase 5 owns pings»; plan 3 built the substrate and the two emitters this phase owns. That is a **partial delivery of what two earlier phases promised** — say it out loud rather than let it be discovered.
 6. **`.delete().select(…)` fails SILENTLY** (0 rows, no error) and is live at four sites — still unfixed, still its own task.
 7. **Rate limiting.** Nothing stops a parent sending 500 messages, and each one now bumps a watermark. `private.login_attempts` is the precedent if it becomes real.
