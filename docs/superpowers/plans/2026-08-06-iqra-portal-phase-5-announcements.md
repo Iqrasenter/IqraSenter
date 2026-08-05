@@ -109,13 +109,22 @@ A read counts if **any** of the pupil's guardians, or the pupil's own login, has
 
 Same function, one extra clause: for `class_id is null` the roster is every pupil with an as-of enrolment in **any** class at `published_at`. The school-wide case is the one where "who has not seen it" is most valuable, and it is one `or` rather than a second function.
 
-### A7 — What plan 2 delivers of §11 3b, and what plan 3 must do with it.
+### A7 — What plan 2 delivers of §11 3b, what plan 3 must do with it, and what it must not do.
 
 `announcements.fanned_out_at`, a BEFORE INSERT trigger that stamps it for rows published immediately, and `public.claim_due_announcements()` — a SECURITY DEFINER claim granted to `service_role` **only**. Nothing calls it yet.
 
 ⚠ **Plan 3 must put the notification INSERT inside that function's body**, not in the route handler that calls it. The claim stamps `fanned_out_at`; if the fan-out is a separate round-trip, a crash between them leaves an announcement marked as fanned out with no notifications, and the partial index will never serve it again. The function's own comment says this.
 
 ⚠ **The stamp at INSERT is what stops plan 3 retro-fanning.** Without it every announcement created between plan 2 and plan 3 has `fanned_out_at is null`, and the drain's first run would fan out the entire history in one statement.
+
+★ **And one measured cost that plan 3 will hit and this plan will not — recorded here because this is where the predicate is defined.** These predicates are SECURITY DEFINER with `set search_path = ''`, which means PostgreSQL **cannot inline them**: the planner emits one function call per row scanned, at roughly 20 buffer hits and ~2 ms per candidate on the dev host. So D21's rule — *the fan-out must CALL the read predicate, not re-derive it* — must be implemented as **narrow first, then filter**: resolve the candidate set from the class roster as of `published_at` (plus admins), and let `reads_announcement_row` decide over that. A recipient query shaped as `select p.id from public.profiles p where private.reads_announcement(p.id, …)` is O(school roll) definer invocations **inside the announcement INSERT's own transaction**, which makes publishing a school-wide notice slow in proportion to the school. The predicate still decides; it just is not also the thing doing the scanning.
+
+### A7b — the two tables plan 3 creates are safe from the `RETURNING` hazard, and must not be "hardened" into row forms.
+
+Recorded here because plan 3 will be written by someone who has just read this plan's row-form argument and may over-apply it:
+
+- **`notifications_select_own`** is `user_id = auth.uid()` — a plain column on the row — and rows are written **only** by a definer trigger owned by `postgres` (BYPASSRLS), so no policy runs at INSERT at all. Two independent reasons; neither needs a row form.
+- **`private.email_pings`** has no RLS and is reachable only through `public` definer RPCs granted to `service_role`. There is no policy to be self-referential.
 
 ### A8 — The as-of cast is `(pub at time zone 'Europe/Oslo')::date`, inside the helper.
 
@@ -165,6 +174,7 @@ D17 includes economy in school-wide announcements, and the policy does admit the
 | `supabase/tests/37_announcements_rls.sql` | The audience wall, the creation binds, the update pins, read-tracking, the claim, the delete pair. |
 | `src/lib/dal/announcements.ts` | Every announcement read plus the read recording. One module: these reads share the class-name and read-status batching and must not drift. |
 | `src/lib/validation/announcements.ts` | Zod schemas for the two write paths. |
+| `src/lib/announcement-audience.ts` + `.test.ts` | `audienceLabel(classId, className)`. One function, two consumers, one test — because keying the «Hele skolen» label on the class *name* mislabels every past class notice the morning after a term rollover. |
 | `src/components/announcements/AnnouncementList.tsx` | Shared list rendering; used by all four surfaces. |
 | `src/components/announcements/AnnouncementBody.tsx` | Shared detail rendering (title, meta line, body). |
 | `src/components/announcements/ReadStatus.tsx` | «N av M har lest» + the unread-family list. Staff surfaces only. |
@@ -195,7 +205,7 @@ D17 includes economy in school-wide announcements, and the policy does admit the
    ```
 6. **Never write `information_schema` queries that filter `table_name` without `table_schema`.** Supabase ships a `realtime.messages` table, and four existing assertions in `31_column_locks.sql` are a live trap for exactly this reason. Use the `has_table_privilege` / `has_column_privilege` / `has_any_column_privilege` family, which takes a schema-qualified regclass and cannot collide. And note that **`has_table_privilege` is blind to column grants** — when the claim is "no privilege of any shape", use `has_any_column_privilege`.
 7. **`db reset` and `test:api` wipe MFA enrolment.** Staff routes sit behind AAL2, so after any reset the human must re-enrol at `/mfa/registrer` before clicking anything. Budget it.
-8. **Stage explicit paths, never `git add -A`.** `scripts/fiken-probe.mjs` and everything untracked under `docs/` belongs to a parallel economy track. Note that `29`, `35` and `36` carry **uncommitted comment-only edits** at the time this plan was written — check `git diff` before staging any of them and do not sweep those changes into an unrelated commit.
+8. **Stage explicit paths, never `git add -A`.** `scripts/fiken-probe.mjs` and everything untracked under `docs/` belongs to a parallel economy track. ⚠ **Two sessions share this checkout and this Supabase stack.** While this plan was being written, another session committed `3f67907` on top of the branch and cleaned three files that were dirty when Task 0's baseline was drafted. Re-run `git log --oneline -3` and `git status` before every task, and treat any before/after measurement taken while a foreign `vitest` or `supabase` process is running as contaminated.
 9. **Commit messages:** conventional subject + a substantial «why» body. **No AI trailers** — CLAUDE.md forbids them and overrides the harness default.
 10. **`knip` fails unused exports at ERROR level** (`knip.json` downgrades only `types` and `enumMembers`). Every export lands in the same commit as its first consumer.
 11. ⚠ **`private.is_staff` must never be used in this phase** — it admits `economy` (D17).
@@ -452,6 +462,22 @@ grant execute on function private.student_in_class_asof(uuid, uuid, timestamptz)
 -- parameter. Renaming these to class_id/published_at/created_by would make
 -- three markers in 29_definer_fingerprints.sql vacuous.
 --
+-- ★★ AND THE ROW FORM CLOSES A SECOND, DIFFERENT HAZARD — measured, not
+-- reasoned. Under `UPDATE … RETURNING`, a BY-ID predicate re-checks against
+-- the PRE-UPDATE tuple, while the identical rule written as column references
+-- re-checks against the NEW one. (Proved on threads: `update threads set
+-- subject = 'NEW' … returning id` succeeds under the by-id spelling and fails
+-- under the column spelling.) So a by-id SELECT policy on a table whose
+-- predicate-relevant columns are updatable authorises the change against the
+-- OLD values — an audience check run against the class the row used to be in.
+--
+-- ⛔ announcements is safe from that only because class_id is INSERT-only and
+-- published_at is ungrantable at UPDATE. IF ANY LATER TASK GRANTS
+-- `update (class_id)` OR `update (published_at)`, THIS BECOMES LIVE — and with
+-- the row form above it fails closed instead, because the policy sees the
+-- proposed row. Do not treat those two revokes as tidiness; they are half of
+-- why this predicate is correct.
+--
 -- The arms, and what each is for:
 --   author = uid       the author reads their own not-yet-published row, so a
 --                      scheduled announcement is visible on the screen that
@@ -578,9 +604,17 @@ create policy "announcements_delete_own_unpublished"
          and published_at > now()
          and private.writes_announcement((select auth.uid()), class_id));
 
--- ⚠ The first arm resolves from the row's OWN column and the third queries a
--- DIFFERENT table, so neither is the self-referential shape that broke thread
--- creation. An upsert with .select() on this table is safe.
+-- ⛔ THIS ONE IS SAFE AS WRITTEN AND MUST NOT BE "FIXED" INTO A ROW FORM.
+-- The reasons, so nobody re-derives them at 6am:
+--   · The FIRST arm is `user_id = auth.uid()` — a plain column on the row being
+--     written, not a lookup — and announcement_reads_insert_own PINS that
+--     column to the caller. So on every self-insert the first arm is true BY
+--     CONSTRUCTION, and the policy short-circuits before reaching anything that
+--     queries a table.
+--   · The THIRD arm subqueries public.announcements, which is a DIFFERENT and
+--     already-COMMITTED table. The RETURNING hazard is specifically a policy
+--     resolving the row from the table its own command is inserting into.
+-- An upsert with .select() on this table is therefore safe.
 create policy "announcement_reads_select_own_or_staff"
   on public.announcement_reads for select to authenticated
   using (
@@ -634,12 +668,12 @@ Expected: one row, `stamped = t`. If it is `f` or the insert 42501s, **stop and 
 
 - [ ] **Step 4: Write pgTAP 37**
 
-Create `supabase/tests/37_announcements_rls.sql`. Fixture prefix `c0`, `plan(38)`.
+Create `supabase/tests/37_announcements_rls.sql`. Fixture prefix `c0`, `plan(39)`.
 
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(38);
+select plan(39);
 
 -- Announcements: the AS-OF audience, the creation binds, the update pins and
 -- the delete pair.
@@ -763,21 +797,28 @@ insert into public.class_students (class_id, student_id, enrolled_on, left_on) v
 
 -- 00:30 OSLO on day D. In UTC that is 23:30 (CET) or 22:30 (CEST) on D-1, so
 -- the two calendar days differ and the timezone of the ::date cast is testable.
+--
+-- ⚠ created_at is a WHOLE TEN DAYS earlier than published_at, not one. The
+-- announcements_not_backdated CHECK compares the two, and at 00:30 the Oslo
+-- day D can start almost 24 h before now()-30d — so `created_at = now() - 31
+-- days` leaves a margin of about half an hour in the worst case. It never goes
+-- negative, but a fixture whose validity depends on arithmetic that tight is a
+-- fixture that will break for a reason nobody looks for.
 insert into public.announcements (id, class_id, title, body, published_at, created_by, created_at) values
   ('c0000000-0000-0000-0000-000000000041', 'c0000000-0000-0000-0000-000000000021',
    'OP Klassebeskjed', 'Husk gymtøy.',
    ((((now() - interval '30 days') at time zone 'Europe/Oslo')::date + time '00:30') at time zone 'Europe/Oslo'),
-   'c0000000-0000-0000-0000-000000000002', now() - interval '31 days'),
+   'c0000000-0000-0000-0000-000000000002', now() - interval '40 days'),
   ('c0000000-0000-0000-0000-000000000042', null,
    'OP Hele skolen', 'Ingen skole i uke 40.',
    ((((now() - interval '30 days') at time zone 'Europe/Oslo')::date + time '00:30') at time zone 'Europe/Oslo'),
-   'c0000000-0000-0000-0000-000000000001', now() - interval '31 days'),
+   'c0000000-0000-0000-0000-000000000001', now() - interval '40 days'),
   ('c0000000-0000-0000-0000-000000000044', 'c0000000-0000-0000-0000-000000000022',
    'OP Klasse B', 'Bare klasse B.',
-   now() - interval '5 days', 'c0000000-0000-0000-0000-000000000003', now() - interval '6 days'),
+   now() - interval '5 days', 'c0000000-0000-0000-0000-000000000003', now() - interval '15 days'),
   ('c0000000-0000-0000-0000-000000000045', 'c0000000-0000-0000-0000-000000000021',
    'OP Fra laerer tre', 'Skrevet av en annen lærer i samme klasse.',
-   now() - interval '5 days', 'c0000000-0000-0000-0000-000000000010', now() - interval '6 days'),
+   now() - interval '5 days', 'c0000000-0000-0000-0000-000000000010', now() - interval '15 days'),
   ('c0000000-0000-0000-0000-000000000043', 'c0000000-0000-0000-0000-000000000021',
    'OP Planlagt', 'Publiseres om en uke.',
    now() + interval '7 days', 'c0000000-0000-0000-0000-000000000002', now()),
@@ -785,10 +826,18 @@ insert into public.announcements (id, class_id, title, body, published_at, creat
   -- destroying fixtures the read-status and claim sections depend on.
   ('c0000000-0000-0000-0000-000000000046', 'c0000000-0000-0000-0000-000000000021',
    'OP For sletting publisert', 'x',
-   now() - interval '5 days', 'c0000000-0000-0000-0000-000000000002', now() - interval '6 days'),
+   now() - interval '5 days', 'c0000000-0000-0000-0000-000000000002', now() - interval '15 days'),
   ('c0000000-0000-0000-0000-000000000047', 'c0000000-0000-0000-0000-000000000021',
    'OP For sletting planlagt', 'x',
    now() + interval '9 days', 'c0000000-0000-0000-0000-000000000002', now());
+
+-- ⚠ §J asserts that deleting an announcement takes its read rows with it. That
+-- assertion is VACUOUS unless a read row exists to be taken — a count of 0 that
+-- was 0 all along proves nothing, which is the exact shape that let four
+-- Phase-4 assertions survive `select true`. This row is its witness, and §J's
+-- middle assertion checks it is still there after the refused delete.
+insert into public.announcement_reads (announcement_id, user_id) values
+  ('c0000000-0000-0000-0000-000000000046', 'c0000000-0000-0000-0000-000000000004');
 
 -- ── §A 01-04 shape ──────────────────────────────────────────────────
 select ok((select relrowsecurity from pg_class where oid = 'public.announcements'::regclass),
@@ -1019,7 +1068,7 @@ select throws_ok(
   'the double bind: you cannot record a read of something you cannot read');
 reset role;
 
--- ── §J 35-38 the delete pair ────────────────────────────────────────
+-- ── §J 35-39 the delete pair ────────────────────────────────────────
 -- ⚠ EFFECT, not throws_ok. A DELETE that RLS filters returns `OK rows=0` —
 -- measured 2026-08-05. throws_ok here would be a test that cannot fail, and
 -- plan 1 proved that both delete policies on threads/messages could be set to
@@ -1036,6 +1085,9 @@ select is((select count(*) from public.announcements
 select is((select count(*) from public.announcements
            where id = 'c0000000-0000-0000-0000-000000000046'), 1::bigint,
   'A2: and cannot delete her own PUBLISHED one — that is a record, and it survives');
+select is((select count(*) from public.announcement_reads
+           where announcement_id = 'c0000000-0000-0000-0000-000000000046'), 1::bigint,
+  'control: and so does its read row — without this, the cascade assertion below would be 0 both before and after');
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
 set local role authenticated;
@@ -1058,11 +1110,11 @@ rollback;
 cd ~/dev/iqra-portal && docker exec -i supabase_db_iqra-portal psql -U postgres -q -f - < supabase/tests/37_announcements_rls.sql
 ```
 
-Expected: 38 `ok`, no `not ok`, and **no** `Looks like you planned…` line. If the count differs, set `plan(N)` to what pgTAP reports and correct this document — never by counting `select` lines.
+Expected: 39 `ok`, no `not ok`, and **no** `Looks like you planned…` line. If the count differs, set `plan(N)` to what pgTAP reports and correct this document — never by counting `select` lines.
 
 ⚠ If assertion 4 or `26_rls_force.sql` fails, a new table is missing `force row level security` or a policy. That test asserts **four** things across all public tables and needs no edit to catch it.
 
-- [ ] **Step 6: ★ Mutation pass — twelve named mutations, each must redden ALONE**
+- [ ] **Step 6: ★ Mutation pass — fourteen named mutations, each must redden ALONE**
 
 Apply each with `create or replace` (functions) or `alter policy` / `alter table` (policies, constraints), re-run the file, then restore by re-running the migration's own block and **verify the restore with the md5 check in standing rule 3**.
 
@@ -1081,7 +1133,7 @@ Apply each with `create or replace` (functions) or `alter policy` / `alter table
 | 11 | drop the `announcements_not_backdated` CHECK | 21 | 22 |
 | 12 | `announcements_select_audience`: replace the row form with `using (private.reads_announcement((select auth.uid()), id))` | ★ **23** — the `returning id` insert 42501s while the predicate is true | 05, 09, 12 (bare reads are unaffected) |
 | 13 | `announcement_reads_insert_own`: drop the `private.reads_announcement(…)` conjunct | 34 | 31 |
-| 14 | `announcements_delete_own_unpublished`: drop `published_at > now()` | 36 (the published announcement is deleted by its author) | 35 |
+| 14 | `announcements_delete_own_unpublished`: drop `published_at > now()` | **36 and 37** — the author's delete of the published announcement now succeeds, taking its read row with it | 35 |
 
 ⚠ Mutations 1–3 are **different clauses of the same function** — run them separately or one masks another. Same for 4–5 and 7–9.
 
@@ -1093,7 +1145,7 @@ Apply each with `create or replace` (functions) or `alter policy` / `alter table
 cd ~/dev/iqra-portal && supabase db reset && supabase test db --local && npm run typecheck && npm run lint
 ```
 
-Expected: `Files=` baseline+1, `Tests=` baseline+38, `Result: PASS`; typecheck 0 errors; lint 0 errors and the pre-existing warnings only.
+Expected: `Files=` baseline+1, `Tests=` baseline+39, `Result: PASS`; typecheck 0 errors; lint 0 errors and the pre-existing warnings only.
 
 - [ ] **Step 8: Commit**
 
@@ -1404,10 +1456,10 @@ cd ~/dev/iqra-portal && supabase db reset && npm run db:types
 
 - [ ] **Step 3: Add §H to pgTAP 37**
 
-Bump `plan(38)` to `plan(44)` and insert this block **immediately after §G** (it depends on the read row assertion 31 inserted) and **before §J**:
+Bump `plan(39)` to `plan(47)` and insert this block **immediately after §G** (it depends on the read row assertion 31 inserted) and **before §J**:
 
 ```sql
--- ── §H 35-40 read-tracking (D10) ────────────────────────────────────
+-- ── §H 35-42 read-tracking (D10) ────────────────────────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
 set local role authenticated;
@@ -1421,6 +1473,19 @@ select is((select count(*) from public.announcement_read_status(
              array['c0000000-0000-0000-0000-000000000041'::uuid])
            where student_id = 'c0000000-0000-0000-0000-000000000035'), 1::bigint,
   'A4: a PROTECTED pupil is present in the read-tracking list — this is a staff-only surface, and hiding her hides the family most worth phoning');
+-- ★ MEMBERSHIP, NOT ONLY THE COUNT, and the reason is measured rather than
+-- stylistic: dropping the Europe/Oslo cast moves the resolved day to D-1, which
+-- pushes «Startet» OUT of the roster and pulls «Sluttet» IN — so the count
+-- stays at 3 and the assertion above cannot see the mutation at all. These two
+-- name the pupils at the two edges, and either one alone would still miss it.
+select is((select count(*) from public.announcement_read_status(
+             array['c0000000-0000-0000-0000-000000000041'::uuid])
+           where student_id = 'c0000000-0000-0000-0000-000000000036'), 1::bigint,
+  'the roster''s INCLUSIVE edge: the family that started on the Oslo publication day is in the denominator');
+select is((select count(*) from public.announcement_read_status(
+             array['c0000000-0000-0000-0000-000000000041'::uuid])
+           where student_id = 'c0000000-0000-0000-0000-000000000033'), 0::bigint,
+  'the roster''s EXCLUSIVE edge: the family that left on that day is not — the office must not be told to phone them about a notice they never got');
 select is((select count(*) from public.announcement_read_status(
              array['c0000000-0000-0000-0000-000000000041'::uuid])
            where has_read), 1::bigint,
@@ -1458,17 +1523,21 @@ select is(pg_get_function_result(
 cd ~/dev/iqra-portal && docker exec -i supabase_db_iqra-portal psql -U postgres -q -f - < supabase/tests/37_announcements_rls.sql
 ```
 
-Expected: 44 `ok`.
+Expected: 47 `ok`.
+
+§H's assertions land at **35** (count = 3) · **36** (protected present) · **37** (inclusive edge present) · **38** (exclusive edge absent) · **39** (one family has read) · **40** (other teacher → 0) · **41** (guardian → 0) · **42** (return shape).
 
 | # | Mutation | Must redden | Must NOT redden |
 |---|---|---|---|
-| 1 | delete `and private.writes_announcement(…)` from the `where` | **38 and 39** | 35 |
-| 2 | move `private.writes_announcement(…)` out of the `where` and into the select list as a fifth column | 38, 39 **and 40** — the return type changes, which is what assertion 40 is for | — |
-| 3 | add `and not s.protected` to the roster — the change §7 asks for | **35 and 36** (the count drops to 2) | 38 |
-| 4 | `cs.enrolled_on <=` → `<` | 35 (Startet leaves the roster, count 2) | 38 |
-| 5 | `< cs.left_on` → `<=` | 35 (Sluttet joins the roster, count 4) | 38 |
-| 6 | drop the Oslo cast, both occurrences | 35 | 38 |
-| 7 | replace the guardian arm of the `has_read` exists with `false` | 37 | 35 |
+| 1 | delete `and private.writes_announcement(…)` from the `where` | **40 and 41** | 35 |
+| 2 | move `private.writes_announcement(…)` out of the `where` and into the select list as a fifth column | 40, 41 **and 42** — the return type changes, which is what assertion 42 is for | — |
+| 3 | add `and not s.protected` to the roster — the change §7 asks for | **35 and 36** (the count drops to 2) | 40 |
+| 4 | `cs.enrolled_on <=` → `<` | **35 and 37** (Startet leaves the roster, count 2) | 40 |
+| 5 | `< cs.left_on` → `<=` | **35 and 38** (Sluttet joins the roster, count 4) | 40 |
+| 6 | drop the Oslo cast, both occurrences | ⚠ **37 and 38, NOT 35** — the resolved day moves to D-1, which pushes Startet out and pulls Sluttet in, so the count stays at 3 and the count assertion is blind to it | 35, 40 |
+| 7 | replace the guardian arm of the `has_read` exists with `false` | 39 | 35 |
+
+⚠ Mutation 6 is the one worth reading. The count assertion cannot see it — two pupils swap places and 3 stays 3. That is why 37 and 38 exist, and it is the same lesson as plan 1's «the fixture was hiding the defect it sat next to»: a count over a set is invisible to any mutation that preserves the set's size.
 
 ⚠ Mutation 3 is not a bug being introduced — it is **the specification's own instruction**, applied, so the reviewer can see exactly what §7 would have cost. Record the reddened assertions in the commit body.
 
@@ -1569,10 +1638,10 @@ cd ~/dev/iqra-portal && supabase db reset && npm run db:types
 
 - [ ] **Step 3: Add §I to pgTAP 37**
 
-Bump `plan(44)` to `plan(49)` and insert **after §H, before §J**:
+Bump `plan(47)` to `plan(52)` and insert **after §H, before §J**:
 
 ```sql
--- ── §I 41-45 the scheduled-publish claim (§11 3b) ───────────────────
+-- ── §I 43-47 the scheduled-publish claim (§11 3b) ───────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000004","role":"authenticated"}', true);
 set local role authenticated;
@@ -1611,16 +1680,18 @@ select is((select fanned_out_at from public.announcements
 cd ~/dev/iqra-portal && docker exec -i supabase_db_iqra-portal psql -U postgres -q -f - < supabase/tests/37_announcements_rls.sql
 ```
 
-Expected: 49 `ok`.
+Expected: 52 `ok`.
+
+§I's assertions land at **43** (authenticated → 42501) · **44** (nothing to claim) · **45** (the claim returns exactly `…041`) · **46** (a second claim returns nothing) · **47** (`…043` is never claimed).
 
 | # | Mutation | Must redden | Must NOT redden |
 |---|---|---|---|
-| 1 | delete `and b.fanned_out_at is null` | 44 (a second claim returns the row again) | 43 |
-| 2 | delete `and b.published_at <= now()` | 45 (the scheduled row is claimed early) | 43 |
-| 3 | `grant execute on function public.claim_due_announcements() to authenticated` | 41 | 43 |
-| 4 | `stamp_announcement_fanout`: `return new;` with the assignment deleted | 42 (there is suddenly a backlog to claim) | 41 |
+| 1 | delete `and b.fanned_out_at is null` | 46 (a second claim returns the row again) | 45 |
+| 2 | delete `and b.published_at <= now()` | 47 (the scheduled row is claimed early) | 45 |
+| 3 | `grant execute on function public.claim_due_announcements() to authenticated` | 43 | 45 |
+| 4 | `stamp_announcement_fanout`: `return new;` with the assignment deleted | 44 (there is suddenly a backlog to claim) | 43 |
 
-⚠ Mutation 4 belongs to Task 1's trigger but has no assertion there — assertion 42 is the only thing in the suite that can see it. Note that in the commit body.
+⚠ Mutation 4 belongs to Task 1's trigger but has no assertion there — assertion 44 is the only thing in the suite that can see it. Note that in the commit body.
 
 - [ ] **Step 5: Commit**
 
@@ -1645,7 +1716,7 @@ Body must state that nothing calls this yet, that plan 3 must put the notificati
 cd ~/dev/iqra-portal && git diff supabase/tests/29_definer_fingerprints.sql && tail -25 supabase/tests/29_definer_fingerprints.sql && sed -n '215,235p' supabase/tests/29_definer_fingerprints.sql
 ```
 
-Expected: the final assertion is `is(count, 49, …)`. ⚠ There is an **uncommitted comment-only edit** in this file at the time this plan was written — read `git diff` first and do not sweep it into this commit unless you mean to.
+Expected: the final assertion is `is(count, 49, …)` — re-verified 2026-08-06 **after** `3f67907` landed, which touched this file's comments and left the counter alone. If it is not 49, a later commit has moved it; take the value in the file and recompute the delta, do not carry 49 forward from here.
 
 ⚠ **This counter counts (function, predicate) PAIRS, not functions.** The `lateral unnest` is the whole reason. A reviewer reading "eight new functions" and writing 57 has made the mistake the file's own comment warns about, twice already on this project.
 
@@ -1863,15 +1934,73 @@ export async function listAnnouncementsForTeacher(): Promise<AnnouncementRow[]> 
 
 ⚠ Task 9 adds `listAnnouncementsForFamily`, which needs `requireRole`. **Do not import it in this commit** — an unused import is a lint error in its own right. Import and function land together in Task 9.
 
-⚠ The embed `classes(name)` relies on `public.classes` carrying guardian and teacher select arms. **Verify it returns a name rather than `null`** before building three surfaces on it; if it is null, do **not** widen the policy — report it. Plan 1 lost a task to exactly this shape (`profiles(full_name)` embedded NULL for every other sender, because that policy is own-or-admin).
+★★ **`className` IS NULL FOR A FAMILY WHOSE ENROLMENT HAS CLOSED, AND THAT IS NOT A BUG TO FIX HERE.** Measured 2026-08-06: `public.classes` carries three SELECT policies, and the two family arms are `classes_select_guardian` → `private.guardian_in_class` and `classes_select_student` → `private.student_in_class` — **both LIVE** (`cs.left_on is null`). The announcement's own audience is **as-of** (D9). So a family that has left the class still reads the announcement and can no longer read the class row: the embed returns `null`.
 
-- [ ] **Step 2: Write the shared list component**
+This is not rare. **On term-rollover day every enrolment closes at once**, so every family loses the class name on every past class announcement, simultaneously. It is the same shape as plan 1's `profiles(full_name)` embed, which returned NULL for every other sender in the school.
+
+★ **The consequence, and the fix.** `className` must never be the discriminator between «Hele skolen» and a class notice — that is `classId`. A component keyed on the name would relabel every past class notice as school-wide the morning after a rollover, telling ~150 families that a message meant for one class went to everyone. **Step 2 puts the rule in one function with its own test.** Do **not** widen the `classes` policies to fix it: that hands every family the whole school's class list, which is the change D14 exists to avoid.
+
+- [ ] **Step 2: Write the audience label, once**
+
+Create `src/lib/announcement-audience.ts`:
+
+```ts
+/**
+ * What to print as an announcement's audience.
+ *
+ * ★ THE DISCRIMINATOR IS class_id, NEVER THE CLASS NAME. classes carries
+ * LIVE select policies for families (classes_select_guardian →
+ * private.guardian_in_class, classes_select_student → private.student_in_class,
+ * both filtering left_on is null), while an announcement's audience is resolved
+ * AS OF published_at. So a family that has since left the class still reads the
+ * notice and gets a NULL class name — and on term-rollover day that happens to
+ * every family at once.
+ *
+ * Keyed on the name, «Hele skolen» would be printed over every past class
+ * notice the morning after a rollover: the portal telling ~150 families that a
+ * message meant for one class went to the whole school. Keyed on class_id it
+ * degrades to a true, vaguer sentence instead.
+ */
+export function audienceLabel(classId: string | null, className: string | null): string {
+  if (classId === null) return 'Hele skolen';
+  return className ?? 'Klasseoppslag';
+}
+```
+
+And its test, `src/lib/announcement-audience.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { audienceLabel } from './announcement-audience';
+
+describe('audienceLabel', () => {
+  it('names the class when the reader can see it', () => {
+    expect(audienceLabel('c1', 'Klasse 3')).toBe('Klasse 3');
+  });
+
+  it('says «Hele skolen» only when there is no class at all', () => {
+    expect(audienceLabel(null, null)).toBe('Hele skolen');
+  });
+
+  // ★ The regression this function exists for. A family whose enrolment closed
+  // still reads the announcement (as-of, D9) but can no longer read the class
+  // row (live policy) — so className is null while classId is not. Printing
+  // «Hele skolen» here would tell the family a class notice went to everyone.
+  it('does NOT say «Hele skolen» for a class whose name the reader cannot read', () => {
+    expect(audienceLabel('c1', null)).not.toBe('Hele skolen');
+    expect(audienceLabel('c1', null)).toBe('Klasseoppslag');
+  });
+});
+```
+
+- [ ] **Step 3: Write the shared list component**
 
 Create `src/components/announcements/AnnouncementList.tsx`:
 
 ```tsx
 import Link from 'next/link';
 import { Chip } from '@/components/ui/Chip';
+import { audienceLabel } from '@/lib/announcement-audience';
 import { formatDateNb, formatDateTimeNb, osloDateOf } from '@/lib/dates';
 import type { AnnouncementRow } from '@/lib/dal/announcements';
 
@@ -1879,6 +2008,11 @@ import type { AnnouncementRow } from '@/lib/dal/announcements';
  * `basePath` differs per surface (/laerer/oppslag, /forelder/oppslag, …) so the
  * same list serves all four without a role check of its own — the row set is
  * already whatever RLS returned to the caller.
+ *
+ * ⚠ The audience line goes through audienceLabel, which keys on classId rather
+ * than on className. A family that has left the class still reads the notice
+ * (as-of, D9) but can no longer read the class row (live policy), so className
+ * is null — and on term-rollover day that is every family at once.
  *
  * ⚠ `publishedAt` is a TIMESTAMPTZ and must be narrowed to an Oslo calendar day
  * before formatDateNb sees it: that helper anchors its argument to UTC noon by
@@ -1904,7 +2038,7 @@ export function AnnouncementList({
             <span className="flex flex-col gap-1">
               <span className="font-medium">{item.title}</span>
               <span className="text-sm text-ink/60">
-                {item.className ?? 'Hele skolen'}
+                {audienceLabel(item.classId, item.className)}
               </span>
             </span>
             <span className="flex items-center gap-3">
@@ -1923,7 +2057,7 @@ export function AnnouncementList({
 }
 ```
 
-- [ ] **Step 3: Write the page**
+- [ ] **Step 4: Write the page**
 
 Create `src/app/(portal)/laerer/oppslag/page.tsx`:
 
@@ -1970,7 +2104,7 @@ export default async function LaererOppslagPage() {
 
 ⚠ `/laerer/oppslag/ny` does not exist until Task 8. Between this commit and that one the link 404s — acceptable for an intermediate commit (the build passes, nothing crashes). If you prefer no dead link, land Tasks 7 and 8 as one commit.
 
-- [ ] **Step 4: Add the nav entry**
+- [ ] **Step 5: Add the nav entry**
 
 In `src/app/(portal)/laerer/LaererNav.tsx`, add to `ITEMS` after «Meldinger»:
 
@@ -1980,21 +2114,25 @@ In `src/app/(portal)/laerer/LaererNav.tsx`, add to `ITEMS` after «Meldinger»:
 
 ⚠ `AdminNav.tsx` carries a comment saying «Meldinger» is *"Last, as on the other three navs"*. That becomes false in Task 10 — update the comment there, in that task, rather than leaving a stale one behind.
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 6: Verify**
 
 ```bash
-cd ~/dev/iqra-portal && npm run typecheck && npm run lint && npm run knip && npm test -- Nav
+cd ~/dev/iqra-portal && npm run typecheck && npm run lint && npm run knip && npm test -- Nav announcement-audience
 ```
 
-Expected: 0 type errors; 0 lint errors; knip reports only the pre-existing findings plus `scripts/fiken-probe.mjs`; the nav tests pass. `LaererNav.test.tsx` exists — if it pins an item count or a list of labels, update it in this commit.
+Expected: 0 type errors; 0 lint errors; knip reports only the pre-existing findings plus `scripts/fiken-probe.mjs`; the nav tests and the three `audienceLabel` tests pass. `LaererNav.test.tsx` exists — if it pins an item count or a list of labels, update it in this commit.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 cd ~/dev/iqra-portal
-git add src/lib/dal/announcements.ts src/components/announcements/AnnouncementList.tsx "src/app/(portal)/laerer/oppslag/page.tsx" "src/app/(portal)/laerer/LaererNav.tsx" "src/app/(portal)/laerer/LaererNav.test.tsx"
+git add src/lib/dal/announcements.ts src/lib/announcement-audience.ts src/lib/announcement-audience.test.ts \
+        src/components/announcements/AnnouncementList.tsx "src/app/(portal)/laerer/oppslag/page.tsx" \
+        "src/app/(portal)/laerer/LaererNav.tsx" "src/app/(portal)/laerer/LaererNav.test.tsx"
 git commit -m "feat(oppslag): teacher announcement list"
 ```
+
+Body must state why the audience label keys on `class_id` rather than on the class name: `classes` carries LIVE select policies for families while the announcement audience is as-of, so a departed family reads the notice and cannot read the class row — and on rollover day that is every family at once.
 
 ---
 
@@ -2541,6 +2679,7 @@ export default async function LaererOppslagDetailPage({
 
 ```tsx
 import { Chip } from '@/components/ui/Chip';
+import { audienceLabel } from '@/lib/announcement-audience';
 import { formatDateNb, formatDateTimeNb, osloDateOf } from '@/lib/dates';
 import type { AnnouncementDetail } from '@/lib/dal/announcements';
 
@@ -2552,7 +2691,7 @@ export function AnnouncementBody({ announcement }: { announcement: AnnouncementD
         {announcement.scheduled ? <Chip tone="warning">Planlagt</Chip> : null}
       </div>
       <p className="text-sm text-ink/60">
-        {announcement.className ?? 'Hele skolen'} ·{' '}
+        {audienceLabel(announcement.classId, announcement.className)} ·{' '}
         <span className="tabular-nums">
           {announcement.scheduled
             ? formatDateTimeNb(announcement.publishedAt)
@@ -3316,11 +3455,11 @@ The file is written once in Task 1 and grown twice. **Inserting §H and §I renu
 
 | after | §A | §B | §C | §D | §E | §F | §G | §H | §I | §J | `plan()` |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Task 1 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | — | — | 35–38 | 38 |
-| Task 4 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | 35–40 | — | 41–44 | 44 |
-| Task 5 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | 35–40 | 41–45 | 46–49 | 49 |
+| Task 1 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | — | — | 35–39 | 39 |
+| Task 4 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | 35–42 | — | 43–47 | 47 |
+| Task 5 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | 35–42 | 43–47 | 48–52 | 52 |
 
-Each task's mutation table uses the numbering **as of that task**. If you re-run Task 1's mutations after Task 5 has landed, its §J references (35, 36) are now 46 and 47.
+Each task's mutation table uses the numbering **as of that task**. If you re-run Task 1's mutations after Task 5 has landed, its §J references (35, 36, 37) are now 48, 49 and 50.
 
 ⚠ **§H must be inserted after §G, and §I after §H, both before §J.** §H's «exactly one family has read it» depends on the read row §G's assertion 31 inserts. §J is order-independent by construction — it operates on `…046` and `…047`, which nothing else touches — but keeping it last keeps the table above true.
 
@@ -3330,7 +3469,7 @@ Each task's mutation table uses the numbering **as of that task**. If you re-run
 
 Not the phase's exit gate (that is plan 4) — these are the conditions for calling plan 2 done.
 
-- [ ] `supabase db reset && supabase test db --local` → **one more file than the Task 0 baseline**, `Tests=` baseline + 49 (file 37) + 6 (file 34) + 9 (file 31), `Result: PASS`.
+- [ ] `supabase db reset && supabase test db --local` → **one more file than the Task 0 baseline**, `Tests=` baseline + 52 (file 37) + 6 (file 34) + 9 (file 31), `Result: PASS`.
 - [ ] `npm test` → all pass; the count has risen by the nav and component tests added here.
 - [ ] `npm run test:api` → all pass (budget 21 min).
 - [ ] `npm run typecheck` → 0 · `npm run lint` → 0 errors · `npm run knip` → only the pre-existing findings · `node scripts/audit-gate.mjs` → pass.
@@ -3353,9 +3492,67 @@ Say these out loud when handing over, so nobody reports them as defects.
 - **`okonomi` has no announcement surface.** The policy admits economy to school-wide notices (D17) and `reads_announcement_row`'s `cls is null` arm is unconditional — but `src/app/(portal)/okonomi/` has no nav component and one page, so there is nowhere to put the route. Building one means inventing an `OkonomiNav`, which belongs with whatever gives økonomi a real surface, not here.
 - **Deleting a class that has ever been announced to now fails.** `announcements.class_id` is `on delete restrict`, so `deleteClassAction` (`src/app/(portal)/admin/klasser/actions.ts:87`) will raise `23503` and surface as «Kunne ikke slette klasse: …». That is the intended trade — an announcement is a record of what the school told a family — but the message is a raw database error and the admin flow has no branch for it. **Fixing the message is a one-line `PG_ERROR.FOREIGN_KEY` branch in that action and it is deliberately not done here**, because it touches a Phase-3 surface this plan otherwise leaves alone.
 - **`announcements.body` is free text no pupil-keyed erasure reaches**, and `announcement_reads` rows keyed to a *pupil's own login* survive the `students` cascade, because `student_user_id` is `on delete set null`. Both are spec §10.11 items and both belong to Phase 7's retention job. This plan makes them possible to sweep (`service_role` holds `select, delete` on both tables) and sweeps nothing.
+- **The announcement lists are unpaginated, and the read policy is not inlinable.** `listAnnouncements()` selects every announcement the caller may read, and `reads_announcement_row` is SECURITY DEFINER with `set search_path = ''`, so PostgreSQL calls it **once per row scanned** — measured at roughly 20 buffer hits and ~2 ms per candidate on the dev host, and each call may fan out to three more definer helpers. At this school's volume (a few notices a week) that is nothing; over several years of history it becomes a visibly slow parent page. The `(published_at desc)` index is there for it, and the fix when it bites is a `.limit()` plus «vis eldre», not a widened policy. **Plan 3 inherits the sharper version of this** — see A7's narrow-then-filter note, because its recipient query runs inside the announcement INSERT's own transaction.
+- **A departed family sees «Klasseoppslag» instead of the class name.** `audienceLabel` degrades to a true, vaguer word rather than the false «Hele skolen» (see Task 7 step 2). Recovering the real name would need a definer projection over `classes` — the `thread_counterparts` pattern again — and that is a schema + RLS change this plan does not make.
 - **No announcement is seeded.** `supabase/seed.sql` is untouched on purpose — see the scope note. The walkthrough creates its own.
 - **The Norwegian copy is a draft.** §12 Q3 is answered only in part: the user has not edited these strings and the board has not seen them. The disclosure block's copy-and-policies-are-one-change rule (§4.2) applies to the empty-state sentence «Du får ikke e-post om oppslag» too — it is true only because of D12.
 
-<!-- LEDGER -->
+---
+
+## Plan review ledger — 2026-08-06
+
+Reviewed against the goal before any code, per CLAUDE.md. A single focused pass
+in the main loop, plus one lens dispatched by the coordinator mid-write. **Seven
+defects found in the plan**, six of them in material the plan had already
+written and read as correct.
+
+★ **Five of the seven came from running a query against the database rather than
+from re-reading the plan.** That is now the fifth round on this project where
+checking a claim against the repo, not against the plan's own consistency, is
+what found the defect. Two came from tracing a mutation's *effect* by hand
+rather than trusting the sentence that named it.
+
+| # | Defect | How it was caught | Consequence if executed |
+|---|---|---|---|
+| 1 | ★★ **`classes` carries LIVE select policies for families, so the class-name embed is NULL for anyone whose enrolment has closed** | Read `pg_policy` for `public.classes`: `classes_select_guardian` → `private.guardian_in_class`, `classes_select_student` → `private.student_in_class`, both filtering `left_on is null`. The announcement audience is **as-of**. The two disagree by construction. | The list rendered `className ?? 'Hele skolen'`, so **on term-rollover day every family's past class notices would relabel themselves as school-wide, all at once** — the portal telling ~150 families that a message meant for one class went to everyone. Fixed with `audienceLabel(classId, className)`, one function, two consumers, and a test whose third case is exactly this. |
+| 2 | ★ **The Oslo-cast mutation on `announcement_read_status` was invisible to the assertion that named it** | Traced the mutation by hand against the fixture: dropping the cast moves the resolved day to D−1, which pushes «Startet» **out** of the roster and pulls «Sluttet» **in** — so the count stays at 3. | The mutation table claimed assertion 35 would redden. It would not. A count over a set cannot see any mutation that preserves the set's size — the same lesson as plan 1's «the fixture was hiding the defect it sat next to». Fixed by adding two membership assertions at the two edges (37, 38) and correcting the table to say the count assertion is blind to it. |
+| 3 | ★ **The cascade assertion in §J was vacuous** | Walked the fixture: no `announcement_reads` row was ever created for `…046`, so "0 read rows after the delete" was 0 before it too. | The assertion that erasure is complete could not fail. Fixed by seeding a read row for `…046` and adding a control assertion that it survives the *refused* delete — so the final 0 is attributable to the cascade and nothing else. |
+| 4 | **The `announcements_not_backdated` fixture margin was about 30 minutes** | Worked the arithmetic: at 00:30 the Oslo day D can begin almost 24 h before `now() − 30 days`, while `created_at` was `now() − 31 days`. Positive, but by minutes. | Not a failure, a fragility: a fixture whose validity rests on arithmetic that tight breaks later for a reason nobody looks for. `created_at` moved to `now() − 40 days` (and `− 15 days` for the five-day-old rows). |
+| 5 | ★★ **The `UPDATE … RETURNING` pre-update-tuple hazard was not in the plan at all** | Supplied by the coordinator's lens, measured on `threads`: a by-id predicate re-checks against the **pre-update** tuple, a column-reference predicate against the **new** one. | The plan already used the row form, so the hazard was closed **by accident** rather than on the record — which is exactly how the next person grants `update (class_id)` "because the policy checks it anyway" and re-opens it. Now stated in the migration comment, naming the two revokes that are half of why the predicate is correct. |
+| 6 | **The three sibling tables' safety was undocumented** | Same lens. | `announcement_reads_select_own_or_staff`, and plan 3's `notifications_select_own` and `private.email_pings`, are all safe from the `RETURNING` hazard for three *different* reasons. A plan-3 author who has just read this plan's row-form argument would over-apply it. Now written out as **A7b**, with the reason per table. |
+| 7 | **The definer-predicate cost was unrecorded, and it lands on plan 3 hardest** | Same lens, measured: SECURITY DEFINER + `set search_path = ''` blocks inlining, so the planner emits one call per row scanned (~20 buffer hits, ~2 ms per candidate). | D21 says the fan-out must **call** the read predicate. Read literally, that becomes `select p.id from profiles p where reads_announcement(p.id, …)` — O(school roll) definer invocations inside the announcement INSERT's own transaction. Now A7 says **narrow first, then filter**, and «leaves broken» records the milder version this plan does ship (unpaginated lists over a non-inlinable policy). |
+
+**Verified sound and left unchanged** (checked by running the query, not assumed):
+
+- `postgres` **is** a member of `service_role`, so §I's `set local role service_role` works — and five existing pgTAP files already do it.
+- `students.first_name` and `last_name` are both `NOT NULL`, so `first_name || ' ' || last_name` cannot yield NULL.
+- `class_teachers_select_admin_or_own_class` is `has_role(admin) or teaches_class(uid, class_id)` — **self-satisfying for a teacher's own rows**, so `listPublishableClasses` will return rows. Plan 1's measured 0-row result was for a **guardian**, and the distinction matters: the same query is safe here and was not there.
+- `pg_get_function_result` really renders `TABLE(col type, …)`, verified against `thread_counterparts` and `guardian_thread_options`, so Task 4's return-shape assertion is written in a form that can pass.
+- `29_definer_fingerprints.sql` really ends in `49`; `31_column_locks.sql` really is `plan(22)`; `34_enrollment_boundary.sql` really is `plan(24)` with D = 2026-09-15; `action-guards.test.ts` really asserts `73`; the migration head really is `20260805123000`; `37` and prefix `c0` are free in both tests and migrations.
+- `26_rls_force.sql` sweeps **all** public tables and asserts three things per table, so the two new tables fail it by name if either verb is missed; `00_grant_firewall.sql` likewise sweeps every current and future public object, so a missing `revoke all … from anon` reddens with no edit to that file.
+- ⚠ **Every count above was re-verified after the branch moved under this plan.** A concurrent session committed `3f67907` («the three policies that could be deleted with the suite green») while this document was being written, cleaning three files that were dirty when Task 0 was drafted. Re-measured afterwards: fingerprint counter still **49**, `action-guards` still **73**, migration head still `20260805123000`, highest test file still **36**, `31` still `plan(22)`, `34` still `plan(24)` — and `35`/`36` are `plan(41)`/`plan(14)`, which is where the previously-uncommitted work landed. Nothing this plan depends on moved, but **the branch is shared and it moved once during a two-hour write**; Task 0 exists because of that.
+- The 21-line teardown named in the brief is **not** what shipped: `35_threads_rls.sql` and `36_thread_counterparts.sql` both carry a **9-line** block — the short one plus `delete from public.assignments`, which is the single ON DELETE RESTRICT edge on the path to `classes`. File 37 copies that block and adds the two announcement deletes ahead of it, because `announcements.class_id` is a **second** such edge. (File 34's 20-line version is a different file's history, not the house standard.)
+
+⚠ **Not done, and it is the honest gap:** CLAUDE.md calls for the **full review
+panel** on RLS plans. This was one focused pass plus one dispatched lens — and
+that lens alone produced three of the seven findings, which is the argument for
+the panel rather than against it. If you want it before execution, dispatch
+independent escalation / assertion-vacuity / repo-integration lenses over Task
+1's SQL, the way plan 1's overnight run did. This ledger is a floor, not a
+ceiling.
+
+⚠ **Two things this plan asserts that it could not verify by running them**, and
+they should be attacked first:
+
+1. **That a BEFORE INSERT trigger may assign `fanned_out_at` when the caller
+   holds no grant on it.** The rule is well established and spec §2.2 records it
+   as verified during Phase 4 — but it was not re-run here, and Task 5's entire
+   design rests on it. **Task 1 step 3 is a probe that answers it in ten
+   seconds**, deliberately placed before the 39 assertions that sit on top.
+2. **That `for update skip locked` inside `where id in (…)` is accepted in a
+   `language sql` function that `returns table`.** Standard queue idiom, not
+   exercised in this repo. If it is refused, the shape is a plpgsql function
+   with the same statement, and the fingerprint markers are unaffected.
+
 
 
