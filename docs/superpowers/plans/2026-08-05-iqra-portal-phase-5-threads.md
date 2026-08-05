@@ -2922,3 +2922,106 @@ unreachable over HTTP because `PGRST_DB_SCHEMAS` is `public,graphql_public` ·
 the "watched fail" claim is true, restoring the by-id policy reddens exactly 32
 and 33 · fingerprint arithmetic 48 → **49** is right, 13 signatures, live definer
 count 52.
+
+## ★★ The coverage lens — three policies with NO behavioural test, and the real discriminator
+
+The second lens on the `RETURNING` fix went hunting for other statement shapes
+the suite is blind to. It found that the blind spot is much wider than threads,
+and it independently confirmed the first lens's worst finding.
+
+### Three policies that can be deleted with the suite fully green — all PROVED
+
+| mutation | file 35 | file 36 |
+|---|---|---|
+| `threads_select_related` → `using (true)` | **33/33 green** | **13/13 green** |
+| `threads_delete_admin` **and** `messages_delete_admin` → `using (true)` | **33/33 green** | — |
+| `threads_update_subject_author` → `using(true) with check(true)` | **33/33 green** | — |
+
+**The read one is the leak.** Under `using(true)`, guardian `…006` — unrelated
+to pupil `…031` — reads **6 thread rows** including the other family's office
+thread «TH Om betaling»; under the real policy she reads 1. Message bodies stay
+walled, so what escapes is the **subject line**, the pupil id and the staff id —
+which for a `kontor` thread is the entire content of a complaint. `listThreads()`
+deliberately applies no predicate of its own ("RLS decides membership"), so it
+reaches the UI verbatim.
+
+**The delete one is worse in consequence.** `authenticated` holds a real
+`grant delete` on both tables, so the only thing between any signed-in parent and
+deleting every thread and message in the school is a policy **no test
+exercises**. ⚠ And the assertion must be a **survivor count, not `throws_ok`** —
+measured, a guardian's refused delete returns `OK rows=0`. **DELETE refusals are
+filtered, never raised.**
+
+### ★ The real discriminator is the RETURNED EXPRESSION, not the word RETURNING
+
+Measured on a scratch table with SELECT policy false, INSERT/DELETE true:
+
+| shape | result |
+|---|---|
+| `insert …` (bare) | OK |
+| `insert … returning 1` | **OK — SELECT policy NOT applied** |
+| `insert … returning id` | 42501 |
+| `update … where col = …` (no RETURNING, row invisible) | **42501 — a WHERE on a column is enough** |
+| `delete … where col = …` (row invisible) | **OK, 0 rows deleted, NO ERROR** |
+
+Confirmed against `pg_stat_statements`: the thread insert is
+`… RETURNING "public"."threads"."id"` (a Var → policy applies → the outage); the
+message insert is `… RETURNING $2`, PostgREST's `RETURNING 1` → policy does not
+apply.
+
+Three consequences:
+
+1. **Assertions 32–33 are correct because they return `id`.** Written
+   `returning 1` they would have been fake tests — verified: `returning 1` passes
+   against the *broken* predicate.
+2. **`.delete().select(…)` silently under-deletes**, and it is live at four sites
+   outside this phase, two of which key storage cleanup off the returned `path` —
+   so an RLS mismatch orphans files rather than erroring. Spun off as its own
+   task; **not** touched here.
+3. A catalog scan found the same self-referential-policy landmine on
+   `class_teachers`, `lessons`, `submissions`, `tests` and `user_roles`.
+
+### F4 — the composer is safe; the *next* optimisation is not
+
+The feared case is **refuted by execution**: `insert into messages … returning id`
+into a **committed** thread succeeds, because the by-id lookup resolves a
+*different* row. A composer that adds `.select('id')` will not break.
+
+But thread + message **in one statement** fails 42501 — with or without
+`returning` on the message insert — because `messages_insert_participant` calls
+`private.writes_thread(uid, thread_id)`, which is **still the self-referential
+by-id lookup**. The fix moved `reads_thread` down to a row form and left
+`writes_thread` untouched; there is no `writes_thread_row`. **The obvious next
+optimisation — collapsing `startThreadAction`'s two round-trips into one
+statement or one RPC — walks straight back into the identical bug through a
+different door, and nothing in the suite would say so.**
+
+### F6 — the api suite's entitlement block has no positive control
+
+`seedTeacherThread`/`seedKontorThread` go through the real actions, so a
+regression reddens 5 of the 8 tests. But the `entitlement:` describe asserts only
+*refusals* — **under a total creation outage both its assertions still pass**,
+including the `count === 0` follow-ups. That is exactly the discipline file 35's
+own header demands and this block does not have. Both actions also replace
+`error.message` with a fixed Norwegian sentence, which is why the outage
+surfaced as an unattributable «Forventet redirect …» and needed isolation to
+diagnose.
+
+### Verified sound — including one piece of coverage nobody claimed
+
+- The commit's "watched fail" claim is **exactly** true: restoring the by-id
+  policy reddens 32 and 33 and nothing else.
+- **32–33 are not duplicates of 22/25**, by two independent proofs: with the
+  broken policy, dropping the RETURNING entirely → 33/33 green; using
+  `returning 1` → 33/33 green. The returned column is the subject of the test.
+- ★ **Assertion 33 is the only assertion in the whole suite that exercises
+  `can_start_thread` conjunct 4's `staff = uid` arm** — deleting that arm locks
+  every teacher out of starting a thread, and reddens 33 alone.
+- The fixture-ordering claim is true and load-bearing: swapping the counterpart
+  back to `…002` reddens 32 for **conjunct 2**, not for RETURNING.
+- **The kontor creation path IS covered — by file 36, not 35.** Breaking
+  `can_start_thread`'s `kontor` arm leaves 35 fully green and reddens 36's
+  assertion 6. Families losing the office channel is caught; just not where you
+  would look for it.
+- `.single()` on the thread insert cannot silently see 0 rows from RLS — for
+  INSERT the SELECT policy is a WITH CHECK (error), never a filter.
