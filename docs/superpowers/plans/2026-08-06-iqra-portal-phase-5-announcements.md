@@ -57,19 +57,33 @@ If the head has moved past these, bump all three by a day and keep their relativ
 
 The spec left these open, contradicted itself, or is contradicted by the tree. Each is decided here, once, so no task has to invent it.
 
-### A1 — `published_at` is client-writable at INSERT. Back-dating is closed by a CHECK, not by a grant.
+### A1 — `published_at` is client-writable at INSERT. **Both** directions are bounded, by two CHECKs rather than by a grant.
 
 **The contradiction.** Spec D8 buys scheduled publishing from `published_at <= now()` ("publiser lørdag 07:00"), §7 gives `admin/oppslag` "scheduling", and §11 3b is the scheduled-publish fan-out — while §2.2 says `published_at` is "server-defaulted and ungrantable" and T-19 asserts `has_column_privilege(…,'published_at','INSERT') = false`. **Both cannot be true: with no INSERT grant there is no way to set a future publication time, and scheduling is unbuildable.**
 
-**The decision.** `grant insert (… published_at …)`, and add
+**The decision.** `grant insert (… published_at …)`, and add **two** constraints:
 
 ```sql
-constraint announcements_not_backdated check (published_at >= created_at)
+constraint announcements_not_backdated check (published_at >= created_at),
+constraint announcements_schedule_bound check (published_at <= created_at + interval '120 days')
 ```
 
-`created_at` is `not null default now()` and is **not** granted, so it is always the true insert instant. The constraint therefore says exactly one thing: *an announcement may be scheduled forward, never back-dated.* Forward is the feature; backward is the only direction that changes who reads (it widens the as-of audience to families who have since left). **`published_at` remains ungrantable at UPDATE** — T-19's UPDATE half stands unchanged.
+`created_at` is `not null default now()` and is **not** granted, so it is always the true insert instant. Together they say: *an announcement may be scheduled forward, by at most about a term, and never back-dated.* **`published_at` remains ungrantable at UPDATE** — T-19's UPDATE half stands unchanged.
 
-**What changes in the spec's test list.** T-19's INSERT half becomes a *behavioural* assertion — a past `published_at` raises **`23514`**, paired with a future one living — which is strictly stronger than the privilege probe it replaces, because the privilege probe could not distinguish the two directions at all.
+⛔ **The first draft of this plan said "forward is the feature; backward is the only direction that changes who reads". That sentence is FALSE, and it was written into a migration comment before the review panel measured it.** D9 is why. Executed against the live database:
+
+| | published now | published at `now() + 90 d` |
+|---|---|---|
+| a guardian enrolled today, `left_on` in 30 days | reads it | **does not** |
+| a guardian who joins in 60 days | does not | **reads it** |
+
+Choosing `published_at` selects a **different set of families in both directions**. A teacher of class A can, in a single INSERT, address families she cannot address today and may never meet — and (measured) she **cannot take it back**: once she leaves the class her scheduled row still SELECTs through the `author = uid` arm, while her DELETE filters to zero rows. Back-dating is not "the dangerous direction"; it is merely the direction that reaches families who have **left**, i.e. the one nobody can fix by waiting.
+
+Which is why forward needs a bound too — with none, an admin's `published_at = '2999-01-01'` was accepted. And why A2 drops `writes_announcement` from the withdraw policy: the author must be able to remove her own unpublished row after she stops teaching the class.
+
+★ **`120 days` is a PRODUCT decision as much as a technical one, and the school may revisit it.** It is a little over one term, so «publiser første skoledag etter jul», chosen in September, still fits — while an announcement scheduled beyond the horizon in which the roster is recognisable is refused at INSERT instead of delivered to strangers. If IQRA wants a school year, change the interval **and** the zod bound in `src/lib/validation/announcements.ts` together: they are one rule in two layers, and only the zod half produces a sentence the teacher can act on. If IQRA wants no bound at all, record that in the ledger rather than deleting the line, because the table above is what the bound buys.
+
+**What changes in the spec's test list.** T-19's INSERT half becomes a *behavioural* pair of assertions — a past `published_at` raises **`23514`**, a 200-day one raises `23514`, and a one-day-forward one lives — which is strictly stronger than the privilege probe it replaces, because the privilege probe could not distinguish the directions at all.
 
 ⚠ **Consequence the action must handle:** for an *immediate* publish the client must **omit** `published_at` and let the default fire. Sending a client-computed `now()` races the server's by milliseconds and yields a `23514` on a legitimate publish.
 
@@ -81,14 +95,22 @@ Rather than add a BEFORE UPDATE trigger for it, this plan adds a second DELETE p
 
 ```sql
 create policy "announcements_delete_own_unpublished" …
-  using (created_by = auth.uid() and published_at > now() and writes_announcement(…))
+  using (created_by = auth.uid() and published_at > now())
 ```
 
 A not-yet-published announcement has been read by nobody by construction, so withdrawing it destroys no record. A **published** one stays admin-delete-only, which is the spec's rule. Reschedule = withdraw and re-create.
 
-### A3 — The read-tracking denominator is the as-of roster, not the live one.
+⚠ **`private.writes_announcement(…)` is deliberately NOT a third conjunct here, and that is a change the review panel made to this plan.** Measured: with it, a teacher who schedules an announcement and then stops teaching that class can still *see* the row (the `author = uid` arm of the read predicate) but her `delete` filters to zero rows — the withdraw path A2 promises evaporates exactly when it is needed, and only an admin who happens to notice can remove it. `created_by = auth.uid() and published_at > now()` is already strictly narrower than the insert wall it mirrors: nothing reaches `created_by = <you>` without having passed `announcements_insert_staff` first, and nobody has read it. Do not "restore" the conjunct for symmetry with the update policy.
 
-«12 av 28 har lest» computed over today's roster counts families that `reads_announcement_row` refuses to show the row to. The denominator is the same set the read predicate admits: the roster **as of `published_at`**.
+### A3 — The read-tracking denominator is the as-of **roster of pupils**, not the live roster — and not the set the read predicate admits either.
+
+«12 av 28 har lest» computed over today's roster counts families that `reads_announcement_row` refuses to show the row to. So the denominator is the roster **as of `published_at`**.
+
+⛔ **What it is NOT, corrected by the review panel: "the same set the read predicate admits".** That sentence was in this plan's first draft and it is false. The projection counts **pupils**; the read predicate admits **users**. Measured against the live fixture: of the three pupils the projection returns for the class announcement, one — «Skjermet», this plan's own A4 witness — has `student_user_id is null` **and** no `guardian_student` row, so *no user at all* is admitted on her account and her `has_read` can never become true. **«0 av 3» can never reach 3 av 3**, and the office is told to phone a family that has no account.
+
+The fix is not to drop her (A4 explains why not) but to **say so**: the projection carries a fifth boolean, `reachable`, and `ReadStatus.tsx` renders «ingen pålogging» beside a name that will never clear. The denominator stays the roster — that is the number the office acts on — and the list stops lying about what a name in it means.
+
+⚠ That fifth column is why `pg_get_function_result` in §H's return-shape assertion expects five columns, not four. The assertion exists to notice exactly this kind of shape change; it was updated **deliberately**, in the same commit as the column.
 
 ### A4 — Protected pupils are **included** in the read-tracking list, and the denominator is **not** reduced. This reverses spec §7.
 
@@ -101,9 +123,13 @@ The mate-name omission is a **cross-family** rule: it stops a parent learning th
 
 **Pinned by a witness assertion** (a protected pupil is present in `announcement_read_status` for their class's teacher) so nobody "fixes" it back on the strength of §7's sentence.
 
+⚠ **The witness pupil is also the unreachable one** (no login, no guardian account — see A3), so that single assertion cannot by itself distinguish "protected pupils are included" from "pupils nobody can reach are included". The mutation that adds `and not s.protected` still reddens it, so the assertion works; the fixture just conflates two properties. The `reachable` column and its own two assertions separate them.
+
 ### A5 — The read-tracking unit is the pupil (the family), not the user.
 
 A read counts if **any** of the pupil's guardians, or the pupil's own login, has an `announcement_reads` row. Counting users would put a two-guardian family twice in the denominator and send the office chasing a parent who has already read.
+
+⚠ **Both arms need a witness, and the first draft had neither.** The fixture's only read row belonged to a guardian, so deleting the `ar.user_id = s.student_user_id` arm reddened nothing at all; and no fixture pupil had two guardians, so the «exactly one FAMILY» count could not tell per-family from per-user counting. §G therefore records a read as a **pupil's own login** as well, one pupil carries **two** guardians, and §H asserts the pupil-login arm by name.
 
 ### A6 — Read-tracking covers school-wide announcements too.
 
@@ -158,7 +184,35 @@ Measured in plan 1: a guardian's refused DELETE returns `OK rows=0` — **DELETE
 
 ### A13 — `okonomi` gets no announcement surface in this plan.
 
-D17 includes economy in school-wide announcements, and the policy does admit them (`cls is null` admits any authenticated user). But `src/app/(portal)/okonomi/` is `layout.tsx` + `page.tsx` + `error.tsx` with **no nav component**, so there is nowhere to put a route without inventing one. The policy is right; the surface is missing. Recorded in «what this plan deliberately leaves broken».
+D17 includes economy in school-wide announcements, and the policy does admit them (`cls is null` admits any authenticated user **who holds a role** — see A15). But `src/app/(portal)/okonomi/` is `layout.tsx` + `page.tsx` + `error.tsx` with **no nav component**, so there is nowhere to put a route without inventing one. The policy is right; the surface is missing. Recorded in «what this plan deliberately leaves broken».
+
+### A14 — ★★ **NO SEEDED FAMILY IS IN ANY CLASS AS OF TODAY.** Tasks 8–11 must open an enrolment window before they can see anything.
+
+Two independent review lenses found this, and it is the single most expensive fact in the plan. Measured 2026-08-06 against the live seed:
+
+```
+ class    | student  | enrolled_on | left_on | in as-of roster now
+ Klasse 1 | Yusuf    | 2026-08-20  |         | f
+ Klasse 1 | Bilal    | 2026-08-20  |         | f
+ Klasse 3 | Amira    | 2026-08-20  |         | f
+ Klasse 3 | Zaynab   | 2026-08-21  |         | f
+```
+
+`current_date` is `2026-08-05`. **Every seeded enrolment starts fifteen days from now**, so for an announcement published *now* the as-of roster is empty and every family-facing and read-tracking outcome in Tasks 8–11 is empty with it.
+
+**Why nothing in the repo caught it.** All eight existing `enrolled_on <=` sites resolve against a *lesson / test / assignment* date, which the seed puts inside the term. The two live helpers `private.guardian_in_class` / `student_in_class` filter `left_on is null` only and never look at `enrolled_on` at all — which is why plan 1's thread tests pass over the same seed. **The two helpers this plan adds are the first in the repo anchored on `now()`.** pgTAP 37 is unaffected: its fixture is hermetic and `now()`-relative.
+
+**What it breaks if ignored:** `tests/api/announcements.test.ts` — "the read records itself" gets `null` from `getAnnouncement` and fails `resolves.not.toBeNull()`; "read-tracking is staff-only" throws `TypeError` on `.get(id)!.length` because the Map has no entry; and the scheduling test's «a family cannot read it» assertion passes **vacuously** — it would pass with the `pub <= now()` conjunct deleted, which is the one assertion in that file whose whole job is to notice that deletion. Plus Task 8 step 8 item 6, Task 9 step 4 items 1–2 and Task 10 step 6 item 5, none of which a human can perform.
+
+**The decision: open the window in the test / the walkthrough, do not move the seed.** `tests/api/school-actions.test.ts:1105` asserts `enrolled_on === '2026-08-20'` verbatim, and `assignments-core.test.ts:423`, `assignments-actions.test.ts:269,310` and `attendance-core.test.ts:127` all key off the same dates. Task 11 back-dates Klasse 1's two enrolments through the scaffolding service client in `beforeAll` and restores them in `afterAll`; the walkthroughs tell the human to do the same by hand, once.
+
+⚠ **It must be an UPDATE of `enrolled_on`, never an extra row.** `class_students_one_active` is `UNIQUE (student_id) WHERE (left_on IS NULL)` (a partial unique *index*, so it does not appear in `pg_constraint`), so a second open enrolment for the same pupil raises `23505`.
+
+### A15 — `cls is null` means "everyone **at the school**", so it consults `user_roles` — but never `uid`'s specific role.
+
+The first draft's comment said the school-wide arm *"deliberately does not consult uid at all"*. Measured: that admits **any** authenticated account, including one with a `profiles` row and **zero** `user_roles` rows. `private.handle_new_user` is `AFTER INSERT` on `auth.users`, so every auth user gets a profile, while roles are assigned separately — and revoking a role leaves the account intact. `src/proxy.ts:93-102` gates on `user_roles`, but PostgREST is reachable directly with any valid session (`NEXT_PUBLIC_SUPABASE_*` ships in the browser bundle), so `requireRole` is **not** the wall. A created-but-unassigned account, or a departed family whose roles were removed, would keep reading every school-wide notice.
+
+So the arm is `cls is null and exists (select 1 from public.user_roles ur where ur.user_id = uid)`. Still one clause, still admits `economy` (D17), still admits pupils and parents, still asks nothing about *which* role — "everyone at the school" is what it means, and holding a role is what "at the school" means.
 
 ---
 
@@ -178,13 +232,15 @@ D17 includes economy in school-wide announcements, and the policy does admit the
 | `src/components/announcements/AnnouncementList.tsx` | Shared list rendering; used by all four surfaces. |
 | `src/components/announcements/AnnouncementBody.tsx` | Shared detail rendering (title, meta line, body). |
 | `src/components/announcements/ReadStatus.tsx` | «N av M har lest» + the unread-family list. Staff surfaces only. |
-| `src/app/(portal)/laerer/oppslag/page.tsx` + `[announcementId]/page.tsx` + `ny/page.tsx` + `ny/NewAnnouncementForm.tsx` + `actions.ts` | Teacher surface. |
+| `src/app/(portal)/laerer/oppslag/page.tsx` + `[announcementId]/page.tsx` + `[announcementId]/AnnouncementControls.tsx` + `ny/page.tsx` + `ny/NewAnnouncementForm.tsx` + `actions.ts` | Teacher surface. |
 | `src/app/(portal)/forelder/oppslag/page.tsx` + `[announcementId]/page.tsx` | Parent surface. |
 | `src/app/(portal)/elev/oppslag/page.tsx` + `[announcementId]/page.tsx` | Pupil surface. |
-| `src/app/(portal)/admin/oppslag/page.tsx` + `[announcementId]/page.tsx` + `ny/page.tsx` + `ny/NewSchoolAnnouncementForm.tsx` + `actions.ts` | Admin surface, including school-wide and scheduling. |
+| `src/app/(portal)/admin/oppslag/page.tsx` + `[announcementId]/page.tsx` + `[announcementId]/AnnouncementControls.tsx` + `ny/page.tsx` + `ny/NewSchoolAnnouncementForm.tsx` + `actions.ts` | Admin surface, including school-wide and scheduling. |
 | `tests/api/announcements.test.ts` | Wall-1: creation entitlement with a positive control, the enumeration-quiet `null`, the read recording, the filtered delete. |
 
-**Modified:** `supabase/tests/34_enrollment_boundary.sql` (Task 2) · `supabase/tests/31_column_locks.sql` (Task 3) · `supabase/tests/29_definer_fingerprints.sql` (Task 6) · `src/lib/supabase/database.types.ts` (regenerated, every migration task) · the four `*Nav.tsx` files · `src/app/action-guards.test.ts` (the action count, once per task that adds actions).
+⚠ **The two `AnnouncementControls.tsx` files are not decoration — without them the plan does not compile its own promises.** `updateAnnouncementAction` and `deleteAnnouncementAction` are written in *both* action files and, in the first draft, imported by nothing: knip fails an unused export at ERROR level, `AnnouncementDetail.canEdit` was computed by an RPC on every detail view and never read, and the walkthroughs asked a human to click a «Trekk tilbake» control the plan never wrote. One component per staff surface, importing that surface's own actions, closes all three.
+
+**Modified:** `supabase/tests/34_enrollment_boundary.sql` (Task 2) · `supabase/tests/31_column_locks.sql` (Task 3) · `supabase/tests/29_definer_fingerprints.sql` (Task 6) · `src/lib/dates.ts` + `src/lib/dates.test.ts` (Task 8 — `osloLocalToInstant`) · `src/lib/supabase/database.types.ts` (regenerated, every migration task) · the four `*Nav.tsx` files · `src/app/action-guards.test.ts` (the action count, once per task that adds actions).
 
 ---
 
@@ -211,6 +267,8 @@ D17 includes economy in school-wide announcements, and the policy does admit the
 11. ⚠ **`private.is_staff` must never be used in this phase** — it admits `economy` (D17).
 12. **zod is 4.4.3.** Use `uuidField` from `src/lib/validation/school.ts` (it is `z.guid`, not `z.uuid` — the seed's readable UUIDs fail the RFC variant nibble). Date helpers are in `src/lib/dates.ts`, **not** `format.ts`; `formatDateNb` throws on a timestamptz, so it is always `formatDateNb(osloDateOf(ts))` or `formatDateTimeNb(ts)`.
 13. **There is no `audit()` helper.** Audit rows are a literal service-role insert, and `createServiceRoleClient` never leaves `src/lib/admin/` (`quarantine.ts`). This plan writes no audit rows from TypeScript; the `announcements` audit trigger covers the phase's needs.
+14. ⚠ **`00_grant_firewall.sql` does NOT sweep functions.** It filters `relkind in ('r','p','v','m','S')` plus schema USAGE — every current and future *table*, sequence and view, and **no function ACL at all**. So a `public` SECURITY DEFINER function that forgets `revoke execute … from public` / `from anon` is caught by nothing in the suite. Measured locally, not only in cloud: without the revoke, `has_function_privilege('anon', …, 'EXECUTE')` is **true** on this stack. This plan puts three `public` functions on the PostgREST surface and asserts the `anon` ACL of each one by hand — `announcement_read_status` most of all, since it is a definer projection over every class roster **by name**.
+15. ⚠ **No seeded family is in any class as of today** (A14). Anything that reads an announcement *as a family*, or counts a roster as of `now()`, must open an enrolment window first. This bites Tasks 8–11 and the walkthroughs, and it bites silently — the failure mode is an empty list, not an error.
 
 ---
 
@@ -234,15 +292,34 @@ Write the five numbers down: migration head, highest test file, pgTAP `Files=/Te
 
 ⚠ Plan 1's ledger reports `pgTAP 37 files / 741 assertions` at its final gate, while the sum of the committed `plan(N)` values is **734**. The difference is the uncommitted edits to files 29/35/36. **Do not reconcile the two — measure.** A plan's counts are claims, and the last four review rounds on this project were all won by checking a claim against the repo.
 
-- [ ] **Step 2: Confirm the three facts Task 1 depends on**
+- [ ] **Step 2: Confirm the facts Tasks 1–11 depend on**
 
 ```bash
 docker exec supabase_db_iqra-portal psql -U postgres -q -t -A -c "select p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.proname in ('has_role','teaches_class','audit_row_change','set_updated_at') order by 1;"
-docker exec supabase_db_iqra-portal psql -U postgres -q -t -A -c "select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid='public.class_students'::regclass;"
+# ⚠ pg_indexes, NOT pg_constraint: class_students_one_active is a partial UNIQUE
+# INDEX, so it does not appear in pg_constraint at all and a query there reads
+# as "the constraint is gone".
+docker exec supabase_db_iqra-portal psql -U postgres -q -t -A -c "select indexname, indexdef from pg_indexes where tablename='class_students';"
 grep -n "student_user_id" supabase/tests/34_enrollment_boundary.sql | head
 ```
 
-Expected: all four functions present · `class_students_one_active` is `UNIQUE (student_id) WHERE (left_on IS NULL)` · file 34's pupils do carry `student_user_id`. If the last is absent, Task 2's pupil-arm assertions need the column added to that file's fixture — say so rather than skipping them.
+Expected: all four functions present · `class_students_one_active` is `CREATE UNIQUE INDEX … (student_id) WHERE (left_on IS NULL)` and `class_students_interval_unique` is `(class_id, student_id, enrolled_on)` · file 34's pupils do carry `student_user_id`. If the last is absent, Task 2's pupil-arm assertions need the column added to that file's fixture — say so rather than skipping them.
+
+- [ ] **Step 3: ★★ Probe the as-of roster of the SEED, before writing anything that depends on it (A14)**
+
+```bash
+docker exec supabase_db_iqra-portal psql -U postgres -q -t -A -c "
+select c.name, cs.student_id, cs.enrolled_on, cs.left_on,
+       (cs.enrolled_on <= (now() at time zone 'Europe/Oslo')::date
+        and (cs.left_on is null or (now() at time zone 'Europe/Oslo')::date < cs.left_on))
+         as in_asof_roster_now
+from public.class_students cs join public.classes c on c.id = cs.class_id
+order by 1, 3;"
+```
+
+**Expected today: `in_asof_roster_now` is `f` on every row** — the seed enrols everyone on `2026-08-20`/`2026-08-21` and `current_date` is `2026-08-05`. That is not a defect to fix in the seed (five committed api assertions key off those exact dates — A14); it is the condition Task 11 and all three walkthroughs must open a window around.
+
+If some row comes back `t`, the clock has moved past the seed's dates and the window is already open: say so, and Task 11's back-dating hook becomes a no-op it can keep for the day the seed is refreshed.
 
 ---
 
@@ -282,13 +359,25 @@ Create `supabase/migrations/20260806120000_announcements.sql`:
 -- ★ published_at IS CLIENT-WRITABLE AT INSERT, AND THAT IS DELIBERATE.
 -- The spec asked for scheduled publishing AND for an ungrantable published_at;
 -- those are mutually exclusive, because a future publication time can only be
--- set by writing the column. The risk the column actually carries is
--- BACK-dating — it is the only direction that changes who reads, by widening
--- the as-of audience to families who have since left. announcements_not_backdated
--- expresses exactly that, comparing published_at against created_at, which is
--- NOT granted and therefore always the true insert instant. No `with check`
--- predicate could do this: at INSERT it has no other timestamp to compare
--- against. published_at stays ungrantable at UPDATE.
+-- set by writing the column.
+--
+-- ⛔ AND IT IS BOUNDED IN BOTH DIRECTIONS, BECAUSE BOTH DIRECTIONS MOVE THE
+-- AUDIENCE. An earlier draft of this comment said back-dating was "the only
+-- direction that changes who reads". That is FALSE and it was measured false:
+-- at published_at = now() + 90 days a guardian whose left_on falls inside those
+-- 90 days DROPS OUT of the audience and a guardian who joins inside them is
+-- ADDED. Forward-dating addresses families the author may never meet; with no
+-- upper bound at all, published_at = '2999-01-01' was accepted. Back-dating is
+-- merely the direction that reaches families who have already LEFT, i.e. the
+-- one that cannot be undone by waiting.
+--   announcements_not_backdated  — published_at >= created_at
+--   announcements_schedule_bound — published_at <= created_at + 120 days
+-- Both compare against created_at, which is NOT granted and is therefore always
+-- the true insert instant. No `with check` predicate could do either: at INSERT
+-- it has no other timestamp to compare against. published_at stays ungrantable
+-- at UPDATE. The 120 days is a PRODUCT decision (a little over one term) and is
+-- mirrored by a zod bound in src/lib/validation/announcements.ts — change both
+-- or neither; only the zod half produces a sentence a teacher can act on.
 --
 -- audit_row_change writes ids and changed column NAMES only, never values
 -- (verified in 20260717164230:139-168).
@@ -308,7 +397,10 @@ create table public.announcements (
   created_by    uuid not null references public.profiles (id) on delete restrict,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
-  constraint announcements_not_backdated check (published_at >= created_at)
+  constraint announcements_not_backdated check (published_at >= created_at),
+  -- Forward is bounded too — see the header. 120 days ≈ one term.
+  constraint announcements_schedule_bound
+    check (published_at <= created_at + interval '120 days')
 );
 
 create index announcements_class_published_idx
@@ -323,7 +415,7 @@ create index announcements_pending_fanout_idx
 comment on table public.announcements is
   'Oppslag. class_id null = hele skolen (admin only); non-null = that class (its teachers + admin). The read audience is resolved AS OF published_at (D9), not live — a family reads what was published while they were enrolled. Loosening that to live membership is one clause, and it would retract a family''s own history on term-rollover day.';
 comment on column public.announcements.published_at is
-  'Decides the READ AUDIENCE via private.reads_announcement_row, and is therefore the security-relevant column on this table. Client-writable at INSERT so an announcement can be SCHEDULED; announcements_not_backdated refuses any value earlier than created_at, which is the only direction that widens the audience. NOT writable at UPDATE — see 31_column_locks.sql.';
+  'Decides the READ AUDIENCE via private.reads_announcement_row, and is therefore the security-relevant column on this table. Client-writable at INSERT so an announcement can be SCHEDULED, and bounded in BOTH directions against created_at (which is not granted): announcements_not_backdated refuses anything earlier, announcements_schedule_bound anything more than 120 days later. Both directions move the audience — forward-dating drops families whose enrolment closes in the meantime and adds families who join. NOT writable at UPDATE — see 31_column_locks.sql.';
 comment on column public.announcements.fanned_out_at is
   'Notification idempotence marker, owned by the trigger below and by public.claim_due_announcements(). Stamped at INSERT when the row is published immediately, left NULL when it is scheduled — so `fanned_out_at is null` means "scheduled and not yet announced" and the partial index above IS the queue. ⚠ It does NOT gate reading: a scheduled announcement becomes readable at published_at whether or not anything ever claims it.';
 
@@ -340,8 +432,11 @@ create trigger announcements_set_updated_at
   before update on public.announcements
   for each row execute function private.set_updated_at();
 
--- ⚠ SCOPED to the columns that carry meaning, and deliberately unlike every
--- other audit trigger in this repo (all 13 are unscoped). An unscoped `or
+-- ⚠ SCOPED to the columns that carry meaning. Only one other audit trigger in
+-- this repo is scoped — threads_audit, which is `update of subject, kind,
+-- staff_id, student_id, created_by`; the other twelve are unscoped. (The first
+-- draft of this comment said all thirteen were, which would have made this
+-- trigger look more unusual than it is.) An unscoped `or
 -- update` would fire on every fanned_out_at stamp — one audit row per
 -- announcement per drain run, whose only recorded change is a timestamp
 -- nobody supervises. published_at is in the list as free defence: it has no
@@ -462,21 +557,26 @@ grant execute on function private.student_in_class_asof(uuid, uuid, timestamptz)
 -- parameter. Renaming these to class_id/published_at/created_by would make
 -- three markers in 29_definer_fingerprints.sql vacuous.
 --
--- ★★ AND THE ROW FORM CLOSES A SECOND, DIFFERENT HAZARD — measured, not
--- reasoned. Under `UPDATE … RETURNING`, a BY-ID predicate re-checks against
--- the PRE-UPDATE tuple, while the identical rule written as column references
--- re-checks against the NEW one. (Proved on threads: `update threads set
--- subject = 'NEW' … returning id` succeeds under the by-id spelling and fails
--- under the column spelling.) So a by-id SELECT policy on a table whose
--- predicate-relevant columns are updatable authorises the change against the
--- OLD values — an audience check run against the class the row used to be in.
+-- ★★ WHAT PROTECTS published_at AND class_id AT UPDATE — corrected by the
+-- review panel, because the first version of this comment named the wrong
+-- mechanism and a wrong reason in a comment is how the next engineer deletes
+-- the right line. It said the row form would catch a later `update (class_id)`
+-- or `update (published_at)` grant. MEASURED, IT WOULD NOT:
+--   · with `grant update (published_at)`, both the bare update and
+--     `… returning title` SUCCEED for the author. The row form is BLIND here:
+--     `author = uid` is the first arm and short-circuits before `pub` is ever
+--     read. So a published, already-read notice can be silently un-published
+--     and its audience migrated to a future roster. published_at has NO policy
+--     guard of any kind — THE ABSENT UPDATE GRANT IS THE ONLY WALL.
+--   · with `grant update (class_id)`, the update IS refused — but by
+--     announcements_update_author's `with check`, which re-evaluates
+--     private.writes_announcement against the NEW row. Not by this policy.
+-- ⛔ So: do not treat those two revokes as tidiness, and do not expect this
+-- predicate to catch their removal. 31_column_locks.sql asserts both.
 --
--- ⛔ announcements is safe from that only because class_id is INSERT-only and
--- published_at is ungrantable at UPDATE. IF ANY LATER TASK GRANTS
--- `update (class_id)` OR `update (published_at)`, THIS BECOMES LIVE — and with
--- the row form above it fails closed instead, because the policy sees the
--- proposed row. Do not treat those two revokes as tidiness; they are half of
--- why this predicate is correct.
+-- (The row-form argument above remains exactly correct for the case it was
+-- introduced for — INSERT … RETURNING. It is a different mechanism from this
+-- one, and conflating them is what produced the sentence being corrected here.)
 --
 -- The arms, and what each is for:
 --   author = uid       the author reads their own not-yet-published row, so a
@@ -485,10 +585,19 @@ grant execute on function private.student_in_class_asof(uuid, uuid, timestamptz)
 --   has_role(admin)    oversight, unbounded and with no time limit (D5, §4.1).
 --   pub <= now()       the draft/published boundary, explicit rather than
 --                      implied by a nullable timestamp a policy might forget.
---   cls is null        the whole school. Deliberately does not consult uid at
---                      all — "everyone at the school" is what it means. anon is
---                      kept out by the policy's `to authenticated` and by
---                      00_grant_firewall.sql, not by this clause.
+--   cls is null        the whole school: everyone AT THE SCHOOL, which is what
+--                      holding any role means. It deliberately never asks WHICH
+--                      role — economy belongs here (D17) — but it does ask
+--                      whether there is one. ⚠ Without the user_roles clause
+--                      this admits any authenticated account: handle_new_user
+--                      gives every auth user a profiles row while roles are
+--                      assigned separately, so a created-but-unassigned account
+--                      and a departed family whose roles were revoked both keep
+--                      reading every school-wide notice. src/proxy.ts is not
+--                      the wall — PostgREST is reachable directly with any
+--                      valid session, and the anon key ships in the browser
+--                      bundle. (Measured 2026-08-06: count 1 for a role-less
+--                      user before the clause, 0 after.)
 create or replace function private.reads_announcement_row(
   uid uuid, cls uuid, pub timestamptz, author uuid
 )
@@ -500,7 +609,8 @@ as $$
     or (
       pub <= now()
       and (
-        cls is null
+        (cls is null
+         and exists (select 1 from public.user_roles ur where ur.user_id = uid))
         or private.teaches_class(uid, cls)
         or private.guardian_in_class_asof(uid, cls, pub)
         or private.student_in_class_asof(uid, cls, pub)
@@ -576,11 +686,20 @@ create policy "announcements_insert_staff"
     and created_by = (select auth.uid())
   );
 
--- ⚠ created_by is pinned in `using` AS WELL AS in `with check`. With the pin in
--- `with check` only, teacher B updates teacher A's row SETTING created_by = B
--- and both clauses pass — B has taken the byline on a colleague's announcement.
--- That is the defect Phase 4 shipped, and the spec's own parenthetical cites it
--- while putting the pin in the wrong clause.
+-- ⚠ created_by is pinned in `using` AS WELL AS in `with check`, and the reason
+-- is NOT the one the first draft gave. That draft said the `with check`-only
+-- version would let teacher B rewrite the row SETTING created_by = B and take
+-- the byline. Measured: B cannot, because created_by has no UPDATE GRANT at
+-- all — the laundering attack is closed one layer down, and a comment that
+-- justifies a line by an attack that cannot happen is a line the next reader
+-- deletes.
+-- The real reason is duller and live: with the pin only in `with check`, any
+-- teacher of the class may retitle a COLLEAGUE'S announcement. `using` still
+-- admits the row (writes_announcement is true for both of them) and the check
+-- still passes (created_by is unchanged, and it is A's). The pin in `using` is
+-- what makes editing authorship rather than class membership. Assertion 32 in
+-- 37_announcements_rls.sql is that exact scenario, with the same teacher's
+-- successful edit of her OWN row beside it as the control.
 create policy "announcements_update_author"
   on public.announcements for update to authenticated
   using (created_by = (select auth.uid())
@@ -598,11 +717,21 @@ create policy "announcements_delete_admin"
 -- grants carry no predicate. This policy is the withdraw path instead. A
 -- not-yet-published announcement has been read by nobody by construction, so
 -- removing it destroys no record; a PUBLISHED one stays admin-only.
+--
+-- ⛔ NO `private.writes_announcement(…)` CONJUNCT HERE, AND THAT IS DELIBERATE.
+-- The first draft had one. Measured: a teacher who schedules an announcement
+-- and then stops teaching that class can still SEE her row (the author arm of
+-- the read predicate) while her delete filters to ZERO ROWS — the withdraw path
+-- disappears exactly when it is needed, and only an admin who happens to notice
+-- can remove it before it publishes to a class she has left. The two conjuncts
+-- that remain are already strictly narrower than the insert wall: nothing
+-- reaches created_by = <you> without having passed announcements_insert_staff,
+-- and published_at > now() means nobody has read it. Do not add the third
+-- conjunct back for symmetry with announcements_update_author.
 create policy "announcements_delete_own_unpublished"
   on public.announcements for delete to authenticated
   using (created_by = (select auth.uid())
-         and published_at > now()
-         and private.writes_announcement((select auth.uid()), class_id));
+         and published_at > now());
 
 -- ⛔ THIS ONE IS SAFE AS WRITTEN AND MUST NOT BE "FIXED" INTO A ROW FORM.
 -- The reasons, so nobody re-derives them at 6am:
@@ -668,12 +797,12 @@ Expected: one row, `stamped = t`. If it is `f` or the insert 42501s, **stop and 
 
 - [ ] **Step 4: Write pgTAP 37**
 
-Create `supabase/tests/37_announcements_rls.sql`. Fixture prefix `c0`, `plan(39)`.
+Create `supabase/tests/37_announcements_rls.sql`. Fixture prefix `c0`, `plan(47)`.
 
 ```sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(39);
+select plan(47);
 
 -- Announcements: the AS-OF audience, the creation binds, the update pins and
 -- the delete pair.
@@ -730,8 +859,18 @@ from (values
   ('c0000000-0000-0000-0000-000000000009'::uuid, 'pgtap-op-forelderb@test.local', 'OP Forelder Klasse B'),
   ('c0000000-0000-0000-0000-000000000010'::uuid, 'pgtap-op-laerer3@test.local',   'OP Lærer Tre'),
   ('c0000000-0000-0000-0000-000000000012'::uuid, 'pgtap-op-forelder4@test.local', 'OP Forelder Startet'),
-  ('c0000000-0000-0000-0000-000000000013'::uuid, 'pgtap-op-elev2@test.local',     'OP Elev Startet')
+  ('c0000000-0000-0000-0000-000000000013'::uuid, 'pgtap-op-elev2@test.local',     'OP Elev Startet'),
+  -- …014 is Ordinær's SECOND guardian. Without a two-guardian family, «exactly
+  -- one FAMILY has read it» cannot tell per-family counting from per-user
+  -- counting: every fixture pupil would produce one row either way (A5).
+  ('c0000000-0000-0000-0000-000000000014'::uuid, 'pgtap-op-forelder5@test.local', 'OP Forelder Ordinær To'),
+  -- …015 has a profile (handle_new_user makes one for every auth user) and NO
+  -- user_roles row at all. That is a reachable state, not a hypothetical:
+  -- accounts are created before roles are assigned, and revoking a role leaves
+  -- the account intact. It is the witness for A15.
+  ('c0000000-0000-0000-0000-000000000015'::uuid, 'pgtap-op-ingenrolle@test.local','OP Uten Rolle')
 ) as u(id, email, full_name);
+-- ⚠ NO user_roles row for …015. That is the fixture.
 insert into public.user_roles (user_id, role) values
   ('c0000000-0000-0000-0000-000000000001', 'admin'),
   ('c0000000-0000-0000-0000-000000000002', 'teacher'),
@@ -742,6 +881,7 @@ insert into public.user_roles (user_id, role) values
   ('c0000000-0000-0000-0000-000000000006', 'parent'),
   ('c0000000-0000-0000-0000-000000000009', 'parent'),
   ('c0000000-0000-0000-0000-000000000012', 'parent'),
+  ('c0000000-0000-0000-0000-000000000014', 'parent'),
   ('c0000000-0000-0000-0000-000000000007', 'student'),
   ('c0000000-0000-0000-0000-000000000013', 'student'),
   ('c0000000-0000-0000-0000-000000000008', 'economy');
@@ -766,8 +906,13 @@ insert into public.students (id, first_name, last_name, birth_year, protected, s
   ('c0000000-0000-0000-0000-000000000034', 'OP', 'Klasse B', 2013, false, null),
   ('c0000000-0000-0000-0000-000000000035', 'OP', 'Skjermet', 2013, true,  null),
   ('c0000000-0000-0000-0000-000000000036', 'OP', 'Startet',  2013, false, 'c0000000-0000-0000-0000-000000000013');
+-- ⚠ Ordinær (…031) has TWO guardians, and only ONE of them ever records a read.
+-- «Skjermet» (…035) has NONE and no login either — she is A4's witness and, at
+-- the same time, the pupil the read predicate admits nobody for (A3). The
+-- `reachable` column exists to tell those two facts apart on screen.
 insert into public.guardian_student (guardian_id, student_id) values
   ('c0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000031'),
+  ('c0000000-0000-0000-0000-000000000014', 'c0000000-0000-0000-0000-000000000031'),
   ('c0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-000000000032'),
   ('c0000000-0000-0000-0000-000000000006', 'c0000000-0000-0000-0000-000000000033'),
   ('c0000000-0000-0000-0000-000000000009', 'c0000000-0000-0000-0000-000000000034'),
@@ -839,7 +984,7 @@ insert into public.announcements (id, class_id, title, body, published_at, creat
 insert into public.announcement_reads (announcement_id, user_id) values
   ('c0000000-0000-0000-0000-000000000046', 'c0000000-0000-0000-0000-000000000004');
 
--- ── §A 01-04 shape ──────────────────────────────────────────────────
+-- ── §A 01-05 shape and the anon ACL ─────────────────────────────────
 select ok((select relrowsecurity from pg_class where oid = 'public.announcements'::regclass),
   'RLS enabled on announcements');
 select ok((select relforcerowsecurity from pg_class where oid = 'public.announcements'::regclass),
@@ -848,8 +993,16 @@ select ok((select relrowsecurity from pg_class where oid = 'public.announcement_
   'RLS enabled on announcement_reads');
 select ok((select relforcerowsecurity from pg_class where oid = 'public.announcement_reads'::regclass),
   'RLS FORCED on announcement_reads');
+-- ⚠ NOTHING ELSE IN THE SUITE ASSERTS A FUNCTION ACL. 00_grant_firewall.sql
+-- sweeps relkind in ('r','p','v','m','S') and schema USAGE — every current and
+-- future TABLE, and no function at all. A `public` definer function that loses
+-- its `revoke execute … from public/anon` is caught by nobody. Measured on this
+-- stack (not only in cloud): without the revoke this returns TRUE.
+select is(has_function_privilege('anon', 'public.can_edit_announcement(uuid)', 'EXECUTE'),
+  false,
+  'anon cannot execute can_edit_announcement — the grant firewall does not sweep functions, so this is asserted by hand');
 
--- ── §B 05-13 the AS-OF audience (D9) ────────────────────────────────
+-- ── §B 06-14 the AS-OF audience (D9) ────────────────────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000004","role":"authenticated"}', true);
 set local role authenticated;
@@ -912,7 +1065,7 @@ select is((select count(*) from public.announcements
   'control: the class''s OWN teacher reads that identical announcement');
 reset role;
 
--- ── §C 14-16 economy and the other family (D17) ─────────────────────
+-- ── §C 15-18 economy, the role-less account, and the other family ───
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000008","role":"authenticated"}', true);
 set local role authenticated;
@@ -924,6 +1077,16 @@ select is((select count(*) from public.announcements
   'D17: and economy DOES read the school-wide one — a notice about closing week 40 is not pedagogy');
 reset role;
 
+-- A15. The control for this 0 is the assertion directly above: a DIFFERENT
+-- actor reading the IDENTICAL row, and getting it.
+select set_config('request.jwt.claims',
+  '{"sub":"c0000000-0000-0000-0000-000000000015","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.announcements
+           where id = 'c0000000-0000-0000-0000-000000000042'), 0::bigint,
+  'A15: an account with a profile but NO user_roles row reads nothing — not even the school-wide notice. «Hele skolen» means everyone AT the school');
+reset role;
+
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000009","role":"authenticated"}', true);
 set local role authenticated;
@@ -932,7 +1095,7 @@ select is((select count(*) from public.announcements
   'a guardian of another class''s pupil reads nothing of class A''s announcement');
 reset role;
 
--- ── §D 17-20 the scheduled row (D8) ─────────────────────────────────
+-- ── §D 19-22 the scheduled row (D8) ─────────────────────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
 set local role authenticated;
@@ -958,7 +1121,7 @@ select is((select count(*) from public.announcements
   'control: that same guardian reads the PUBLISHED announcement in the same class');
 reset role;
 
--- ── §E 21-27 creation: back-dating, RETURNING, and the write wall ───
+-- ── §E 23-31 creation: the two bounds, RETURNING, and the write wall ─
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
 set local role authenticated;
@@ -973,6 +1136,16 @@ select lives_ok(
      values ('c0000000-0000-0000-0000-000000000021', 'OP Framdatert', 'x',
              now() + interval '1 day', 'c0000000-0000-0000-0000-000000000002') $$,
   'A1 positive control: and CAN be forward-dated — that is what scheduling is');
+-- A1's second bound. Forward-dating moves the audience too — it drops families
+-- whose enrolment closes before the new date and adds families who join — so
+-- "forward" is not the safe direction, only the recoverable one. Without this
+-- constraint published_at = '2999-01-01' was accepted (measured).
+select throws_ok(
+  $$ insert into public.announcements (class_id, title, body, published_at, created_by)
+     values ('c0000000-0000-0000-0000-000000000021', 'OP For langt fram', 'x',
+             now() + interval '200 days', 'c0000000-0000-0000-0000-000000000002') $$,
+  '23514', null,
+  'A1: and cannot be scheduled past the 120-day bound — beyond about a term the roster it would address is not one anybody can picture');
 -- ★★ THE STATEMENT SHAPE THE SUITE WAS BLIND TO. PostgREST emits
 -- RETURNING "tbl"."col" whenever the client calls .select(), which applies the
 -- SELECT policy as an extra WITH CHECK. A by-id read predicate cannot see the
@@ -985,6 +1158,20 @@ select lives_ok(
              'c0000000-0000-0000-0000-000000000002')
      returning id $$,
   '★ RETURNING id: the app''s own statement shape, which a by-id SELECT policy would refuse');
+-- ⚠ AND THE SAME SHAPE FOR A SCHEDULED ROW, WHICH IS A DIFFERENT ARM.
+-- Measured: with `author = uid` deleted from reads_announcement_row, the
+-- IMMEDIATE returning-insert above still succeeds (pub <= now() carries it) and
+-- the bare scheduled insert still succeeds (no RETURNING, no extra check) — so
+-- neither creation assertion can see that deletion, and only a SELECT assertion
+-- can. Today the app never emits this statement (`.insert(obj)` without
+-- `.select()` sends return=minimal), but the gap opens on the one-token change
+-- that broke plan 1: someone adds `.select()` to createAnnouncementAction.
+select lives_ok(
+  $$ insert into public.announcements (class_id, title, body, published_at, created_by)
+     values ('c0000000-0000-0000-0000-000000000021', 'OP Planlagt med returnering', 'x',
+             now() + interval '2 days', 'c0000000-0000-0000-0000-000000000002')
+     returning id $$,
+  '★ RETURNING id on a SCHEDULED row: the author arm must carry it, because pub <= now() cannot');
 select throws_ok(
   $$ insert into public.announcements (class_id, title, body, created_by)
      values ('c0000000-0000-0000-0000-000000000022', 'OP Feil klasse', 'x',
@@ -1014,7 +1201,7 @@ select lives_ok(
   'D8 positive control: admin DOES publish to the whole school');
 reset role;
 
--- ── §F 28-30 the update pins ────────────────────────────────────────
+-- ── §F 32-34 the update pins ────────────────────────────────────────
 -- ⚠ EFFECT, not throws_ok. An UPDATE whose `using` clause excludes the row is
 -- a NO-OP, not an error — measured 2026-08-05 alongside the DELETE case.
 select set_config('request.jwt.claims',
@@ -1035,7 +1222,8 @@ select is(has_column_privilege('authenticated', 'public.announcements', 'publish
   false,
   'published_at cannot be MOVED after the fact — the audience is fixed at creation');
 
--- ── §G 31-34 announcement_reads ─────────────────────────────────────
+-- ── §G 35-42 announcement_reads: the two INSERT binds, and the SELECT
+--    policy that had NO assertion at all ──────────────────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000004","role":"authenticated"}', true);
 set local role authenticated;
@@ -1068,7 +1256,53 @@ select throws_ok(
   'the double bind: you cannot record a read of something you cannot read');
 reset role;
 
--- ── §J 35-39 the delete pair ────────────────────────────────────────
+-- ★ A5's SECOND ARM, which had no witness at all. The only read row in the
+-- first draft belonged to a guardian, so deleting `ar.user_id =
+-- s.student_user_id` from announcement_read_status reddened NOTHING. This is a
+-- pupil recording their own read, on their own login — and the double bind
+-- passes for them because student_in_class_asof admits them (…036 enrolled on
+-- the Oslo publication day, the inclusive edge).
+select set_config('request.jwt.claims',
+  '{"sub":"c0000000-0000-0000-0000-000000000013","role":"authenticated"}', true);
+set local role authenticated;
+select lives_ok(
+  $$ insert into public.announcement_reads (announcement_id, user_id)
+     values ('c0000000-0000-0000-0000-000000000041',
+             'c0000000-0000-0000-0000-000000000013') $$,
+  'a pupil records their OWN read on their own login — the second arm of A5, and the witness §H''s per-family count needs');
+reset role;
+
+-- ⛔ announcement_reads_select_own_or_staff HAD NO ASSERTION IN THE FIRST DRAFT,
+-- and it could have been `using (true)` or `using (false)` with every other
+-- assertion in this file green. §G above tests INSERTs only; §H goes through a
+-- SECURITY DEFINER projection, which never evaluates this policy at all; and §J
+-- reads this table only AFTER `reset role`, i.e. as postgres, which holds
+-- rolbypassrls. That is the same shape as commit 3f67907 on this branch.
+-- The three below are one row — the fixture's (…046, …004) — read by three
+-- actors whose only difference is entitlement.
+select set_config('request.jwt.claims',
+  '{"sub":"c0000000-0000-0000-0000-000000000005","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.announcement_reads
+           where announcement_id = 'c0000000-0000-0000-0000-000000000046'), 0::bigint,
+  'another family sees no read rows — who has opened a notice is not something families learn about each other');
+reset role;
+select set_config('request.jwt.claims',
+  '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.announcement_reads
+           where announcement_id = 'c0000000-0000-0000-0000-000000000046'), 1::bigint,
+  'control: the class''s OWN teacher sees that identical row — so the 0 above is the policy, not an empty table');
+reset role;
+select set_config('request.jwt.claims',
+  '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
+set local role authenticated;
+select is((select count(*) from public.announcement_reads
+           where announcement_id = 'c0000000-0000-0000-0000-000000000046'), 1::bigint,
+  'and so does admin, through the has_role arm rather than the writes_announcement one');
+reset role;
+
+-- ── §J 43-47 the delete pair ────────────────────────────────────────
 -- ⚠ EFFECT, not throws_ok. A DELETE that RLS filters returns `OK rows=0` —
 -- measured 2026-08-05. throws_ok here would be a test that cannot fail, and
 -- plan 1 proved that both delete policies on threads/messages could be set to
@@ -1110,34 +1344,43 @@ rollback;
 cd ~/dev/iqra-portal && docker exec -i supabase_db_iqra-portal psql -U postgres -q -f - < supabase/tests/37_announcements_rls.sql
 ```
 
-Expected: 39 `ok`, no `not ok`, and **no** `Looks like you planned…` line. If the count differs, set `plan(N)` to what pgTAP reports and correct this document — never by counting `select` lines.
+Expected: 47 `ok`, no `not ok`, and **no** `Looks like you planned…` line. If the count differs, set `plan(N)` to what pgTAP reports and correct this document — never by counting `select` lines.
 
-⚠ If assertion 4 or `26_rls_force.sql` fails, a new table is missing `force row level security` or a policy. That test asserts **four** things across all public tables and needs no edit to catch it.
+⚠ If assertion 4 or `26_rls_force.sql` fails, a new table is missing `force row level security` or a policy. That file is `plan(4)`: **three sweeps across all public tables** (enabled, forced, has-a-policy) plus one role-attribute assertion — so it catches either verb by name and needs no edit.
 
-- [ ] **Step 6: ★ Mutation pass — fourteen named mutations, each must redden ALONE**
+- [ ] **Step 6: ★ Mutation pass — nineteen named mutations, each must redden ALONE**
 
 Apply each with `create or replace` (functions) or `alter policy` / `alter table` (policies, constraints), re-run the file, then restore by re-running the migration's own block and **verify the restore with the md5 check in standing rule 3**.
 
 | # | Mutation | Must redden | Must NOT redden |
 |---|---|---|---|
-| 1 | `guardian_in_class_asof`: `< cs.left_on` → `<= cs.left_on` | 08 (the family that left ON the publication day gains it) | 05 |
-| 2 | `guardian_in_class_asof`: `cs.enrolled_on <=` → `cs.enrolled_on <` | 10 (the family that started ON the publication day loses it) | 05 |
-| 3 | `guardian_in_class_asof`: drop **both** `at time zone 'Europe/Oslo'` (leave `pub::date`) | **08 and 10** — the Oslo day and the UTC day differ at 00:30 | 05 |
-| 4 | `student_in_class_asof`: `cs.enrolled_on <=` → `<` | 11 (the pupil arm's inclusive edge) | 05 |
-| 5 | `student_in_class_asof`: drop both `at time zone 'Europe/Oslo'` | 11 | 05 |
-| 6 | `reads_announcement_row`: substitute `private.guardian_in_class` (the LIVE helper) for `guardian_in_class_asof` | 06 (a family enrolled after publication gains it) | 05 |
-| 7 | `reads_announcement_row`: delete the `pub <= now()` conjunct | 19 (a family reads a scheduled announcement) | 17, 18 |
-| 8 | `reads_announcement_row`: delete the `author = uid` arm | 17 (the author loses their own scheduled row) | 18 |
-| 9 | `reads_announcement_row`: delete the `cls is null` arm | 15 (economy loses the school-wide announcement) | 14 |
-| 10 | `announcements_update_author`: drop `created_by = (select auth.uid())` from **`using`**, keeping it in `with check` — the Phase-4 defect verbatim | 28 | 29 |
-| 11 | drop the `announcements_not_backdated` CHECK | 21 | 22 |
-| 12 | `announcements_select_audience`: replace the row form with `using (private.reads_announcement((select auth.uid()), id))` | ★ **23** — the `returning id` insert 42501s while the predicate is true | 05, 09, 12 (bare reads are unaffected) |
-| 13 | `announcement_reads_insert_own`: drop the `private.reads_announcement(…)` conjunct | 34 | 31 |
-| 14 | `announcements_delete_own_unpublished`: drop `published_at > now()` | **36 and 37** — the author's delete of the published announcement now succeeds, taking its read row with it | 35 |
+| 1 | `guardian_in_class_asof`: `< cs.left_on` → `<= cs.left_on` | 09 (the family that left ON the publication day gains it) | 06 |
+| 2 | `guardian_in_class_asof`: `cs.enrolled_on <=` → `cs.enrolled_on <` | 11 (the family that started ON the publication day loses it) | 06 |
+| 3 | `guardian_in_class_asof`: drop **both** `at time zone 'Europe/Oslo'` (leave `pub::date`) | **09 and 11** — the Oslo day and the UTC day differ at 00:30 | 06 |
+| 4 | `student_in_class_asof`: `cs.enrolled_on <=` → `<` | 12 (the pupil arm's inclusive edge) | 06 |
+| 5 | `student_in_class_asof`: drop both `at time zone 'Europe/Oslo'` | 12 | 06 |
+| 6 | `reads_announcement_row`: substitute `private.guardian_in_class` (the LIVE helper) for `guardian_in_class_asof` | 07 (a family enrolled after publication gains it) | 06 |
+| 7 | `reads_announcement_row`: delete the `pub <= now()` conjunct | 21 (a family reads a scheduled announcement) | 19, 20 |
+| 8 | `reads_announcement_row`: delete the `author = uid` arm | **19 and 27** — the author loses their own scheduled row, and the scheduled `returning id` insert 42501s | 20, 26 |
+| 9 | `reads_announcement_row`: delete the whole `cls is null` arm | **16 and, because they are school-wide reads too, 08 and 10** | 15 |
+| 10 | `announcements_update_author`: drop `created_by = (select auth.uid())` from **both** `using` and `with check` | 32 | 33 |
+| 11 | drop the `announcements_not_backdated` CHECK | 23 | 24 |
+| 12 | `announcements_select_audience`: replace the row form with `using (private.reads_announcement((select auth.uid()), id))` | ★ **26 and 27** — both `returning id` inserts 42501 while the predicate is true | 06, 10, 13 (bare reads are unaffected) |
+| 13 | `announcement_reads_insert_own`: drop the `private.reads_announcement(…)` conjunct | 38 | 35 |
+| 14 | `announcements_delete_own_unpublished`: drop `published_at > now()` | **44 and 45** — the author's delete of the published announcement now succeeds, taking its read row with it | 43 |
+| 15 | `reads_announcement_row`: delete only the `exists (… public.user_roles …)` conjunct, keeping `cls is null` | 17 (the role-less account reads the school-wide notice again) | 16 |
+| 16 | drop the `announcements_schedule_bound` CHECK | 25 | 24 |
+| 17 | `announcement_reads_select_own_or_staff`: drop the `exists (… private.writes_announcement …)` arm | 41 (the class's own teacher stops seeing the read row) | 40, 42 |
+| 18 | `grant insert (read_at) on public.announcement_reads to authenticated` | 37 (a read can now be back-dated) | 35 |
+| 19 | `grant execute on function public.can_edit_announcement(uuid) to anon` | 05 | — |
 
-⚠ Mutations 1–3 are **different clauses of the same function** — run them separately or one masks another. Same for 4–5 and 7–9.
+⚠ Mutations 1–3 are **different clauses of the same function** — run them separately or one masks another. Same for 4–5, and for 7, 8, 9 and 15, which are four clauses of `reads_announcement_row`.
 
-⚠ Mutation 12 is the most valuable one in this plan. It reproduces, exactly, the defect that broke every thread creation in plan 1 and survived 737 assertions. If it does **not** redden assertion 23, the assertion is wrong — check that it really says `returning id` and not `returning 1`.
+⚠ **Mutation 10 changed after review, and the first version could not have worked.** Dropping the pin from `using` while keeping it in `with check` does not make the update a silent no-op: it raises `ERROR: new row violates row-level security policy` (measured). §F's two UPDATEs are bare statements, not pgTAP calls, so that error aborts the transaction — every later statement fails `25P02` and `finish()` never runs. Dropping it from **both** clauses lets the update succeed silently, which is what assertion 32 is written to catch.
+
+⚠ Mutation 12 is the most valuable one in this plan. It reproduces, exactly, the defect that broke every thread creation in plan 1 and survived 737 assertions. If it does **not** redden assertions 26 and 27, they are wrong — check that they really say `returning id` and not `returning 1`.
+
+⚠ **Two assertions in this file still have no mutation behind them, and it is on the record rather than hidden:** the `pub <= now()` **equality** boundary is never exercised — every fixture is 30 days past or 1–9 days future, so changing `<=` to `<` reddens nothing — and assertion 34 (`has_column_privilege(…,'published_at','UPDATE')`) is a privilege probe whose mutation lives in Task 3's table instead. If you can add an equality fixture cheaply, do; if not, say so in the commit body.
 
 - [ ] **Step 7: Full suite from a clean database**
 
@@ -1145,7 +1388,7 @@ Apply each with `create or replace` (functions) or `alter policy` / `alter table
 cd ~/dev/iqra-portal && supabase db reset && supabase test db --local && npm run typecheck && npm run lint
 ```
 
-Expected: `Files=` baseline+1, `Tests=` baseline+39, `Result: PASS`; typecheck 0 errors; lint 0 errors and the pre-existing warnings only.
+Expected: `Files=` baseline+1, `Tests=` baseline+47, `Result: PASS`; typecheck 0 errors; lint 0 errors and the pre-existing warnings only.
 
 - [ ] **Step 8: Commit**
 
@@ -1155,7 +1398,7 @@ git add supabase/migrations/20260806120000_announcements.sql supabase/tests/37_a
 git commit -m "feat(oppslag): announcements, with the audience resolved as of publication"
 ```
 
-Body must state: that `published_at` is client-writable at INSERT and why the CHECK rather than the grant is the wall (A1); that the SELECT policy is the row form and which mutation proves it; that the read-tracking table carries no audit trigger and why; and the fourteen mutations run in step 6 with what each reddened.
+Body must state: that `published_at` is client-writable at INSERT and why **two** CHECKs rather than the grant are the wall, including that forward-dating moves the audience too (A1); that the school-wide arm asks for a role (A15); that the withdraw policy deliberately drops `writes_announcement` (A2); that the SELECT policy is the row form and which mutation proves it; that the read-tracking table carries no audit trigger and why; and the nineteen mutations run in step 6 with what each reddened.
 
 ---
 
@@ -1191,43 +1434,47 @@ Bump `plan(24)` to `plan(30)` and append, immediately before `select * from fini
 --   exactly this reason; the SQL had no such assertion until now.
 select is(private.guardian_in_class_asof(
     'bd000000-0000-0000-0000-000000000011',
-    'bd000000-0000-0000-0000-000000000031',
+    'bd000000-0000-0000-0000-000000000041',
     (('2026-09-15'::date + time '00:30') at time zone 'Europe/Oslo')),
   false,
   'guardian_in_class_asof: left_on = D is OUT — left_on is EXCLUSIVE, ninth site');
 select is(private.guardian_in_class_asof(
     'bd000000-0000-0000-0000-000000000012',
-    'bd000000-0000-0000-0000-000000000031',
+    'bd000000-0000-0000-0000-000000000041',
     (('2026-09-15'::date + time '00:30') at time zone 'Europe/Oslo')),
   true,
   'control: left_on = D + 1 is IN — so the false above is the operator, not a broken fixture');
 select is(private.guardian_in_class_asof(
     'bd000000-0000-0000-0000-000000000013',
-    'bd000000-0000-0000-0000-000000000031',
+    'bd000000-0000-0000-0000-000000000041',
     (('2026-09-15'::date + time '00:30') at time zone 'Europe/Oslo')),
   true,
   'guardian_in_class_asof: enrolled_on = D is IN — enrolled_on is INCLUSIVE, and this is also the Oslo-cast witness');
 select is(private.student_in_class_asof(
     'bd000000-0000-0000-0000-000000000021',
-    'bd000000-0000-0000-0000-000000000031',
+    'bd000000-0000-0000-0000-000000000041',
     (('2026-09-15'::date + time '00:30') at time zone 'Europe/Oslo')),
   false,
   'student_in_class_asof: left_on = D is OUT, tenth site');
 select is(private.student_in_class_asof(
     'bd000000-0000-0000-0000-000000000022',
-    'bd000000-0000-0000-0000-000000000031',
+    'bd000000-0000-0000-0000-000000000041',
     (('2026-09-15'::date + time '00:30') at time zone 'Europe/Oslo')),
   true,
   'control: left_on = D + 1 is IN');
 select is(private.student_in_class_asof(
     'bd000000-0000-0000-0000-000000000023',
-    'bd000000-0000-0000-0000-000000000031',
+    'bd000000-0000-0000-0000-000000000041',
     (('2026-09-15'::date + time '00:30') at time zone 'Europe/Oslo')),
   true,
   'student_in_class_asof: enrolled_on = D is IN, and the Oslo-cast witness for the pupil arm');
 ```
 
-⚠ **The uuids and the class id above are placeholders taken from the file's documented prefix scheme.** Step 1 tells you the real ones. If the file's class id is not `bd…031`, or the three guardians are not `…011/012/013`, substitute — do not invent a new fixture.
+⛔ **The class id in all six calls is `bd…041`, and the first draft of this plan had `bd…031` — which is the TERM.** Verified 2026-08-06 against the file: `terms.id = bd000000-…-000000000031`, `classes.id = bd000000-…-000000000041`. The actor ids **are** right (guardians `…011/012/013`, pupil logins `…021/022/023`, D = `2026-09-15`, `plan(24)`).
+
+⚠ **This is not a typo you can leave to the executor to notice, and here is why.** With the term id as `cid`, no `class_students` row matches, so every one of the six calls returns `false` — and **two of them expect `false`**. Assertions 25 and 28 (`left_on = D is OUT`) would have passed *because the fixture row does not exist*, not because `left_on` is exclusive. Only the four that expect `true` go red, so an executor who fixes what is red leaves both boundary negatives permanently untested. That is plan 1's «wrong pupil's login» defect, verbatim, in a file that exists specifically because a widening survived 663 assertions.
+
+Step 1 still tells you the real ids: if they differ from the above, substitute — do not invent a new fixture.
 
 - [ ] **Step 3: Run it**
 
@@ -1330,8 +1577,11 @@ Expected: 31 `ok`.
 | 3 | `grant update (created_by) on public.announcements to authenticated` | 28 |
 | 4 | `grant update (read_at) on public.announcement_reads to authenticated` | 31 |
 | 5 | `revoke insert (published_at) on public.announcements from authenticated` | 29 |
+| 6 | `grant insert (fanned_out_at) on public.announcements to authenticated` | 30 |
 
 ⚠ Mutation 1 must redden **23 only** — mutations 24–28 are column probes and `has_column_privilege` reports true when a table grant exists, so 24 and 25 stay green while 26–28 also flip. Record what actually happened: if 26–28 redden too, that is the asymmetry the block's comment describes and it is correct behaviour, not a defect.
+
+⚠ Mutation 2 also reddens **assertion 34 of `37_announcements_rls.sql`** (§F's `published_at` privilege probe), which is the same claim asserted in the file that owns the behaviour. Re-running file 37 under this mutation is optional; noticing that the two files agree is not, because the RLS-lens finding above records that **`published_at` has no policy guard of any kind** — this grant is the entire wall, asserted in two places on purpose.
 
 Restore each with the inverse statement and re-run the migration's grant block; confirm with:
 
@@ -1380,10 +1630,28 @@ Create `supabase/migrations/20260806121000_announcement_read_status.sql`:
 -- put a two-guardian family twice in the denominator and send the office
 -- chasing a parent who has already read.
 --
--- ★ THE ROSTER IS AS OF published_at (A3), the same set
--- private.reads_announcement_row admits. A live roster would count families
+-- ★ THE ROSTER IS AS OF published_at (A3). A live roster would count families
 -- the announcement is invisible to, so «12 av 28» would be a number nobody
 -- could act on.
+--
+-- ⛔ IT IS NOT "the same set reads_announcement_row admits", WHICH IS WHAT AN
+-- EARLIER DRAFT OF THIS COMMENT SAID. This function counts PUPILS; the read
+-- predicate admits USERS. Measured: of the three pupils it returns for the
+-- fixture's class announcement, one has student_user_id null AND no
+-- guardian_student row, so no user at all is admitted on her account and her
+-- has_read can never become true — «0 av 3» could never reach 3. That is why
+-- there is a fifth column. `reachable` does not change the denominator (the
+-- office still needs to know the child exists and was in the class); it lets
+-- the screen say «ingen pålogging» instead of printing a name that will never
+-- clear and telling the office to phone a family that has no account.
+--
+-- ⚠ AND THE PROJECTION IS BOUND TO PUBLISHED ROWS. Without `a.published_at <=
+-- now()` this function binds on WRITE authority while the row it describes
+-- binds on READ authority: measured, a co-teacher who cannot SELECT a
+-- colleague's scheduled announcement at all still got its projected roster
+-- back from here — she learned the draft exists and saw who it would go to.
+-- Bounded (that roster is her own class list) but pointless: read-tracking for
+-- a notice nobody has been able to read is a row of zeroes.
 --
 -- ⛔ PROTECTED PUPILS ARE INCLUDED, AND THE DENOMINATOR IS NOT REDUCED.
 -- The Phase-5 spec §7 says the opposite, transposing the 2026-08-03 mate-name
@@ -1403,7 +1671,8 @@ Create `supabase/migrations/20260806121000_announcement_read_status.sql`:
 -- announcements send no e-mail at all (D12) and the office's only instrument
 -- is the phone.
 create or replace function public.announcement_read_status(p_announcement_ids uuid[])
-returns table (announcement_id uuid, student_id uuid, display_name text, has_read boolean)
+returns table (announcement_id uuid, student_id uuid, display_name text,
+               has_read boolean, reachable boolean)
 language sql stable security definer set search_path = ''
 as $$
   select a.id,
@@ -1420,7 +1689,14 @@ as $$
                  where gs.student_id = s.id and gs.guardian_id = ar.user_id
                )
              )
-         )
+         ),
+         -- ★ Whether ANY account exists that could ever open it on this
+         -- pupil's behalf. Without it, a pupil with no guardian account and no
+         -- login of her own sits permanently in the unread list and the office
+         -- is told to phone a family that cannot be phoned through the portal.
+         (exists (select 1 from public.guardian_student gs
+                   where gs.student_id = s.id)
+          or s.student_user_id is not null)
   from public.announcements a
   -- distinct, because a pupil may hold two CLOSED enrolments whose intervals
   -- both contain published_at. class_students_one_active only forbids two OPEN
@@ -1437,7 +1713,11 @@ as $$
   where a.id = any (coalesce(p_announcement_ids, array[]::uuid[]))
     -- ★ The caller bind. In the select list it would decide what to SHOW; here
     -- it decides which announcements the rest of the query can even see.
-    and private.writes_announcement((select auth.uid()), a.class_id);
+    and private.writes_announcement((select auth.uid()), a.class_id)
+    -- ⚠ And read-tracking describes a PUBLISHED announcement. See the header:
+    -- without this, write authority hands back the projected roster of a
+    -- colleague's unpublished draft.
+    and a.published_at <= now();
 $$;
 -- ⚠ Name the roles — `from public` does not strip the explicit anon grant
 -- pg_default_acl gives to supabase_admin-created functions (the cloud path).
@@ -1445,7 +1725,7 @@ revoke execute on function public.announcement_read_status(uuid[]) from public;
 revoke execute on function public.announcement_read_status(uuid[]) from anon;
 grant execute on function public.announcement_read_status(uuid[]) to authenticated;
 comment on function public.announcement_read_status(uuid[]) is
-  'D10. Who, in the as-of roster at published_at, has read each announcement — one row per (announcement, pupil). Bound to admin or the class''s own teacher by private.writes_announcement inside the WHERE, so another class''s rows are ABSENT rather than filtered on display. Protected pupils are INCLUDED: this is a staff-only surface and staff already see them on the roster (see the migration header).';
+  'D10. Who, in the as-of roster at published_at, has read each announcement — one row per (announcement, pupil), for PUBLISHED announcements only. Bound to admin or the class''s own teacher by private.writes_announcement inside the WHERE, so another class''s rows are ABSENT rather than filtered on display. Protected pupils are INCLUDED: this is a staff-only surface and staff already see them on the roster. `reachable` is false for a pupil with no guardian account and no login of her own — she is in the denominator (the office needs to know she was in the class) but her has_read can never become true, and the screen must say so rather than print a name that never clears. See the migration header.';
 ```
 
 - [ ] **Step 2: Apply and regenerate types**
@@ -1456,10 +1736,10 @@ cd ~/dev/iqra-portal && supabase db reset && npm run db:types
 
 - [ ] **Step 3: Add §H to pgTAP 37**
 
-Bump `plan(39)` to `plan(47)` and insert this block **immediately after §G** (it depends on the read row assertion 31 inserted) and **before §J**:
+Bump `plan(47)` to `plan(60)` and insert this block **immediately after §G** (it depends on the two read rows §G's assertions 35 and 39 insert) and **before §J**:
 
 ```sql
--- ── §H 35-42 read-tracking (D10) ────────────────────────────────────
+-- ── §H 48-60 read-tracking (D10) ────────────────────────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}', true);
 set local role authenticated;
@@ -1488,8 +1768,33 @@ select is((select count(*) from public.announcement_read_status(
   'the roster''s EXCLUSIVE edge: the family that left on that day is not — the office must not be told to phone them about a notice they never got');
 select is((select count(*) from public.announcement_read_status(
              array['c0000000-0000-0000-0000-000000000041'::uuid])
-           where has_read), 1::bigint,
-  'A5: exactly one FAMILY has read it — the row assertion 31 inserted, counted once for the pupil and not once per guardian');
+           where has_read), 2::bigint,
+  'A5: exactly TWO FAMILIES have read it — Ordinær through ONE of her two guardians, and Startet through the pupil''s own login. Counted per pupil, never per user');
+-- ★ The second arm by name. Without it, deleting `ar.user_id =
+-- s.student_user_id` from the has_read exists reddens nothing at all: every
+-- read row in the first draft's fixture belonged to a guardian.
+select is((select count(*) from public.announcement_read_status(
+             array['c0000000-0000-0000-0000-000000000041'::uuid])
+           where student_id = 'c0000000-0000-0000-0000-000000000036' and has_read), 1::bigint,
+  'A5''s pupil arm: a pupil''s OWN login clears their family''s row — a secondary pupil is not a family who has not seen it');
+-- ⛔ A3's correction, pinned. «Skjermet» has no guardian account and no login,
+-- so no user is admitted on her behalf and her has_read can NEVER become true.
+-- She stays in the denominator; the screen says «ingen pålogging» rather than
+-- telling the office to phone a family that has no account.
+select is((select count(*) from public.announcement_read_status(
+             array['c0000000-0000-0000-0000-000000000041'::uuid])
+           where student_id = 'c0000000-0000-0000-0000-000000000035' and reachable), 0::bigint,
+  'A3: a pupil with no guardian account and no login of her own is NOT reachable — «0 av 3» could otherwise never reach 3 and nothing on screen would say why');
+select is((select count(*) from public.announcement_read_status(
+             array['c0000000-0000-0000-0000-000000000041'::uuid])
+           where student_id = 'c0000000-0000-0000-0000-000000000031' and reachable), 1::bigint,
+  'control: a pupil whose guardian has an account IS reachable — so the 0 above is the missing account, not a column stuck at false');
+-- Read-tracking describes a PUBLISHED announcement. The same actor reads this
+-- row perfectly well (assertion 19) and authored it — she still gets no
+-- projected roster for it, because there is nothing yet to have read it.
+select is((select count(*) from public.announcement_read_status(
+             array['c0000000-0000-0000-0000-000000000043'::uuid])), 0::bigint,
+  'a SCHEDULED announcement has no read-tracking at all — the projection binds on published rows, not on write authority alone');
 reset role;
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000003","role":"authenticated"}', true);
@@ -1513,8 +1818,15 @@ reset role;
 -- claim would have shipped unpinned.
 select is(pg_get_function_result(
     'public.announcement_read_status(uuid[])'::regprocedure),
-  'TABLE(announcement_id uuid, student_id uuid, display_name text, has_read boolean)',
-  'exactly four columns — a fifth is where a guardian''s name or a phone number would arrive');
+  'TABLE(announcement_id uuid, student_id uuid, display_name text, has_read boolean, reachable boolean)',
+  'exactly these five columns — a sixth is where a guardian''s name or a phone number would arrive');
+-- The same reason as §A's: 00_grant_firewall.sql sweeps tables, not functions.
+-- ★ AND THIS IS THE ONE THAT MATTERS. Without the revoke, an anon key — which
+-- ships in every browser bundle — executes a definer projection over every
+-- class roster in the school, BY NAME, with read state attached.
+select is(has_function_privilege('anon', 'public.announcement_read_status(uuid[])', 'EXECUTE'),
+  false,
+  'anon cannot execute announcement_read_status — this is the definer function on the PostgREST surface whose leak would be a roster, by name');
 ```
 
 - [ ] **Step 4: Run and mutate**
@@ -1523,23 +1835,29 @@ select is(pg_get_function_result(
 cd ~/dev/iqra-portal && docker exec -i supabase_db_iqra-portal psql -U postgres -q -f - < supabase/tests/37_announcements_rls.sql
 ```
 
-Expected: 47 `ok`.
+Expected: 60 `ok`.
 
-§H's assertions land at **35** (count = 3) · **36** (protected present) · **37** (inclusive edge present) · **38** (exclusive edge absent) · **39** (one family has read) · **40** (other teacher → 0) · **41** (guardian → 0) · **42** (return shape).
+§H's assertions land at **48** (count = 3) · **49** (protected present) · **50** (inclusive edge present) · **51** (exclusive edge absent) · **52** (two families have read) · **53** (the pupil-login arm) · **54** (Skjermet not reachable) · **55** (Ordinær reachable) · **56** (a scheduled row has no read-tracking) · **57** (other teacher → 0) · **58** (guardian → 0) · **59** (return shape) · **60** (anon cannot execute).
 
 | # | Mutation | Must redden | Must NOT redden |
 |---|---|---|---|
-| 1 | delete `and private.writes_announcement(…)` from the `where` | **40 and 41** | 35 |
-| 2 | move `private.writes_announcement(…)` out of the `where` and into the select list as a fifth column | 40, 41 **and 42** — the return type changes, which is what assertion 42 is for | — |
-| 3 | add `and not s.protected` to the roster — the change §7 asks for | **35 and 36** (the count drops to 2) | 40 |
-| 4 | `cs.enrolled_on <=` → `<` | **35 and 37** (Startet leaves the roster, count 2) | 40 |
-| 5 | `< cs.left_on` → `<=` | **35 and 38** (Sluttet joins the roster, count 4) | 40 |
-| 6 | drop the Oslo cast, both occurrences | ⚠ **37 and 38, NOT 35** — the resolved day moves to D-1, which pushes Startet out and pulls Sluttet in, so the count stays at 3 and the count assertion is blind to it | 35, 40 |
-| 7 | replace the guardian arm of the `has_read` exists with `false` | 39 | 35 |
+| 1 | delete `and private.writes_announcement(…)` from the `where` | **57 and 58** | 48 |
+| 2 | move `private.writes_announcement(…)` out of the `where` and into the select list as a **sixth** column ⚠ needs `drop function public.announcement_read_status(uuid[]);` first — a `create or replace` that changes the return type raises **42P13** | 57, 58 **and 59** — the return type changes, which is what assertion 59 is for | — |
+| 3 | add `and not s.protected` — the change §7 asks for ⚠ to the **OUTER `where`**, not the lateral: `s` is joined *after* the lateral and is not in scope inside it | **48, 49 and 54** (the count drops to 2 and both of Skjermet's assertions go with her) | 57 |
+| 4 | `cs.enrolled_on <=` → `<` | **48, 50, 52 and 53** (Startet leaves the roster, and takes her family's read with her) | 57 |
+| 5 | `< cs.left_on` → `<=` | **48 and 51** (Sluttet joins the roster, count 4) | 57 |
+| 6 | drop the Oslo cast, both occurrences | ⚠ **50, 51, 52 and 53 — NOT 48.** The resolved day moves to D-1, which pushes Startet out and pulls Sluttet in, so the count stays at 3 and the count assertion is blind to it | 48, 57 |
+| 7 | replace the guardian arm of the `has_read` exists with `false` | 52 | 48, 53 |
+| 8 | replace `ar.user_id = s.student_user_id` with `false` | **52 and 53** | 48 |
+| 9 | replace the whole `reachable` expression with `true` | 54 | 55 |
+| 10 | delete `and a.published_at <= now()` from the `where` | 56 | 48 |
+| 11 | `grant execute on function public.announcement_read_status(uuid[]) to anon` | 60 | 48 |
 
-⚠ Mutation 6 is the one worth reading. The count assertion cannot see it — two pupils swap places and 3 stays 3. That is why 37 and 38 exist, and it is the same lesson as plan 1's «the fixture was hiding the defect it sat next to»: a count over a set is invisible to any mutation that preserves the set's size.
+⚠ Mutation 6 is the one worth reading. The count assertion cannot see it — two pupils swap places and 3 stays 3. That is why 50 and 51 exist, and it is the same lesson as plan 1's «the fixture was hiding the defect it sat next to»: a count over a set is invisible to any mutation that preserves the set's size.
 
-⚠ Mutation 3 is not a bug being introduced — it is **the specification's own instruction**, applied, so the reviewer can see exactly what §7 would have cost. Record the reddened assertions in the commit body.
+⚠ Mutation 3 is not a bug being introduced — it is **the specification's own instruction**, applied, so the reviewer can see exactly what §7 would have cost. Record the reddened assertions in the commit body. Note that it takes assertion 54 with it: the pupil §7 wants hidden is the same pupil A3's `reachable` column exists to explain, which is exactly why the fixture needed both.
+
+⚠ Mutations 2 and 9 change the function's shape or its output. After **every** restore, run the md5 check in standing rule 3 — and after mutation 2 in particular, confirm the function is back to five columns with `pg_get_function_result` rather than trusting that the drop-and-recreate ran.
 
 - [ ] **Step 5: Commit**
 
@@ -1549,7 +1867,7 @@ git add supabase/migrations/20260806121000_announcement_read_status.sql supabase
 git commit -m "feat(oppslag): who has read it, through a projection rather than a wider policy"
 ```
 
-Body must state the A4 reversal explicitly — that spec §7 asks for protected pupils to be omitted, that the two migrations it was transposed from say the opposite for staff surfaces, and that a witness assertion now pins the decision.
+Body must state the A4 reversal explicitly — that spec §7 asks for protected pupils to be omitted, that the two migrations it was transposed from say the opposite for staff surfaces, and that a witness assertion now pins the decision. It must also state that the projection returns **five** columns, that the fifth exists because the denominator is the roster and not the set the read predicate admits (A3), and that the return-shape assertion was updated deliberately in the same commit rather than "fixed" afterwards.
 
 ---
 
@@ -1638,10 +1956,10 @@ cd ~/dev/iqra-portal && supabase db reset && npm run db:types
 
 - [ ] **Step 3: Add §I to pgTAP 37**
 
-Bump `plan(47)` to `plan(52)` and insert **after §H, before §J**:
+Bump `plan(60)` to `plan(66)` and insert **after §H, before §J**:
 
 ```sql
--- ── §I 43-47 the scheduled-publish claim (§11 3b) ───────────────────
+-- ── §I 61-66 the scheduled-publish claim (§11 3b) ───────────────────
 select set_config('request.jwt.claims',
   '{"sub":"c0000000-0000-0000-0000-000000000004","role":"authenticated"}', true);
 set local role authenticated;
@@ -1650,6 +1968,10 @@ select throws_ok(
   '42501', null,
   'the claim is service_role only — a logged-in parent could otherwise burn every pending fan-out in one call');
 reset role;
+-- Third of the three function ACLs nothing else in the suite sweeps (§A, §H).
+select is(has_function_privilege('anon', 'public.claim_due_announcements()', 'EXECUTE'),
+  false,
+  'and anon cannot execute it either — the revoke names anon explicitly because pg_default_acl grants it in the cloud path');
 
 set local role service_role;
 select is((select count(*) from public.claim_due_announcements()), 0::bigint,
@@ -1661,9 +1983,17 @@ reset role;
 update public.announcements set fanned_out_at = null
   where id = 'c0000000-0000-0000-0000-000000000041';
 set local role service_role;
-select is((select announcement_id from public.claim_due_announcements()),
-  'c0000000-0000-0000-0000-000000000041'::uuid,
-  'the claim returns exactly the due, unannounced announcement');
+-- ⚠ array_agg, NOT a scalar subquery. `select (select announcement_id from …)`
+-- raises `more than one row returned by a subquery used as an expression` the
+-- moment the claim returns two rows — which is exactly what mutation 1 makes it
+-- do. That error is not a red assertion: it ABORTS the transaction, every later
+-- statement fails 25P02 and finish() never runs, so the mutation that matters
+-- most in this section would have read as a broken file rather than as a
+-- caught defect.
+select is((select array_agg(announcement_id order by announcement_id)
+             from public.claim_due_announcements()),
+  array['c0000000-0000-0000-0000-000000000041'::uuid],
+  'the claim returns exactly the due, unannounced announcement — and nothing else');
 select is((select count(*) from public.claim_due_announcements()), 0::bigint,
   'and a second call returns nothing — the stamp is the idempotence, which is why plan 3 must not "repair" a lost fan-out by re-running');
 reset role;
@@ -1680,18 +2010,21 @@ select is((select fanned_out_at from public.announcements
 cd ~/dev/iqra-portal && docker exec -i supabase_db_iqra-portal psql -U postgres -q -f - < supabase/tests/37_announcements_rls.sql
 ```
 
-Expected: 52 `ok`.
+Expected: 66 `ok`.
 
-§I's assertions land at **43** (authenticated → 42501) · **44** (nothing to claim) · **45** (the claim returns exactly `…041`) · **46** (a second claim returns nothing) · **47** (`…043` is never claimed).
+§I's assertions land at **61** (authenticated → 42501) · **62** (anon cannot execute) · **63** (nothing to claim) · **64** (the claim returns exactly `…041`) · **65** (a second claim returns nothing) · **66** (`…043` is never claimed).
 
 | # | Mutation | Must redden | Must NOT redden |
 |---|---|---|---|
-| 1 | delete `and b.fanned_out_at is null` | 46 (a second claim returns the row again) | 45 |
-| 2 | delete `and b.published_at <= now()` | 47 (the scheduled row is claimed early) | 45 |
-| 3 | `grant execute on function public.claim_due_announcements() to authenticated` | 43 | 45 |
-| 4 | `stamp_announcement_fanout`: `return new;` with the assignment deleted | 44 (there is suddenly a backlog to claim) | 43 |
+| 1 | delete `and b.fanned_out_at is null` | **63, 64 and 65** — every published row is claimable, so the first call is no longer empty, the array is no longer `[…041]`, and the second call repeats | 61 |
+| 2 | delete `and b.published_at <= now()` | **63 and 66** — the two future rows are claimed by the FIRST call, which is what leaves 64 green | 64 |
+| 3 | `grant execute on function public.claim_due_announcements() to authenticated` | 61 | 64 |
+| 4 | `stamp_announcement_fanout`: `return new;` with the assignment deleted | 63 (there is suddenly a backlog to claim) | 61 |
+| 5 | `grant execute on function public.claim_due_announcements() to anon` | 62 | 61 |
 
-⚠ Mutation 4 belongs to Task 1's trigger but has no assertion there — assertion 44 is the only thing in the suite that can see it. Note that in the commit body.
+⚠ Mutation 4 belongs to Task 1's trigger but has no assertion there — assertion 63 is the only thing in the suite that can see it. Note that in the commit body.
+
+⚠ Mutation 1 is the reason assertion 64 is written with `array_agg`. Under the scalar-subquery spelling it would have raised `more than one row returned by a subquery` instead of failing, aborting the file at that point and taking 65 and 66 with it — a mutation that "worked" by destroying the evidence.
 
 - [ ] **Step 5: Commit**
 
@@ -1761,6 +2094,11 @@ Append to the `values` list, before the closing `) as f(sig, markers);`:
         'private.guardian_in_class_asof',
         'private.student_in_class_asof',
         'cls is null',
+        -- The role gate on the school-wide arm (A15). Without it `cls is null`
+        -- admits any authenticated account, including one with no user_roles
+        -- row at all — and `cls is null` alone would still satisfy its own
+        -- marker while that happened.
+        'public.user_roles',
         'pub <= now()'
       ]
     ),
@@ -1798,6 +2136,9 @@ Append to the `values` list, before the closing `) as f(sig, markers);`:
       'public.announcement_read_status(uuid[])',
       array[
         'private.writes_announcement',
+        -- Read-tracking describes PUBLISHED announcements. Deleting this line
+        -- hands a co-teacher the projected roster of a colleague's draft.
+        'a.published_at <= now()',
         'cs.enrolled_on <=',
         'cs.left_on',
         'Europe/Oslo'
@@ -1815,23 +2156,29 @@ Append to the `values` list, before the closing `) as f(sig, markers);`:
     )
 ```
 
-Then update the counter. **Expected new value: 49 + 26 = 75**, from these per-entry marker counts:
+Then update the counter. **Expected new value: 49 + 28 = 77**, from these per-entry marker counts:
 
 | entry | markers |
 |---|---|
 | `guardian_in_class_asof` | 4 |
 | `student_in_class_asof` | 4 |
-| `reads_announcement_row` | 6 |
+| `reads_announcement_row` | 7 |
 | `reads_announcement` | 1 |
 | `writes_announcement` | 3 |
 | `can_edit_announcement` | 2 |
-| `announcement_read_status` | 4 |
+| `announcement_read_status` | 5 |
 | `claim_due_announcements` | 2 |
-| **added** | **26** |
+| **added** | **28** |
 
-⛔ **Do not take 75 on trust.** Apply the edit, run the file, and if assertion 1 reports a different number, **count the markers in the entries you actually wrote** and correct this document. Never nudge the counter to make a failure go away — that is the file's own standing instruction, and plan 1's ledger records the plan getting this arithmetic wrong twice (26 → "31", when the true value was 43).
+⛔ **Do not take 77 on trust.** Apply the edit, run the file, and if assertion 1 reports a different number, **count the markers in the entries you actually wrote** and correct this document. Never nudge the counter to make a failure go away — that is the file's own standing instruction, and plan 1's ledger records the plan getting this arithmetic wrong twice (26 → "31", when the true value was 43).
 
-Also update the comment above the counter, which currently narrates the 26 → 43 → 48 → 49 history, with the 49 → 75 step and the same "these are pairs, not functions" warning.
+Also update the comment above the counter, which currently narrates the 26 → 43 → 48 → 49 history, with the 49 → 77 step and the same "these are pairs, not functions" warning.
+
+⚠ **And two lines of prose in the same file are now wrong.** Its header says *"The live SECURITY DEFINER count is 52"* (and again, *"not all 52 SECURITY DEFINER functions"*). This plan adds **eight** definer functions — the two as-of helpers, the two read predicates, `writes_announcement`, `can_edit_announcement`, `announcement_read_status`, `claim_due_announcements` — so both numbers become **60**. `private.stamp_announcement_fanout` is deliberately not one of them. Verify rather than assume:
+
+```bash
+docker exec supabase_db_iqra-portal psql -U postgres -q -t -A -c "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.prosecdef and n.nspname in ('public','private');"
+```
 
 - [ ] **Step 3: Run it**
 
@@ -1851,7 +2198,24 @@ A fingerprint catches a **deletion**, never a **rewrite** — this file's own co
 | 2 | `announcement_read_status`: delete `and private.writes_announcement(…)` | `'private.writes_announcement'` |
 | 3 | `guardian_in_class_asof`: replace `(pub at time zone 'Europe/Oslo')::date` with `pub::date` | `'Europe/Oslo'` |
 
-⚠ **And run the F1 check.** Rename `reads_announcement_row`'s parameters to `(uid uuid, class_id uuid, published_at timestamptz, created_by uuid)` **and** delete the `cls is null` arm. It should redden, because `'cls is null'` then appears nowhere. If it does **not** redden, a marker is being satisfied by the header and must be rewritten — that is the whole content of finding F1.
+⚠ **And run the F1 check** — but it cannot be done with `create or replace`. Renaming an input parameter raises `cannot change name of input parameter`, and the function cannot simply be dropped either: `announcements_select_audience` and `private.reads_announcement` both depend on it. The sequence is:
+
+```sql
+begin;
+drop policy "announcements_select_audience" on public.announcements;
+drop function private.reads_announcement(uuid, uuid);
+drop function private.reads_announcement_row(uuid, uuid, timestamptz, uuid);
+-- recreate it with the parameters named class_id / published_at / created_by
+-- AND with the `cls is null` arm deleted, then re-run 29_definer_fingerprints.
+-- It must go red: 'cls is null' now appears nowhere, neither in the body nor
+-- in the header. If it stays GREEN, a marker is being satisfied by the
+-- parameter list and must be rewritten — that is the whole content of F1.
+rollback;   -- ⚠ roll back rather than restoring by hand: three objects,
+            -- and a partial restore leaves the table with no SELECT policy
+            -- at all, which reads as "everything is denied" in every later run.
+```
+
+Run it in one transaction against the reset database and roll back; then confirm with the md5 check in standing rule 3 **and** `select count(*) from pg_policy where polrelid = 'public.announcements'::regclass` — expect **5** (select, insert, update, and the two deletes).
 
 - [ ] **Step 5: Commit**
 
@@ -1861,7 +2225,7 @@ git add supabase/tests/29_definer_fingerprints.sql
 git commit -m "test(oppslag): fingerprint the announcement predicates and the two projections"
 ```
 
-Body must state the new counter value, that it counts pairs rather than functions, and that the parameter names of `reads_announcement_row` are load-bearing for three markers.
+Body must state the new counter value **as measured**, that it counts pairs rather than functions, that the parameter names of `reads_announcement_row` are load-bearing for three markers, and that the file's own «the live SECURITY DEFINER count is 52» prose moved to 60 in the same commit.
 
 ---
 
@@ -1906,8 +2270,15 @@ export interface AnnouncementRow {
  * query and not from fanned_out_at. fanned_out_at is about NOTIFICATIONS; a
  * scheduled announcement is readable at published_at whether or not anything
  * ever announced it.
+ *
+ * ⛔ NOT EXPORTED, ON PURPOSE. Its only callers are the three role wrappers in
+ * this same module, and knip reports an export consumed only inside its own
+ * module as an unused export — at ERROR level, since knip.json downgrades only
+ * `types` and `enumMembers`. (The `listThreads` precedent does not apply: that
+ * one is imported by src/lib/admin/threads.ts.) Exporting it would fail
+ * `npm run knip` in Task 7 step 6 and every gate after it.
  */
-export async function listAnnouncements(): Promise<AnnouncementRow[]> {
+async function listAnnouncements(): Promise<AnnouncementRow[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('announcements')
@@ -2112,7 +2483,7 @@ In `src/app/(portal)/laerer/LaererNav.tsx`, add to `ITEMS` after «Meldinger»:
   { href: '/laerer/oppslag', label: 'Oppslag', exact: false },
 ```
 
-⚠ `AdminNav.tsx` carries a comment saying «Meldinger» is *"Last, as on the other three navs"*. That becomes false in Task 10 — update the comment there, in that task, rather than leaving a stale one behind.
+⚠ `AdminNav.tsx` carries a comment saying «Meldinger» is *"Last, as on the other three navs"*. **That sentence is already false today** — verified 2026-08-06: `LaererNav`'s items are I dag · Oppgaver · **Meldinger** · **Vurdering**, so Meldinger is last on three navs, not four. And this task makes it falser still, by putting Oppslag between Meldinger and Vurdering. Task 10 rewrites it; what it must not do is replace one wrong sentence with another («the last two, in that order, on all four navs» would also be false). The true statement after this plan is: **Oppslag sits directly after Meldinger on all four navs; on LaererNav both are followed by Vurdering.**
 
 - [ ] **Step 6: Verify**
 
@@ -2145,23 +2516,96 @@ Body must state why the audience label keys on `class_id` rather than on the cla
 - Create: `src/app/(portal)/laerer/oppslag/ny/page.tsx`
 - Create: `src/app/(portal)/laerer/oppslag/ny/NewAnnouncementForm.tsx`
 - Create: `src/app/(portal)/laerer/oppslag/[announcementId]/page.tsx`
+- Create: `src/app/(portal)/laerer/oppslag/[announcementId]/AnnouncementControls.tsx`
 - Create: `src/app/(portal)/laerer/oppslag/actions.ts`
+- Modify: `src/lib/dates.ts` + `src/lib/dates.test.ts` (`osloLocalToInstant`)
 - Modify: `src/lib/dal/announcements.ts`
 - Modify: `src/app/action-guards.test.ts` (73 → 76)
 
-- [ ] **Step 1: Write the schemas**
+- [ ] **Step 1: Convert the picked time to an instant — then write the schemas**
 
-Create `src/lib/validation/announcements.ts`:
+⛔ **`new Date('2026-11-07T07:00').toISOString()` is WRONG, and it is wrong only in production.** A `datetime-local` input yields a bare wall-clock string with no zone; `new Date()` parses it in the **server's** timezone. Vercel runs UTC:
+
+```
+teacher picked 07:00 Oslo -> '2026-11-07T07:00'
+toISOString()             -> '2026-11-07T07:00:00.000Z'
+rendered back in Oslo     -> 07.11.2026, 08:00     ← an hour late
+summer (2026-06-06T07:00) -> 09:00                 ← two hours late
+```
+
+D8's own example is «publiser lørdag 07:00». **This plan spends A8 closing exactly this hazard in SQL, and the first draft then reopened it in TypeScript** — in both the teacher and the admin action, and in the zod `refine`, which computes `Date.parse(v)` the same way, so inside the first hour or two the validator and `announcements_not_backdated` disagree about what "in the past" means. The dev machine runs Europe/Oslo, so **the walkthrough shows the right time and the defect ships**.
+
+Add to `src/lib/dates.ts`, beside the six other Europe/Oslo pins:
+
+```ts
+/**
+ * A `datetime-local` value («2026-11-07T07:00») is a wall-clock reading with no
+ * zone. Read it as OSLO wall-clock and return the instant it names.
+ *
+ * ⚠ new Date(value) parses it in the SERVER's zone, and production runs UTC —
+ * so a notice a teacher scheduled for 07:00 would publish at 08:00 (09:00 in
+ * summer). The dev machine runs Europe/Oslo, which is why no walkthrough can
+ * see this. Same lesson as osloDateOf and formatDateTimeNb, other direction.
+ *
+ * Returns an Invalid Date for anything that is not `YYYY-MM-DDTHH:mm`; callers
+ * check with Number.isNaN(d.getTime()).
+ */
+export function osloLocalToInstant(value: string): Date {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return new Date(NaN);
+  const [, y, mo, d, h, mi] = m;
+  const naive = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+  // The offset read AT the naive instant is right everywhere except inside the
+  // one hour a DST shift moves; re-reading it at the corrected instant settles
+  // that. Two passes, no dependency.
+  const corrected = naive - osloOffsetMs(naive);
+  return new Date(naive - osloOffsetMs(corrected));
+}
+
+/** How far ahead of UTC Oslo is at a given instant, in ms. */
+function osloOffsetMs(utcMs: number): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Oslo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(utcMs));
+  const at = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+  return Date.UTC(at('year'), at('month') - 1, at('day'),
+                  at('hour'), at('minute'), at('second')) - utcMs;
+}
+```
+
+And its tests in `src/lib/dates.test.ts` — these must hold **whatever zone the runner is in**, which is the whole defect:
+
+```ts
+describe('osloLocalToInstant', () => {
+  it('reads a winter wall-clock as CET, not as the runner clock', () => {
+    expect(osloLocalToInstant('2026-11-07T07:00').toISOString()).toBe('2026-11-07T06:00:00.000Z');
+  });
+  it('reads a summer wall-clock as CEST', () => {
+    expect(osloLocalToInstant('2026-06-06T07:00').toISOString()).toBe('2026-06-06T05:00:00.000Z');
+  });
+  it('is invalid for a value that is not a datetime-local', () => {
+    expect(Number.isNaN(osloLocalToInstant('i går').getTime())).toBe(true);
+  });
+});
+```
+
+⚠ Run them with `TZ=UTC npx vitest run src/lib/dates.test.ts` **as well as** the default. A test that only passes on a machine set to Europe/Oslo is precisely the instrument this defect defeated.
+
+Then create `src/lib/validation/announcements.ts`:
 
 ```ts
 import { z } from 'zod';
+import { osloLocalToInstant } from '@/lib/dates';
 import { uuidField } from './school';
 
 /**
- * Mirrors the DB CHECK constraints exactly (1..140, 1..4000) — one rule, two
- * layers, never two rules. uuidField is z.guid, not z.uuid: the seed's readable
- * UUIDs fail the RFC 9562 variant nibble and z.uuid() would reject every
- * fixture.
+ * Mirrors the DB CHECK constraints exactly (1..140, 1..4000, and both bounds on
+ * published_at) — one rule, two layers, never two rules. uuidField is z.guid,
+ * not z.uuid: the seed's readable UUIDs fail the RFC 9562 variant nibble and
+ * z.uuid() would reject every fixture.
  */
 const titleField = z
   .string()
@@ -2185,9 +2629,20 @@ const bodyField = z
  * so an immediate publish would 23514 intermittently. Omitting the column lets
  * the server default fire, which is the only value that cannot lose.
  *
+ * ⚠ AND THE STRING IS READ AS OSLO WALL-CLOCK, NEVER WITH Date.parse. Date.parse
+ * of a zone-less datetime-local uses the SERVER's zone, and production runs UTC
+ * — so on Vercel this refine and announcements_not_backdated disagree by one or
+ * two hours about what "in the past" means, and a time the teacher picked
+ * half an hour ago sails through validation and schedules an hour late.
+ *
  * The one-minute floor exists so the same Norwegian sentence covers both the
- * validation refusal and the 23514 a genuine race would still produce.
+ * validation refusal and the 23514 a genuine race would still produce. The
+ * 120-day ceiling mirrors announcements_schedule_bound (A1) — the CHECK is the
+ * wall, but only this layer produces a sentence the teacher can act on, and
+ * PG_ERROR.CHECK cannot tell the two constraints apart.
  */
+const SCHEDULE_BOUND_MS = 120 * 24 * 60 * 60 * 1000;
+
 export const announcementSchema = z.object({
   classId: z.union([uuidField, z.literal('')]).transform((v) => (v === '' ? null : v)),
   title: titleField,
@@ -2197,10 +2652,16 @@ export const announcementSchema = z.object({
     .trim()
     .transform((v) => (v === '' ? undefined : v))
     .refine(
-      (v) =>
-        v === undefined ||
-        (!Number.isNaN(Date.parse(v)) && Date.parse(v) > Date.now() + 60_000),
+      (v) => v === undefined || !Number.isNaN(osloLocalToInstant(v).getTime()),
+      'Ugyldig tidspunkt.',
+    )
+    .refine(
+      (v) => v === undefined || osloLocalToInstant(v).getTime() > Date.now() + 60_000,
       'Publiseringstidspunktet må være minst ett minutt fram i tid.',
+    )
+    .refine(
+      (v) => v === undefined || osloLocalToInstant(v).getTime() < Date.now() + SCHEDULE_BOUND_MS,
+      'Et oppslag kan planlegges høyst 120 dager fram i tid.',
     ),
 });
 
@@ -2299,6 +2760,13 @@ export interface ReadStatusRow {
   studentId: string;
   displayName: string;
   hasRead: boolean;
+  /**
+   * Whether ANY account exists that could open it on this pupil's behalf — a
+   * guardian's or the pupil's own. False means `hasRead` can never become true,
+   * so the screen must say «ingen pålogging» rather than list a name the office
+   * is meant to chase (A3).
+   */
+  reachable: boolean;
 }
 
 /**
@@ -2327,6 +2795,7 @@ export async function getReadStatus(
       studentId: row.student_id,
       displayName: row.display_name,
       hasRead: row.has_read,
+      reachable: row.reachable,
     });
     byAnnouncement.set(row.announcement_id, list);
   }
@@ -2367,6 +2836,7 @@ Create `src/app/(portal)/laerer/oppslag/actions.ts`:
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { osloLocalToInstant } from '@/lib/dates';
 import { requireStaffRole } from '@/lib/dal/session';
 import { PG_ERROR } from '@/lib/pg-error';
 import { createClient } from '@/lib/supabase/server';
@@ -2384,6 +2854,11 @@ import { firstIssue, type FormState } from '@/lib/validation/school';
  * ⚠ published_at is OMITTED for an immediate publish. Sending a
  * client-computed now() races the server's default and trips
  * announcements_not_backdated (23514) on a perfectly legitimate publish.
+ *
+ * ⚠ And when it is sent, it goes through osloLocalToInstant. `new Date(value)`
+ * would read the picked wall-clock in the SERVER's zone, which is UTC on
+ * Vercel — publishing «lørdag 07:00» at 08:00, or 09:00 in summer. A8 closes
+ * this in SQL; this is the same hazard on the way in.
  */
 export async function createAnnouncementAction(
   _prev: FormState,
@@ -2408,10 +2883,17 @@ export async function createAnnouncementAction(
     body: parsed.data.body,
     created_by: user.id,
     ...(parsed.data.publisertAt
-      ? { published_at: new Date(parsed.data.publisertAt).toISOString() }
+      ? { published_at: osloLocalToInstant(parsed.data.publisertAt).toISOString() }
       : {}),
   });
   if (error) {
+    // ⚠ 23514 reaches here from FOUR constraints — the two published_at bounds
+    // and the two length CHECKs — and the code cannot tell them apart. The
+    // lengths are unreachable (zod runs first, with the same limits) and the
+    // 120-day bound is unreachable for the same reason, so the only refusal
+    // that realistically arrives is the back-dating race this sentence names.
+    // If a length or bound ever does get here, the sentence is wrong rather
+    // than dangerous — but that is why both limits are mirrored in zod.
     if (error.code === PG_ERROR.CHECK) {
       return { error: 'Publiseringstidspunktet må være fram i tid.' };
     }
