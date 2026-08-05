@@ -34,6 +34,17 @@ The spec orders work, and the work invalidates the spec's own numbers. Every one
 
 ★ Two of these counters are hard-coded literals that redden on every addition. Bump each **once, deliberately**, in the task that causes it, and state the new number in the commit message.
 
+⚠ **The npm scripts are NOT what an earlier draft of this plan assumed.** Measured 2026-08-05 against `package.json` — `npm run test:db` and `npm run test:unit` **do not exist** and fail with `Missing script`. The real set is:
+
+| Purpose | Command |
+|---|---|
+| pgTAP suite | `npx supabase test db` (no npm script wraps it) |
+| one pgTAP file | `npx supabase test db --file supabase/tests/NN_name.sql` |
+| unit suite | `npm test` (= `vitest run`) |
+| api suite | `npm run test:api` |
+| typecheck | `npm run typecheck` (= `tsc --noEmit`) |
+| lint · knip | `npm run lint` · `npm run knip` |
+
 **Verified as still TRUE** (do not re-check, but do not loosen):
 - `public.profiles` holds `grant update (full_name, phone, locale) on public.profiles to authenticated` and **no table-level UPDATE grant** (`20260716170230_core_identity.sql:122`). A new column is therefore **not** writable by default.
 - `service_role` carries **BYPASSRLS** (`20260716170230_core_identity.sql:115`), so no table needs a service_role policy — only grants.
@@ -134,7 +145,7 @@ Expected: `clear`. If not, wait — do not reset the database.
 - [ ] **Step 3: Record the baseline**
 
 ```bash
-cd ~/dev/iqra-portal && npm run test:db 2>&1 | tail -5
+cd ~/dev/iqra-portal && npx supabase test db 2>&1 | tail -5
 ```
 
 Expected: `Files=38, Tests=842, PASS`. Any other number means the tree is not what this plan was written against — stop and reconcile.
@@ -142,7 +153,7 @@ Expected: `Files=38, Tests=842, PASS`. Any other number means the tree is not wh
 - [ ] **Step 4: Record the unit and typecheck baseline**
 
 ```bash
-cd ~/dev/iqra-portal && npm run test:unit 2>&1 | tail -4 && npx tsc --noEmit && echo "TSC OK"
+cd ~/dev/iqra-portal && npm test 2>&1 | tail -4 && npx tsc --noEmit && echo "TSC OK"
 ```
 
 Expected: 54 files / 600 tests passing, then `TSC OK`.
@@ -428,7 +439,7 @@ Expected: FAIL — `relation "public.notifications" does not exist`.
 - [ ] **Step 4: Apply the migration and run again**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
 Expected: `Files=39, Tests=857, PASS` (842 + 15).
@@ -529,7 +540,7 @@ Expected: FAIL — the array is `{full_name,locale,phone}`, missing `email_pings
 - [ ] **Step 4: Apply and re-run**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
 Expected: `Files=39, Tests=859, PASS`.
@@ -858,7 +869,7 @@ Expected: FAIL — `relation "private.email_pings" does not exist`.
 - [ ] **Step 4: Apply and re-run**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
 Expected: `Files=39, Tests=871, PASS`.
@@ -1225,7 +1236,7 @@ Expected: FAIL — `function private.thread_recipients(uuid) does not exist`.
 - [ ] **Step 4: Apply and re-run the whole suite**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
 Expected: `Files=39, Tests=885, PASS`.
@@ -1551,7 +1562,7 @@ Expected: FAIL at assertion 31 — the immediate publish produces no notificatio
 - [ ] **Step 4: Apply and run the whole suite**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
 Expected: `Files=39, Tests=897, PASS`.
@@ -2904,7 +2915,7 @@ Create `src/app/(portal)/admin/varsler/page.tsx` — a server component that cal
 Change `expect(allActions.length).toBe(82);` to `83`, and add the nav entry `{ href: '/admin/varsler', label: 'Varsler', exact: false }` to `AdminNav.tsx`.
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -4 && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -4 && npx tsc --noEmit && echo OK
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -4 && npx tsc --noEmit && echo OK
 ```
 
 Expected: pgTAP `Files=39, Tests=897, PASS`, action-guards PASS with 83, `OK`.
@@ -2991,7 +3002,7 @@ because nothing works at all is the failure this file is built against."
 - [ ] **Step 1: Full suite from a clean database**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -4 && npm run test:unit 2>&1 | tail -4 && npx tsc --noEmit && npm run lint 2>&1 | tail -4 && npm run build 2>&1 | tail -8
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npm test 2>&1 | tail -4 && npx tsc --noEmit && npm run lint 2>&1 | tail -4 && npm run build 2>&1 | tail -8
 ```
 
 Expected: pgTAP `Files=39, Tests=897` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
@@ -3050,7 +3061,7 @@ Run the audit skill over `VarselBell.tsx`, `profil/page.tsx` and `admin/varsler/
 
 ## Review ledger — 2026-08-05, author's own pass
 
-CLAUDE.md requires a review of the plan itself before a line is executed, on the reasoning that a design bug in a plan is copied faithfully into every task that follows it. This pass ran cold against the tree, not against the plan's internal consistency. **Six defects, all fixed above.**
+CLAUDE.md requires a review of the plan itself before a line is executed, on the reasoning that a design bug in a plan is copied faithfully into every task that follows it. This pass ran cold against the tree, not against the plan's internal consistency. **Seven defects, all fixed above.**
 
 | # | Defect | Why it mattered |
 |---|---|---|
@@ -3061,7 +3072,9 @@ CLAUDE.md requires a review of the plan itself before a line is executed, on the
 | **R5** | Task 6's fingerprint entries used a `(function, predicate)` **pair** shape | The real table is `('schema.fn(argtypes)', array[…markers…])`, the name carries its signature, and the counter counts **markers**, not rows. The five entries as written would not have compiled; the counter arithmetic (83 → 88) was also wrong — it is **93**. |
 | **R6** | ★ **The announcement fan-out belled every admin on every class notice** | `private.reads_announcement_row`'s second clause is `or private.has_role(uid, 'admin')`, so an admin reads *everything*. The spec asserted announcements had «no analogue of bare oversight to subtract»; **the tree says the opposite**. At ten classes that is ~ten unwanted bells a week, diluting the one surface D12 made load-bearing. Fixed with a carve-out that keys on the **relationship, not the role** (D24's lesson), so an admin who is also a guardian still hears about their own child. |
 
-★ **Five of the six are the same species: a claim about the repo that was true of the spec and false of the tree.** R6 is the one that would have shipped — it is behaviour, not a test error, and no assertion existed that could have caught it because the plan had not thought to write one. Assertion 35 now exists and has a named mutation.
+| **R7** | Every verification command used `npm run test:db` and `npm run test:unit` — **neither script exists** | Measured: `npm error Missing script: "test:db"`. Ten occurrences, including Task 0's baseline step. An executor would have hit it on the first command of the first task. The pgTAP suite has no npm wrapper at all; it is `npx supabase test db`, and the unit suite is plain `npm test`. ⚠ I wrote these from memory of the project rather than from `package.json` — the exact failure this ledger's other six entries are about, committed while writing the ledger about them. |
+
+★ **Five of the seven are the same species: a claim about the repo that was true of the spec and false of the tree.** R6 is the one that would have shipped — it is behaviour, not a test error, and no assertion existed that could have caught it because the plan had not thought to write one. Assertion 35 now exists and has a named mutation.
 
 ★ **R4 is the one worth generalising.** It reads correctly, it would pass every test in this plan on most runs, and it fails only under a planner decision nobody controls. The class — *a side effect placed where SQL only promises a value* — is invisible to both review-by-reading and test-by-running.
 
