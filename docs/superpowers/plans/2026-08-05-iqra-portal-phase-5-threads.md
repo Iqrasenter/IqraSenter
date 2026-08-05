@@ -2751,3 +2751,80 @@ The office picker lists **individual admins by name** rather than one «Kontoret
 entry, because `can_start_thread` needs a concrete admin uuid. If the school
 would rather families saw a single «Kontoret» option, that is a routing decision
 — someone has to say which admin receives it.
+
+## Review of the unplanned migration — `20260805122000_guardian_thread_options.sql`
+
+CLAUDE.md routes RLS changes to the panel; this one was written during execution
+and had not had it. A focused review was dispatched. **Verdict: no security
+defect.** The projection is a faithful mirror of `can_start_thread` and the
+caller bind is a genuine wall — both proved by execution, not argued.
+
+What the reviewer established by running it, rather than reading it:
+
+- **No over-offer and no under-offer.** `private.teaches_student` *is literally*
+  the join the `laerer` arm uses, not an approximation; `has_role` is a bare
+  `exists`, which the `kontor` arm reproduces; conjunct 3 is spelled identically
+  in both places. `class_subjects` has no `teacher_id`, so `class_teachers` is
+  the only teacher↔class edge and the derivation is complete.
+- **The bind is structural.** The function takes **no arguments at all**, so
+  another family's pupil id cannot be named. Measured: a guardian sees exactly
+  one pupil; the pupil's own teacher, the pupil's own login, an admin who guards
+  nobody, empty JWT claims and `service_role` all get **0 rows**.
+- **The leak surface is exactly four columns.** `public.profiles` has no `email`
+  column at all — email lives in `auth.users`, unreachable from here — and
+  `phone`/`locale` are unreachable. `role='economy'` holders are not offered.
+- **Owner `postgres` is `rolbypassrls = t` and NOT superuser**, which is what
+  makes the `not exists` exclusions fail **closed** under FORCE RLS.
+- Marker-pair count independently recomputed from the file text: **48**. The
+  43 → 48 bump is correct.
+
+### ⚠ One real test gap, with a validated fix — TO APPLY
+
+The **pupil-login exclusion is completely unpinned**. Two mutants, each rolled
+back:
+
+| mutant | file 36 | file 29 |
+|---|---|---|
+| delete the whole `not exists` block | **all 13 pass** | `not ok 2` — the marker catches it |
+| change `s.student_user_id = c.staff_id` → `= c.student_id` (exclusion logically dead, marker word intact) | **all 13 pass** | **`ok 1`, `ok 2` — nothing red anywhere** |
+
+File 29's own comment claims the fingerprint is "the only thing standing between
+that exclusion and a silent deletion". True for *deletion*, false for *drift* —
+the marker is a literal string, and a one-token column swap defeats both layers.
+Same shape as the Phase-4 "fixture hiding the defect it sat next to": the
+conjunct with no witness is the one that rots.
+
+Consequence if it rots is not escalation — `can_start_thread` still refuses the
+INSERT — but exactly the dead-end option the projection exists to prevent.
+
+Fix is one fixture row plus one assertion, validated end to end by the reviewer:
+unmutated **14/14 ok**, and under either mutant assertions **5, 6 and the new 10
+all go red**. Applied after Tasks 10–11 land, to avoid racing that agent's
+commits.
+
+### D-OPEN-5 — a live product consequence, and it needs the school
+
+Per this migration's own note, most admins at IQRA are also parents. Conjunct 3
+of `can_start_thread` refuses an admin who guards the pupil as that pupil's
+counterpart — correctly, since it would be a self-thread. But it means **in a
+school whose only admin is a parent, that admin's own family has no «Kontoret»
+option at all** and is told to phone the school instead.
+
+That is faithful to the predicate, not a projection bug. It is still a real
+consequence somebody at IQRA should agree to. The empty-state copy currently
+names two causes for an empty recipient list (no live class, no office account)
+and omits this third one, which is the likeliest.
+
+### Two comment-accuracy items, not defects
+
+- The `union` comment names two premises the schema forbids: a teacher of two of
+  the child's live classes is impossible (`class_students_one_active` is
+  `UNIQUE (student_id) WHERE left_on IS NULL` — proved by triggering the
+  violation), and `union` does **not** collapse a teaching rektor into one row,
+  because the rows differ in `kind`. Mutant `union` → `union all` survives all 13
+  assertions, because the forms are provably equivalent here. Keep `union` as
+  free defence; fix the comment.
+- Marker `'gs.guardian_id = (select auth.uid())'` is a whitespace-exact source
+  fragment rather than an identifier like the other 47 — closer to the whole-text
+  hash that file argues against. Reflowing the line would redden it for a
+  non-change.
