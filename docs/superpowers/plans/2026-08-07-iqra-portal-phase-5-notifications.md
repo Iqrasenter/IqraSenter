@@ -45,6 +45,32 @@ The spec orders work, and the work invalidates the spec's own numbers. Every one
 | typecheck | `npm run typecheck` (= `tsc --noEmit`) |
 | lint · knip | `npm run lint` · `npm run knip` |
 
+## ⛔⛔ TWO THINGS THAT MUST BE DONE IN EVERY TASK THAT TOUCHES THEM
+
+Both were absent from the first draft, and each one alone stops execution dead.
+
+**1. Regenerate `database.types.ts` after every migration that adds a function or a table.**
+`createServiceRoleClient()` returns `SupabaseClient<Database>`, and postgrest-js constrains `.rpc()` to `keyof Schema['Functions']` and `.from()` to `keyof Schema['Tables']`. The committed `src/lib/supabase/database.types.ts` knows none of the five new RPCs and not `notifications`. So `npx tsc --noEmit` goes red at Task 8 and **stays** red — `next.config.ts` sets no `ignoreBuildErrors`, so Task 10's own `npm run build` gate can never pass, and CI is red from that commit onward. That violates "each commit compiles and passes tests."
+
+After Tasks 1, 2, 3, 4, 5 and 13 — i.e. every migration task — run, with the local stack up:
+
+```bash
+cd ~/dev/iqra-portal && npm run db:types && git add src/lib/supabase/database.types.ts
+```
+
+and include that file in the task's commit.
+
+**2. `vi.mock('server-only', () => ({}))` at the top of every new unit test.**
+`node_modules/server-only` is a bare `throw`, and its `exports` map only resolves to the empty module under the `react-server` condition, which Vitest does not set. The repo already does this in **ten** files (e.g. `src/lib/env.server.test.ts:7`). This plan puts `import 'server-only'` at the head of `ping-email.ts`, `resend.ts`, `drain.ts` and `queries.ts`. Without the mock, `ping-email.test.ts` and `drain.test.ts` fail to import at all — and the red-first step then reports a *different* error than the one documented, which is how a harness bug gets "fixed" by editing the assertion.
+
+Every new `*.test.ts` in this plan begins:
+
+```typescript
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('server-only', () => ({}));
+```
+
 **Verified as still TRUE** (do not re-check, but do not loosen):
 - `public.profiles` holds `grant update (full_name, phone, locale) on public.profiles to authenticated` and **no table-level UPDATE grant** (`20260716170230_core_identity.sql:122`). A new column is therefore **not** writable by default.
 - `service_role` carries **BYPASSRLS** (`20260716170230_core_identity.sql:115`), so no table needs a service_role policy — only grants.
@@ -2037,7 +2063,13 @@ Pure, provider-free, and landed **with** its consumer's type so `knip` stays gre
 Create `src/lib/varsler/ping-email.test.ts`:
 
 ```typescript
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// ⛔ REQUIRED. ping-email.ts imports 'server-only', which is a bare throw
+// outside the react-server condition Vitest does not set. Ten files in this
+// repo carry this line; without it the suite fails to import at all.
+vi.mock('server-only', () => ({}));
+
 import { buildPingEmail } from './ping-email';
 
 describe('the content-free ping', () => {
@@ -2335,6 +2367,10 @@ Create `src/lib/varsler/drain.test.ts`:
 
 ```typescript
 import { describe, expect, it, vi } from 'vitest';
+
+// ⛔ REQUIRED — see ping-email.test.ts. drain.ts imports 'server-only'.
+vi.mock('server-only', () => ({}));
+
 import { drainPings, type DrainDeps } from './drain';
 
 function deps(overrides: Partial<DrainDeps> = {}): DrainDeps {
@@ -2622,6 +2658,12 @@ import { drainPings } from '@/lib/varsler/drain';
 import { sendViaResend } from '@/lib/varsler/resend';
 
 export const dynamic = 'force-dynamic';
+// ★ AN EXPLICIT BUDGET. Without it the platform default applies and a busy
+// batch is killed mid-loop. The drain's own deadlineMs is set below it so the
+// loop stops itself first and records what it did.
+export const maxDuration = 60;
+
+class CronConfigError extends Error {}
 
 /**
  * The app's FIRST route handler, and its first unauthenticated endpoint.
@@ -2630,18 +2672,53 @@ export const dynamic = 'force-dynamic';
  * src/app/route-guards.test.ts as well as behaviourally below. It is named
  * `assertCronSecret` and that name is what the static wall looks for.
  *
+ * ⛔ IT THROWS RATHER THAN RETURNING false, DELIBERATELY. A boolean can be
+ * called and ignored — `assertCronSecret(request);` on its own line satisfies
+ * any static check that looks for the call, while gating nothing. The panel
+ * confirmed that evasion passes a name-based wall. Throwing makes the
+ * ignore-the-result failure mode unrepresentable.
+ *
  * ⚠ timingSafeEqual THROWS on a length mismatch, so a naive call is itself a
  * length oracle AND a 500. Both sides are hashed to a fixed 32 bytes first.
+ *
+ * ⚠ RFC 7235 makes the auth SCHEME TOKEN CASE-INSENSITIVE, so `bearer x` is a
+ * valid rendering of `Bearer x`. Comparing the raw header byte-for-byte would
+ * give a permanent 401 with no local symptom if Vercel — or any edge proxy in
+ * front of it — normalises the scheme differently from this literal. The
+ * scheme is compared case-insensitively and only the TOKEN is hashed.
  */
-function assertCronSecret(request: Request): boolean {
+function assertCronSecret(request: Request): void {
+  let expected: string;
+  try {
+    expected = getCronSecret();
+  } catch (cause) {
+    // Misconfiguration, not a failed authentication. Distinguishing them stops
+    // the endpoint from being a 500-vs-401 oracle, and — more practically —
+    // stops an executor reading "500" as "my secret is wrong".
+    throw new CronConfigError(String(cause));
+  }
+
   const header = request.headers.get('authorization') ?? '';
-  const presented = createHash('sha256').update(header).digest();
-  const expected = createHash('sha256').update(`Bearer ${getCronSecret()}`).digest();
-  return timingSafeEqual(presented, expected);
+  const [scheme, ...rest] = header.split(' ');
+  const token = rest.join(' ');
+  if ((scheme ?? '').toLowerCase() !== 'bearer') {
+    throw new Error('unauthorized');
+  }
+  const presented = createHash('sha256').update(token).digest();
+  const wanted = createHash('sha256').update(expected).digest();
+  if (!timingSafeEqual(presented, wanted)) {
+    throw new Error('unauthorized');
+  }
 }
 
 export async function GET(request: Request) {
-  if (!assertCronSecret(request)) {
+  try {
+    assertCronSecret(request);
+  } catch (cause) {
+    if (cause instanceof CronConfigError) {
+      console.error('[drain] CRON_SECRET mangler eller er ugyldig:', cause.message);
+      return new NextResponse(null, { status: 503 });
+    }
     // No body, no hint about which half was wrong.
     return new NextResponse(null, { status: 401 });
   }
@@ -2653,7 +2730,15 @@ export async function GET(request: Request) {
   // yet show.
   const { error: announceError } = await admin.rpc('claim_due_announcements');
   if (announceError) {
+    // ⛔ AND IT MUST REACH THE STATUS CODE. Logging and returning 200 made a
+    // permanently broken scheduled fan-out read as a healthy cron forever:
+    // Vercel's dashboard keys on the status, and NEITHER health number sees it
+    // either, because an announcement that never fans out never queues a ping.
     console.error('[drain] claim_due_announcements feilet:', announceError.message);
+    return NextResponse.json(
+      { error: 'claim_due_announcements', message: announceError.message },
+      { status: 500 },
+    );
   }
 
   const result = await drainPings({
@@ -2667,19 +2752,24 @@ export async function GET(request: Request) {
       if (error) throw new Error(error.message);
       return data ?? null;
     },
-    recordOutcome: async (userId, succeeded, errorCode) => {
+    recordOutcome: async (userId, succeeded, errorCode, retryable) => {
       const { error } = await admin.rpc('record_email_ping_outcome', {
         target: userId,
         succeeded,
         error_code: errorCode,
+        retryable,
       });
       if (error) throw new Error(error.message);
     },
     send: sendViaResend,
     portalUrl: 'https://portal.iqrasenter.no',
+    // Comfortably inside maxDuration, so the loop stops itself and reports
+    // rather than being killed with nothing written down.
+    deadlineMs: 45_000,
   });
 
-  return NextResponse.json(result);
+  // A pass that could not write down what it did is not a healthy pass.
+  return NextResponse.json(result, { status: result.unrecorded > 0 ? 500 : 200 });
 }
 ```
 
