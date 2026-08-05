@@ -859,6 +859,33 @@ revoke execute on function public.resolve_ping_address(uuid) from anon;
 revoke execute on function public.resolve_ping_address(uuid) from authenticated;
 grant execute on function public.resolve_ping_address(uuid) to service_role;
 
+-- ── RPC 4: keep the queue consistent with the preference ────────────
+-- ★ CALLER-SCOPED, so it is safe to grant to `authenticated` — unlike every
+-- other function in this file. It keys on auth.uid() and takes no user
+-- parameter, so it cannot be pointed at anybody else.
+create or replace function public.sync_email_ping_preference(enabled boolean)
+returns void
+language sql volatile security definer set search_path = ''
+as $$
+  update private.email_pings p
+     set pending    = case when enabled then p.pending else false end,
+         claimed_at = case when enabled then p.claimed_at else null end,
+         -- Opting back in clears the ceiling. Without this, `failed` survives
+         -- the round trip and the claim excludes the row FOREVER: a live,
+         -- opted-in user whose mail is silently dead.
+         failed     = case when enabled then false else p.failed end,
+         attempts   = case when enabled then 0 else p.attempts end,
+         last_error_code = case when enabled then null else p.last_error_code end
+   where p.user_id = (select auth.uid());
+$$;
+
+revoke execute on function public.sync_email_ping_preference(boolean) from public;
+revoke execute on function public.sync_email_ping_preference(boolean) from anon;
+grant execute on function public.sync_email_ping_preference(boolean) to authenticated;
+
+comment on function public.sync_email_ping_preference(boolean) is
+  'Keeps private.email_pings consistent with profiles.email_pings_enabled, in BOTH directions: opting out drops the queued ping (so it cannot age into a false «kom ikke fram» entry for someone who asked not to be mailed), and opting back in clears `failed`, which would otherwise exclude the row from every future claim forever. Caller-scoped via auth.uid(), which is why this one is authenticated-callable.';
+
 comment on function public.resolve_ping_address(uuid) is
   'Resolves a recipient address at SEND TIME from auth.users, never from a public mirror. Re-checks email_pings_enabled so a user who opts out between fan-out and drain is not sent to, and refuses deleted or banned accounts.';
 ```
@@ -3087,17 +3114,34 @@ export type VarselRow = {
 };
 
 /**
- * The badge number. One count, served by notifications_unread_idx.
+ * The badge number.
+ *
+ * ⛔ IT MUST COUNT EXACTLY WHAT listVarsler RENDERS. An earlier version counted
+ * every unread row with no reachability filter, and three panel lenses landed
+ * on the same consequence: `notifications` has no FK, so a row outlives its
+ * entity's REACHABILITY — guardianship removed, a teacher unassigned, term
+ * rollover, a pupil erased, a login disabled. The bell then reads «Varsler (4)»
+ * over a list of one, and the difference is an EXACT COUNT OF WHAT THE READER
+ * IS NO LONGER ALLOWED TO SEE. A parent who loses guardianship of one child
+ * learns by subtraction how many conversations about that child had new
+ * activity. `20260803001000_protected_mate_omission.sql` exists to abolish
+ * precisely that arithmetic — «omitting the row from the projection while the
+ * policy still exposes the set leaves the omission recoverable by arithmetic».
+ *
+ * So this reuses listVarsler's own resolution rather than counting rows: the
+ * two numbers cannot drift, because there is only one of them.
  */
-export async function unreadCount(): Promise<number> {
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from('notifications')
-    .select('id', { count: 'exact', head: true })
-    .is('read_at', null);
-  if (error) throw new Error(`Kunne ikke telle uleste varsler: ${error.message}`);
-  return count ?? 0;
+export async function unreadCount(roleHome: string): Promise<number> {
+  const rows = await listVarsler(roleHome, UNREAD_COUNT_CAP);
+  return rows.filter((r) => r.unread).length;
 }
+
+/**
+ * The bell shows a capped count. A school-wide notice plus a busy week is still
+ * a small number; anything past this is «99+» in the UI, and capping keeps the
+ * badge from becoming its own unbounded query.
+ */
+const UNREAD_COUNT_CAP = 99;
 
 /**
  * The bell list.
@@ -3157,6 +3201,40 @@ export async function listVarsler(roleHome: string, limit = 20): Promise<VarselR
 
 ⚠ Confirm the server-client factory's name and path against an existing DAL file (e.g. `src/lib/announcement-audience.ts` or any `src/lib/dal/*`); use whatever those import rather than the name written here.
 
+- [ ] **Step 1b: Add the multi-role guard the repo does not have**
+
+⚠ **Verified 2026-08-05 — `requireRole` is not what an earlier draft assumed.** It lives at `src/lib/dal/session.ts:47`, **not** `@/lib/auth/guards` (which does not exist), and its signature is:
+
+```typescript
+export async function requireRole(role: Role): Promise<{ user: User; roles: Role[] }>
+```
+
+**One** role, and it returns an object. The draft passed an array and destructured a bare user — so `roles.includes(['admin', …])` would never be true and every caller would redirect to `/ingen-tilgang`; and `user.id` would be `undefined`, making `setEmailPingsAction` do `.eq('id', undefined)`, i.e. **the opt-out toggle silently saves nothing**. That is the exact failure Task 2's column grant exists to prevent, reintroduced one layer up.
+
+The bell serves all five roles, and no multi-role guard exists. Add one to `src/lib/dal/session.ts`, beside `requireRole`:
+
+```typescript
+/**
+ * Wall-1 guard for surfaces every signed-in role reaches — the varsel bell and
+ * «Min profil». requireRole takes exactly one role, and the alternative at each
+ * call site is a chain of five, which is both unreadable and easy to get
+ * partially wrong.
+ *
+ * ⚠ It must be added to GUARDS in src/app/action-guards.test.ts, or every
+ * action using it fails the static wall.
+ */
+export async function requireAnyRole(
+  allowed: readonly Role[],
+): Promise<{ user: User; roles: Role[] }> {
+  const user = await requireUser();
+  const roles = await getSessionRoles();
+  if (!roles.some((role) => allowed.includes(role))) redirect('/ingen-tilgang');
+  return { user, roles };
+}
+```
+
+And add `'requireAnyRole'` to the `GUARDS` array in `src/app/action-guards.test.ts`.
+
 - [ ] **Step 2: Write the action**
 
 Create `src/app/(portal)/varsler/actions.ts`:
@@ -3165,7 +3243,7 @@ Create `src/app/(portal)/varsler/actions.ts`:
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireRole } from '@/lib/auth/guards';
+import { requireAnyRole } from '@/lib/dal/session';
 import { createClient } from '@/lib/supabase/server';
 
 /**
@@ -3178,7 +3256,7 @@ import { createClient } from '@/lib/supabase/server';
  * there is nothing to tell the caller about a row they cannot see.
  */
 export async function markVarselReadAction(notificationId: string): Promise<void> {
-  await requireRole(['admin', 'teacher', 'parent', 'student', 'economy']);
+  await requireAnyRole(['admin', 'teacher', 'parent', 'student', 'economy']);
   const supabase = await createClient();
   const { error } = await supabase
     .from('notifications')
@@ -3193,7 +3271,7 @@ export async function markVarselReadAction(notificationId: string): Promise<void
  * own rows.
  */
 export async function markAllVarslerReadAction(): Promise<void> {
-  await requireRole(['admin', 'teacher', 'parent', 'student', 'economy']);
+  await requireAnyRole(['admin', 'teacher', 'parent', 'student', 'economy']);
   const supabase = await createClient();
   const { error } = await supabase
     .from('notifications')
@@ -3204,7 +3282,7 @@ export async function markAllVarslerReadAction(): Promise<void> {
 }
 ```
 
-⚠ Confirm `requireRole`'s import path and signature against an existing `actions.ts` (e.g. `src/app/(portal)/forelder/oppslag/actions.ts`) and match it exactly — including whether it takes an array or varargs.
+✅ Verified 2026-08-05: `requireAnyRole` is the helper added in Step 1b; `requireRole` (one role, returns `{user, roles}`) is at `src/lib/dal/session.ts:47`. The existing multi-file precedent is `src/app/(portal)/forelder/meldinger/actions.ts:5`, which imports from `@/lib/dal/session`. ⚠ There is no `forelder/oppslag/actions.ts` — only `admin/` and `laerer/` have one.
 
 - [ ] **Step 3: Bump the action counter**
 
@@ -3305,7 +3383,7 @@ Create `src/app/(portal)/profil/actions.ts`:
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireRole } from '@/lib/auth/guards';
+import { requireAnyRole } from '@/lib/dal/session';
 import { createClient } from '@/lib/supabase/server';
 
 /**
@@ -3317,18 +3395,37 @@ import { createClient } from '@/lib/supabase/server';
  * 31_column_locks.sql asserts the grant, and it was watched fail without it.
  */
 export async function setEmailPingsAction(enabled: boolean): Promise<void> {
-  const user = await requireRole(['admin', 'teacher', 'parent', 'student', 'economy']);
+  const { user } = await requireAnyRole(['admin', 'teacher', 'parent', 'student', 'economy']);
   const supabase = await createClient();
   const { error } = await supabase
     .from('profiles')
     .update({ email_pings_enabled: enabled })
     .eq('id', user.id);
   if (error) throw new Error(`Kunne ikke lagre varselinnstillingen: ${error.message}`);
+
+  // ⛔ THE QUEUE MUST FOLLOW THE PREFERENCE, IN BOTH DIRECTIONS.
+  // Writing only the profile column left two defects, both found by the panel:
+  //   · opting OUT with a ping already queued → the claim still picked it up,
+  //     the address would not resolve, and after five attempts the row was
+  //     listed to an admin as «varsler som ikke kom fram» — a communications
+  //     failure manufactured for someone who asked not to be mailed;
+  //   · and it was ONE-WAY. `failed` survived opting back in, and a failed row
+  //     is excluded from the claim forever, so a live opted-in user's mail was
+  //     permanently dead with no signal anywhere. Turning a preference off and
+  //     on again must never need an administrator.
+  // The claim now also excludes opted-out users, so this call is what clears
+  // the state they leave behind.
+  const { error: queueError } = await supabase.rpc('sync_email_ping_preference', {
+    enabled,
+  });
+  if (queueError) {
+    throw new Error(`Kunne ikke oppdatere varselkøen: ${queueError.message}`);
+  }
   revalidatePath('/profil');
 }
 ```
 
-⚠ Match `requireRole`'s real return shape — if it does not return the user, read the id from whatever the sibling actions use.
+✅ `requireAnyRole` returns `{ user, roles }`, so `user.id` is real here. ⚠ This is the line an earlier draft got wrong: with the old `requireRole([...])` it destructured a bare user, `user.id` was `undefined`, and the update matched zero rows — a toggle that saves nothing, which is exactly what Task 2's grant assertion exists to make impossible.
 
 Create `src/app/(portal)/profil/page.tsx` — a server component reading the caller's own `email_pings_enabled` and rendering a form that posts `setEmailPingsAction`. Copy, verbatim:
 
@@ -3461,7 +3558,7 @@ Create `src/app/(portal)/admin/varsler/actions.ts`:
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireAdminActor } from '@/lib/auth/guards';
+import { requireAdminActor } from '@/lib/admin/quarantine';
 import { createServiceRoleClient } from '@/lib/admin/quarantine';
 
 /**
