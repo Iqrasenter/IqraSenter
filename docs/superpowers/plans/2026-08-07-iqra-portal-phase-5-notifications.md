@@ -95,7 +95,7 @@ The `SendPing` function type is a parameter, defaulted to the real Resend caller
 |---|---|
 | `supabase/tests/38_notifications_rls.sql` | new — the read/write walls, both recipient resolvers, the `notified ⊆ readers` invariant |
 | `supabase/tests/31_column_locks.sql` | extend — the `notifications` and `profiles` grant shapes |
-| `supabase/tests/29_definer_fingerprints.sql` | extend — 5 new functions, counter 83 → 88 |
+| `supabase/tests/29_definer_fingerprints.sql` | extend — 5 new functions, counter 83 → 95 (markers, not rows) |
 | `src/app/route-guards.test.ts` | **new static wall** for `src/app/api/**/route.ts` |
 | `src/lib/varsler/ping-email.test.ts` | the template's omissions, as assertions |
 | `src/lib/varsler/drain.test.ts` | claim → send → outcome, backoff, the attempts ceiling |
@@ -360,10 +360,20 @@ select throws_ok(
   'user_id har ingen UPDATE-rett — et varsel kan ikke overdras');
 
 -- ── 7. and may not mark ANOTHER user's varsel read ──────────────────
+-- ⛔ `reset role` FIRST. `set local role authenticated` is still in force from
+-- section 1, and assertion 5 two statements ago PROVED that authenticated has
+-- no INSERT grant. Unwrapped, this fixture insert raises 42501 — and that is
+-- not one red assertion, it ABORTS THE TRANSACTION: every later statement is
+-- 25P02, finish() never runs, and all 53 assertions are lost.
+-- ★ Perversely, under Task 1 Step 5's mutation (`grant insert … to
+-- authenticated`) this insert SUCCEEDS — so the mutated run would get further
+-- than the clean one, which is how a fixture bug gets diagnosed as a code bug.
+reset role;
 insert into public.notifications (id, user_id, entity, entity_id)
-select 'c1000000-0000-0000-0000-0000000000a2', 'c1000000-0000-0000-0000-000000000002',
-       'announcement', 'c1000000-0000-0000-0000-0000000000f2';
+values ('c1000000-0000-0000-0000-0000000000a2', 'c1000000-0000-0000-0000-000000000002',
+        'announcement', 'c1000000-0000-0000-0000-0000000000f2');
 
+set local role authenticated;
 set local request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000001","role":"authenticated"}';
 update public.notifications set read_at = now()
  where id = 'c1000000-0000-0000-0000-0000000000a2';
@@ -424,7 +434,7 @@ select throws_ok(
   null,
   'ett varsel per (bruker, entitet) — det er denne indeksen fan-out-ene upserter mot');
 
-select finish();
+select * from finish();
 rollback;
 ```
 
@@ -450,7 +460,13 @@ Expected: `Files=39, Tests=857, PASS` (842 + 15).
 
 Temporarily add `grant insert on public.notifications to authenticated;` at the end of the migration, `npx supabase db reset`, and re-run file 38.
 
-Expected: assertions 3 and 9 both **FAIL**. Then remove the line, reset, and confirm green again. This is the evidence that the schema-as-control claim is tested rather than asserted.
+Expected two failures, and **neither is the one an earlier draft named**:
+- the section-3 `throws_ok` — the insert is now refused by **RLS**, not by the privilege layer, so it raises `new row violates row-level security policy` and the expected `'permission denied for table notifications'` message no longer matches;
+- the **first grant-shape assertion in section 8** (`authenticated har ingen INSERT-rett`).
+
+⚠ The old wording said *"assertions 3 and 9"*. There is no red 9 under either numbering — 9 is the RLS enable/force assertion by section, and `en annens varsel er urørt` by assertion index, and neither moves. Hunting for it wastes the mutation.
+
+Then remove the line, reset, and confirm green. This is the evidence that the schema-as-control claim is tested rather than asserted.
 
 - [ ] **Step 6: Commit**
 
@@ -506,7 +522,7 @@ grant update (email_pings_enabled) on public.profiles to authenticated;
 
 - [ ] **Step 2: Extend the column-lock test**
 
-In `supabase/tests/31_column_locks.sql`, change `select plan(31);` to `select plan(33);` and append before `select finish();`:
+In `supabase/tests/31_column_locks.sql`, change `select plan(31);` to `select plan(33);` and append before `select * from finish();`:
 
 ```sql
 -- ── profiles: the opt-out column is writable, and nothing else moved ──
@@ -823,7 +839,7 @@ comment on function public.resolve_ping_address(uuid) is
 
 - [ ] **Step 2: Extend file 38 with the queue's assertions**
 
-In `supabase/tests/38_notifications_rls.sql` change `select plan(15);` to `select plan(27);` (12 new assertions, counted by hand) and append before `select finish();`:
+In `supabase/tests/38_notifications_rls.sql` change `select plan(15);` to `select plan(27);` (12 new assertions, counted by hand) and append before `select * from finish();`:
 
 ```sql
 -- ── 11. the three RPCs are reachable by service_role and NOBODY else ─
@@ -1191,7 +1207,7 @@ create trigger messages_fan_out
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(27);` to `select plan(41);` (14 new assertions, counted by hand). Append before `select finish();`:
+Change `select plan(27);` to `select plan(41);` (14 new assertions, counted by hand). Append before `select * from finish();`:
 
 ```sql
 -- ── 19-25. the fan-out, over a real thread with a real family ───────
@@ -1697,7 +1713,7 @@ grant execute on function public.claim_due_announcements() to service_role;
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(41);` to `select plan(53);` (12 new assertions, counted by hand). Append before `select finish();`:
+Change `select plan(41);` to `select plan(53);` (12 new assertions, counted by hand). Append before `select * from finish();`:
 
 ```sql
 -- ── 30-37. the announcement fan-out, both trigger points ────────────
@@ -1741,9 +1757,18 @@ select is(
   0, 'et oppslag køer ingen e-post — det er denne regelen som holder fasen innenfor gratisnivået');
 
 -- ── 31. a scheduled oppslag notifies NOBODY until it is due ─────────
-insert into public.announcements (id, class_id, title, body, published_at, created_by)
+-- ⚠ created_at IS BACK-DATED A DAY, and it has to be. Assertion 32 moves
+-- published_at into the past to make the row due — but
+-- announcements_not_backdated (20260806120000:76) requires
+-- published_at >= created_at, and the whole pgTAP file is ONE transaction, so
+-- now() is transaction_timestamp() and a default created_at would be EXACTLY
+-- now(). `published_at = now() - 1 minute` is then a guaranteed 23514 that
+-- aborts the file. File 37 uses the same device («created_at is a WHOLE TEN
+-- DAYS earlier than published_at»). created_at has no grant, so this insert is
+-- possible only as the table owner — which is what this section already is.
+insert into public.announcements (id, class_id, title, body, published_at, created_at, created_by)
 values ('c1000000-0000-0000-0000-0000000000a6', 'c1000000-0000-0000-0000-0000000000c1',
-        'Senere', 'Kommer senere', now() + interval '2 hours',
+        'Senere', 'Kommer senere', now() + interval '2 hours', now() - interval '1 day',
         'c1000000-0000-0000-0000-000000000011');
 
 select is(
@@ -1775,13 +1800,6 @@ select is(
   (select count(*)::int from public.claim_due_announcements()),
   0, 'claimen er idempotent — fanned_out_at er brent');
 
--- ── 34. ★ THE INVARIANT again, over announcements ───────────────────
-select is(
-  (select count(*)::int from public.notifications n
-    where n.entity = 'announcement'
-      and not private.reads_announcement(n.user_id, n.entity_id)),
-  0, 'invariant: ingen varsler om et oppslag mottakeren ikke kan åpne');
-
 -- ── 35. ★ BARE OVERSIGHT IS SUBTRACTED HERE TOO ─────────────────────
 -- reads_announcement_row's second clause is `or private.has_role(uid,'admin')`,
 -- so an admin READS every class notice in the school. Belling them on each one
@@ -1794,6 +1812,15 @@ select is(
       and user_id = 'c1000000-0000-0000-0000-000000000013'),
   0, 'admin belles ikke på et klasseoppslag — bar oversikt trekkes fra her også');
 
+-- ⛔ THE ENTITLED-READER CONTROL. Without it the assertion above is passed
+-- equally by "the carve-out worked" and by "reads_announcement is broken for
+-- admins entirely" — a 0 for the opposite reason. This file's own header
+-- demands the control, and Task 4 does it correctly two sections earlier.
+select is(
+  private.reads_announcement('c1000000-0000-0000-0000-000000000013',
+                             'c1000000-0000-0000-0000-0000000000a5'),
+  true, 'kontroll: admin KAN lese klasseoppslaget — bjella mangler ved regel, ikke ved tilgang');
+
 insert into public.announcements (id, class_id, title, body, created_by)
 values ('c1000000-0000-0000-0000-0000000000a7', null,
         'Hele skolen', 'Fri på fredag', 'c1000000-0000-0000-0000-000000000013');
@@ -1803,6 +1830,22 @@ select is(
     where entity_id = 'c1000000-0000-0000-0000-0000000000a7'
       and user_id = 'c1000000-0000-0000-0000-000000000011'),
   1, 'men et skoleomfattende oppslag når læreren — det er adressert til dem');
+
+-- ── 36. ★ THE INVARIANT, over announcements ─────────────────────────
+-- ⛔ IT SITS HERE, AFTER a7, AND THAT POSITION IS THE WHOLE POINT.
+-- Placed before the school-wide notice it scanned only {012→a5, 012→a6} —
+-- two class-scoped rows, both trivially readable — and the panel measured that
+-- replacing reads_announcement with `true` left the recipient set BYTE
+-- IDENTICAL, so the mutation reddened nothing anywhere in the file. a7 is the
+-- only announcement whose audience is resolved by reads_announcement_row's
+-- `cls is null` branch, i.e. the only one that reaches the seeded population
+-- beyond this file's own fixtures. The invariant is worth having only once
+-- that row exists.
+select is(
+  (select count(*)::int from public.notifications n
+    where n.entity = 'announcement'
+      and not private.reads_announcement(n.user_id, n.entity_id)),
+  0, 'invariant: ingen varsler om et oppslag mottakeren ikke kan åpne');
 ```
 
 - [ ] **Step 3: Run and watch it fail**
@@ -1821,13 +1864,17 @@ cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tai
 
 Expected: `Files=39, Tests=897, PASS`.
 
-- [ ] **Step 5: Two named mutations**
+- [ ] **Step 5: Three named mutations**
 
-1. In `private.fan_out_new_announcement`, drop the `if new.fanned_out_at is not null` guard so it always fans out. Expected: assertion 31's first half (**a scheduled oppslag varsler ingen**) **FAILS** — a notification would exist for a row the reader's own policy still hides.
-2. In `private.fan_out_announcement`, replace `private.reads_announcement(ur.user_id, aid)` with `true`. Expected: assertion 34's invariant **FAILS**.
-3. In `private.fan_out_announcement`, delete the whole `and ( ann.class_id is null or … )` carve-out. Expected: assertion 35 (**admin belles ikke på et klasseoppslag**) **FAILS** — this is the defect the tree disagreed with the spec about, and it would otherwise have shipped as ten unwanted bells a week.
+⛔ **Two of these were DEAD in an earlier draft and the panel traced both.** Do not restore the old wording; a mutation that reddens nothing is worse than none, because the ledger then records coverage this file does not have.
 
-Restore after each; confirm green.
+1. ★ In `private.fan_out_new_announcement`, drop the `if new.fanned_out_at is not null` guard so it fans out at every INSERT. Expected: **assertion 32's first half FAILS** — `claim_due_announcements()` returns 1 but the parent already holds the notification, so `og forelderen varsles av claimen, ikke av utløseren` is satisfied by the wrong writer.
+   ⚠ **The old wording named assertion 31 and it could not fail.** With the guard dropped, `fan_out_announcement(a6)` does run — and produces **zero rows**, because `a6.published_at` is `now() + 2 hours` and every non-author arm of `reads_announcement_row` requires `pub <= now()`. The count stayed 0 and the assertion stayed green. It was testing `published_at` gating, which file 37:380 already covers.
+2. ★ In `private.fan_out_announcement`, replace `private.reads_announcement(ur.user_id, aid)` with `true`. Expected: **assertion 36's invariant FAILS**, via the school-wide `a7` — `class_id is null` opens the carve-out to every role-holder, including seeded parents with no live enrolment, whom the predicate refuses.
+   ⚠ **This only works because assertion 36 now sits AFTER a7.** In the earlier ordering the surviving carve-out alone still yielded exactly `{012}` for `a5` and `a6` — a byte-identical recipient set — so the mutation reddened nothing in the entire file.
+3. In `private.fan_out_announcement`, delete the whole `and ( ann.class_id is null or … )` carve-out. Expected: **assertion 35 FAILS** — the defect the tree disagreed with the spec about, which would otherwise have shipped as ten unwanted bells a week.
+
+Restore after each; confirm green. Record all three outcomes in the commit body.
 
 - [ ] **Step 6: Commit**
 
@@ -1850,7 +1897,7 @@ pgTAP 885 -> 897."
 
 ---
 
-## Task 6: Definer fingerprints — 83 → 93
+## Task 6: Definer fingerprints — 83 → 95
 
 **Files:**
 - Modify: `supabase/tests/29_definer_fingerprints.sql`
@@ -1875,22 +1922,33 @@ In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `defin
 
 ```sql
     -- D21's whole content: a wide candidate set narrowed by CALLING the wall.
-    -- Stubbing this mails the whole school about one family's message; deleting
-    -- the staff_substantive reference re-opens the «no staff reader at all»
-    -- wording that can never fire.
+    -- Stubbing this mails the whole school about one family's message.
+    --
+    -- ⛔ EVERY MARKER HERE IS A FULL CALL OR A DEFINITION, NEVER A BARE NAME,
+    -- and that is not style. File 29 tests `position(m in pg_get_functiondef(…))
+    -- = 0`, so a marker that appears TWICE in the body cannot detect the
+    -- deletion of one occurrence. The panel measured exactly that:
+    --   · 'private.reads_thread' also appears in the admin fallback, so
+    --     deleting the substantive filter left file 29 GREEN;
+    --   · 'staff_substantive' also appears as the CTE definition, so Task 4's
+    --     mutation 2 — which rewrites only the `not exists` body — could not
+    --     fire it either.
+    -- Both markers below are unique to the line they guard.
     (
       'private.thread_recipients(uuid)',
       array[
-        'private.reads_thread',
-        'staff_substantive'
+        'private.reads_thread(c.uid, tid)',
+        'not exists (select 1 from staff_substantive)',
+        't.kind = ''laerer'''
       ]
     ),
-    -- The sender exclusion, and the upsert that makes ten messages one bell.
+    -- The sender exclusion, the opt-out filter, and the pupil mail carve-out.
     (
       'private.fan_out_thread_message()',
       array[
-        'new.sender_id',
-        'email_pings_enabled'
+        'r.recipient <> new.sender_id',
+        'p.email_pings_enabled',
+        's.student_user_id = u'
       ]
     ),
     -- Stubbed, this is a school-wide notice-and-name disclosure. The three
@@ -1912,22 +1970,25 @@ In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `defin
       ]
     ),
     -- Stubbed, this resolves an address for someone who opted out.
+    -- ⚠ NO TRAILING COMMA — this is the new last entry, and the block closes
+    -- `) as f(sig, markers);`. The existing final entry
+    -- ('public.claim_due_announcements()') loses its comma to this one.
     (
       'public.resolve_ping_address(uuid)',
       array[
-        'email_pings_enabled',
-        'deleted_at'
+        'pr.email_pings_enabled',
+        'u.deleted_at is null'
       ]
-    ),
+    )
 ```
 
 - [ ] **Step 2: Bump the counter**
 
-That is **10 new markers**, so change the literal from `83` to `93`:
+That is **12 new markers** (3+3+3+1+2), so change the literal from `83` to `95`:
 
 ```sql
   93,
-  'the fingerprint table still covers 93 (function, predicate) pairs'
+  'the fingerprint table still covers 95 (function, predicate) pairs'
 ```
 
 ⚠ **Count the markers, do not reconcile the two numbers by adjusting either one** — the file's own comment records that this mistake has been made twice already, once by reading "five new functions" and writing 31. Confirm the arithmetic against the actual arrays you paste: 2 + 2 + 3 + 1 + 2 = 10.
@@ -1940,11 +2001,13 @@ That is **10 new markers**, so change the literal from `83` to `93`:
 cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/29_definer_fingerprints.sql 2>&1 | tail -10
 ```
 
-Expected: PASS, with the literal at 93. `plan(2)` is unchanged, so the suite total does not move.
+Expected: PASS, with the literal at 95. `plan(2)` is unchanged, so the suite total does not move.
 
 - [ ] **Step 4: Verify a fingerprint can actually fail**
 
-Delete the `and private.reads_thread(c.uid, tid)` line from `private.thread_recipients` in its migration, `npx supabase db reset`, re-run file 29. Expected: **FAIL** naming that pair. Restore, reset, green.
+Delete the `and private.reads_thread(c.uid, tid)` line from `substantive` in `private.thread_recipients`, `npx supabase db reset`, re-run file 29. Expected: **FAIL** naming that marker.
+
+⛔ **This mutation was DEAD in an earlier draft** and the panel traced it: the marker was the bare name `private.reads_thread`, which also appears in the admin fallback, so deleting one occurrence left the other and file 29 stayed green. The marker above is the full call `private.reads_thread(c.uid, tid)` — unique to the filter — which is why it can now fail. Restore, reset, green.
 
 ★ A fingerprint that has never been watched fail is a claim, not a test — and file 29 has shipped pairs whose marker was a word that appeared in a comment.
 
@@ -1953,7 +2016,7 @@ Delete the `and private.reads_thread(c.uid, tid)` line from `private.thread_reci
 ```bash
 cd ~/dev/iqra-portal && git add supabase/tests/29_definer_fingerprints.sql && git commit -m "test(varsler): fingerprint the five definers whose stubbing is an escalation
 
-83 -> 93 markers (2+2+3+1+2). thread_recipients stubbed mails the whole school about one
+83 -> 95 markers (3+3+3+1+2). thread_recipients stubbed mails the whole school about one
 family's message; fan_out_announcement stubbed is a school-wide disclosure;
 resolve_ping_address stubbed sends to someone who opted out. Each pair was
 watched fail under deletion of the line it names."
