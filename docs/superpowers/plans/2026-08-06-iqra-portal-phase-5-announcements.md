@@ -35,7 +35,9 @@ Plan 1 took **35** and **36** with prefixes `be` and `bf`. This plan claims **37
 | `supabase/tests/37_announcements_rls.sql` | `c0` | this plan, Tasks 1, 4, 5 |
 | `supabase/tests/38_notifications.sql` | `c1` | plan 3 |
 
-**Verified 2026-08-06:** highest existing file is `36_thread_counterparts.sql`; prefixes in use across `supabase/tests/*.sql` are `00, 11, 22, 44, 66, a5–a9, aa, ad–af, b1–bc, bd, be, bf, cc, cd, ce, f6, f8, f9, fb, fc, fe`; `c0`, `c1`, `c2`, `c3` are all free in both tests and migrations.
+**Verified 2026-08-06:** highest existing file is `36_thread_counterparts.sql`, and **`c0` appears nowhere under `supabase/`** — tests, migrations or seed (`grep -rl "c0000000-0000" supabase/` returns nothing). `c1`, `c2`, `c3` are free too.
+
+⚠ The prefix inventory in the first draft was incomplete — it listed `00, 11, 22, 44, 66, a5–a9, aa, ad–af, b1–bc, bd, be, bf, cc, cd, ce, f6, f8, f9, fb, fc, fe` and **omitted `33, 55, 77, f1–f5, f7, fa`**. The conclusion survives (none of the omitted ones is `c0`), but do not treat that list as the census. The grep above is the census, and it takes a second.
 
 ⚠ The spec's §8 has now been wrong about file numbers **twice**, both times because something landed between spec and execution. **Before creating the file, run `ls supabase/tests/ | tail -3` and confirm 37 is still free.** If it is not, take the next free one and correct this table rather than overwriting.
 
@@ -1238,6 +1240,11 @@ select throws_ok(
              'c0000000-0000-0000-0000-000000000005') $$,
   '42501', null,
   'the author pin refuses recording a read on someone else''s behalf');
+-- ⚠ …042 (school-wide), NOT …041, and that is load-bearing. 42501 is the same
+-- SQLSTATE for "no column grant" and "policy refused", so this assertion can
+-- only be about the grant if the policy would have PASSED — which it does here,
+-- because …004 reads the school-wide notice. Mutation 18 (granting read_at)
+-- proves it: with the grant the insert lives, so the refusal was the grant.
 select throws_ok(
   $$ insert into public.announcement_reads (announcement_id, user_id, read_at)
      values ('c0000000-0000-0000-0000-000000000042',
@@ -2946,6 +2953,14 @@ export async function updateAnnouncementAction(
  * refuses anything already published, and there is no reschedule path because
  * published_at has no UPDATE grant — moving a publication time would move who
  * ever gets to read it.
+ *
+ * ⚠ The «skoleadministrasjonen» sentence below is a WALL-1 GUARD, not a screen.
+ * AnnouncementControls only renders the withdraw button for a scheduled
+ * announcement the caller authored, so the count===0 branch is reachable only
+ * by a forged POST or a row that published between render and submit — and a
+ * thrown Server Action error is redacted to a digest in production anyway, so
+ * nobody would read this sentence. tests/api/announcements.test.ts asserts it;
+ * do not add a permanently-failing button to the UI in order to see it.
  */
 export async function deleteAnnouncementAction(formData: FormData): Promise<void> {
   await requireStaffRole('teacher');
@@ -3149,13 +3164,19 @@ export default async function LaererOppslagDetailPage({
     <div className="flex max-w-2xl flex-col gap-8">
       <BackLink href="/laerer/oppslag">Oppslag</BackLink>
       <AnnouncementBody announcement={announcement} />
+      {/* canEdit comes from the can_edit_announcement RPC, which mirrors
+          announcements_update_author. It is READ here — in the first draft the
+          RPC ran on every detail view for every role and nothing consumed it. */}
+      <AnnouncementControls announcement={announcement} />
       <ReadStatus rows={readStatus.get(announcement.id) ?? []} />
     </div>
   );
 }
 ```
 
-- [ ] **Step 6: Write the two shared components**
+(add `import { AnnouncementControls } from './AnnouncementControls';` to that file.)
+
+- [ ] **Step 6: Write the two shared components and the teacher's controls**
 
 `src/components/announcements/AnnouncementBody.tsx`:
 
@@ -3228,7 +3249,18 @@ export function ReadStatus({ rows }: { rows: ReadStatusRow[] }) {
           </p>
           <ul className="flex flex-col gap-1 text-sm">
             {unread.map((r) => (
-              <li key={r.studentId}>{r.displayName}</li>
+              <li key={r.studentId}>
+                {r.displayName}
+                {/* ⚠ A3. A pupil with no guardian account and no login of her
+                    own can NEVER clear this list — «0 av 3» would sit at 0
+                    forever with nothing on screen saying why, and the office
+                    would keep phoning a family that has no account. The
+                    denominator still counts her: she was in the class when the
+                    notice went out, and that is what the office needs to know. */}
+                {r.reachable ? null : (
+                  <span className="text-ink/60"> · ingen pålogging</span>
+                )}
+              </li>
             ))}
           </ul>
         </>
@@ -3237,6 +3269,95 @@ export function ReadStatus({ rows }: { rows: ReadStatusRow[] }) {
   );
 }
 ```
+
+`src/app/(portal)/laerer/oppslag/[announcementId]/AnnouncementControls.tsx`:
+
+```tsx
+'use client';
+
+import { useActionState, useState } from 'react';
+import { Button } from '@/components/ui/Button';
+import { Field } from '@/components/ui/Field';
+import { Input } from '@/components/ui/Input';
+import { useNoFormReset } from '@/lib/use-no-form-reset';
+import { idleForm } from '@/lib/validation/school';
+import type { AnnouncementDetail } from '@/lib/dal/announcements';
+import { deleteAnnouncementAction, updateAnnouncementAction } from '../actions';
+
+/**
+ * Fix a typo, or withdraw something not yet published.
+ *
+ * ⚠ WITHOUT THIS COMPONENT THE PLAN DOES NOT HOLD TOGETHER: updateAnnouncement-
+ * Action and deleteAnnouncementAction would have no caller at all (knip fails
+ * an unused export at ERROR level), AnnouncementDetail.canEdit would be fetched
+ * by an RPC on every detail view and read by nobody, and the walkthrough would
+ * ask a human to click a «Trekk tilbake» control that does not exist.
+ *
+ * ⚠ `canEdit` is the can_edit_announcement RPC — a mirror of
+ * announcements_update_author, asked rather than re-derived (D21). An admin
+ * viewing a teacher's notice gets false: editing is authorship.
+ *
+ * ⚠ The withdraw button appears only for a SCHEDULED announcement. A published
+ * one is admin-delete-only (A2), and offering a control that always fails is
+ * the same defect as a picker that offers a class the wall refuses — worse
+ * here, because a thrown Server Action error is redacted to a digest in
+ * production, so the careful Norwegian sentence would never reach the teacher.
+ * The action still checks; the screen just does not invite the refusal.
+ */
+export function AnnouncementControls({ announcement }: { announcement: AnnouncementDetail }) {
+  const [state, formAction, pending] = useActionState(updateAnnouncementAction, idleForm);
+  const formRef = useNoFormReset<HTMLFormElement>();
+  const [title, setTitle] = useState(announcement.title);
+  const [body, setBody] = useState(announcement.body);
+
+  if (!announcement.canEdit) return null;
+
+  return (
+    <section className="flex flex-col gap-6 border-t border-hairline pt-6 print:hidden">
+      <h2 className="font-medium">Rediger oppslaget</h2>
+      <form ref={formRef} action={formAction} className="flex flex-col gap-4">
+        <input type="hidden" name="id" value={announcement.id} />
+        <Field label="Tittel" htmlFor="edit-title">
+          <Input id="edit-title" name="title" value={title}
+                 onChange={(e) => setTitle(e.target.value)}
+                 maxLength={140} required />
+        </Field>
+        <Field label="Innhold" htmlFor="edit-body">
+          <textarea id="edit-body" name="body" value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    maxLength={4000} rows={8} required
+                    className="rounded-sm border border-border-input bg-canvas px-3 py-2" />
+        </Field>
+        {state.error ? (
+          <p role="alert" className="text-sm text-danger-ink">{state.error}</p>
+        ) : null}
+        {state.success ? <p className="text-sm text-ink/60">Lagret.</p> : null}
+        <div>
+          <Button type="submit" loading={pending}>Lagre endringer</Button>
+        </div>
+      </form>
+
+      {announcement.scheduled ? (
+        <form action={deleteAnnouncementAction} className="flex flex-col gap-2">
+          <input type="hidden" name="id" value={announcement.id} />
+          <p className="text-sm text-ink/60">
+            Oppslaget er ikke publisert ennå. Det kan ikke flyttes til et annet
+            tidspunkt — publiseringstidspunktet bestemmer hvilke familier som får
+            se det — men det kan trekkes tilbake og skrives på nytt.
+          </p>
+          <div>
+            <Button type="submit" variant="secondary">Trekk tilbake</Button>
+          </div>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+```
+
+⚠ **Check `Button`'s prop surface before writing `variant="secondary"`.** The plan verified `Button {loading}` exists; it did not verify the variant names. Use whatever the repo has for a non-primary action, and if there is only one variant, say so and leave it plain.
+
+⚠ **The two fields are controlled, and `useNoFormReset` needs them to be.** React 19 auto-resets a `<form action={fn}>` even when the action FAILS, so an uncontrolled edit form would throw away everything the teacher retyped the moment the update was refused — and `useNoFormReset`'s contract is fully-controlled fields, which is how the rest of this plan's forms are written.
 
 - [ ] **Step 7: Bump the action count**
 
@@ -3256,14 +3377,24 @@ Then start the dev server from the portal directory **via Bash, never `preview_s
 cd ~/dev/iqra-portal && npm run dev
 ```
 
+⛔ **First, open an enrolment window, or steps 6 and every family check in Tasks 9–10 show nothing (A14).** Every seeded enrolment starts `2026-08-20`, so as of today **no family is in any class** and an announcement published now has an empty as-of roster. One statement, and it is an UPDATE — a second open enrolment for the same pupil violates `class_students_one_active`:
+
+```bash
+docker exec supabase_db_iqra-portal psql -U postgres -q -c \
+  "update public.class_students set enrolled_on = current_date - 7
+     where class_id = 'fc000000-0000-0000-0000-000000000001';"
+```
+
+⚠ **Put it back before running `npm run test:api`** (`update … set enrolled_on = '2026-08-20'` for the same class) — `tests/api/school-actions.test.ts:1105` asserts that literal date, and three other api files key off it. Or just `supabase db reset`, and re-enrol MFA afterwards.
+
 A human logs in as `laerer@test.local` / `test-passord-123`, re-enrols MFA at `/mfa/registrer` if the last `db reset` wiped it, and checks:
 
 1. `/laerer/oppslag` shows the empty state, «Oppslag» lit in the nav.
 2. «Nytt oppslag» → publish immediately → the notice appears in the list, dated today. **This also proves `listPublishableClasses` returns rows** (step 2's open question).
-3. Publish with a datetime one week out → the row shows «Planlagt» and the date **and time**.
+3. Publish with a datetime one week out → the row shows «Planlagt» and the date **and time**. ★ **Read the time back and check it is the time you picked**, not an hour later — that is the `osloLocalToInstant` fix from step 1, and the dev machine's Europe/Oslo clock hides the bug it replaced. (To see the production behaviour, run the dev server with `TZ=UTC npm run dev` once.)
 4. ★ **The refusal path.** Blank the title and submit; when the error appears, confirm **the class select still shows the class you chose**. This is plan 1's wrong-child bug transposed to a wrong-class one, and it is the single most valuable thing to click.
-5. Open the scheduled one → «Trekk tilbake» removes it. Open the published one → the same control refuses with the «skoleadministrasjonen» sentence.
-6. The read-tracking block reads «0 av N familier har lest» with N = the class roster, and it lists the families by name.
+5. Open the **scheduled** one → the edit form is there and «Trekk tilbake» removes it. Open the **published** one → the edit form is still there (you wrote it) and **there is no «Trekk tilbake» at all**: a published announcement is admin-delete-only (A2), and the plan deliberately does not render a control that always fails. The refusal sentence behind it is asserted in `tests/api/announcements.test.ts`, not on screen.
+6. The read-tracking block reads «0 av N familier har lest» with N = the class roster **you just back-dated**, and it lists the families by name. If N is 0 the window above did not take.
 
 ⚠ Synthetic clicks do not fire this app's React handlers — a human clicks, you measure.
 
@@ -3272,14 +3403,17 @@ A human logs in as `laerer@test.local` / `test-passord-123`, re-enrols MFA at `/
 ```bash
 cd ~/dev/iqra-portal
 git add src/lib/validation/announcements.ts src/lib/dal/announcements.ts \
+        src/lib/dates.ts src/lib/dates.test.ts \
         src/components/announcements/AnnouncementBody.tsx src/components/announcements/ReadStatus.tsx \
         "src/app/(portal)/laerer/oppslag/ny/page.tsx" "src/app/(portal)/laerer/oppslag/ny/NewAnnouncementForm.tsx" \
-        "src/app/(portal)/laerer/oppslag/[announcementId]/page.tsx" "src/app/(portal)/laerer/oppslag/actions.ts" \
+        "src/app/(portal)/laerer/oppslag/[announcementId]/page.tsx" \
+        "src/app/(portal)/laerer/oppslag/[announcementId]/AnnouncementControls.tsx" \
+        "src/app/(portal)/laerer/oppslag/actions.ts" \
         src/app/action-guards.test.ts
 git commit -m "feat(oppslag): publish, schedule, withdraw — and see who has read it"
 ```
 
-Body must state: why `published_at` is omitted for an immediate publish; that both the update and the delete check `count` because RLS refusals in those commands are filtered rather than raised; and that the form uses `useNoFormReset` because it carries a `<select>`.
+Body must state: why `published_at` is omitted for an immediate publish; **why a picked time goes through `osloLocalToInstant` rather than `new Date()`, and that the dev machine's clock is why the walkthrough could not have caught it**; that both the update and the delete check `count` because RLS refusals in those commands are filtered rather than raised; that the withdraw control renders only for a scheduled announcement, so the refusal sentence is a wall-1 guard rather than a screen; and that the form uses `useNoFormReset` because it carries a `<select>`.
 
 ---
 
@@ -3383,7 +3517,7 @@ export default async function ForelderOppslagDetailPage({
 }
 ```
 
-⚠ **No `<ReadStatus>` on a family surface.** `announcement_read_status` returns nothing to a guardian (assertion 40 pins it), so rendering it would be a permanently empty block — and read-tracking is who the office should phone, not something families see about each other.
+⚠ **No `<ReadStatus>` on a family surface.** `announcement_read_status` returns nothing to a guardian (assertion 58 pins it), so rendering it would be a permanently empty block — and read-tracking is who the office should phone, not something families see about each other.
 
 `src/app/(portal)/elev/oppslag/page.tsx` and `[announcementId]/page.tsx` are the same two files with `'student'` for `'parent'`, `/elev/oppslag` for `/forelder/oppslag`, and this list description:
 
@@ -3407,6 +3541,8 @@ description="Beskjeder fra skolen og fra klassen din vises her."
 ```bash
 cd ~/dev/iqra-portal && npm run typecheck && npm run lint && npm run knip && npm test && npm run build
 ```
+
+⛔ **The Klasse-1 enrolment window from Task 8 step 8 must still be open, or items 1–3 show an empty list and prove nothing** (A14). `forelder@`'s child Yusuf and `elev@`'s own login both hang off `fc000000-…-0001`; with the seed's `2026-08-20` enrolment date, the as-of audience of anything published today is empty and **the family list is correctly empty for the wrong reason**. Re-run the `update … set enrolled_on = current_date - 7` from Task 8 if the database has been reset since.
 
 A human, as `forelder@test.local` / `test-passord-123` and then `elev@test.local` / `test-passord-123`:
 
@@ -3434,7 +3570,7 @@ git commit -m "feat(oppslag): the family surfaces, and a read that records itsel
 ## Task 10: admin surface — the whole school, and scheduling
 
 **Files:**
-- Create: `src/app/(portal)/admin/oppslag/page.tsx` + `[announcementId]/page.tsx` + `ny/page.tsx` + `ny/NewSchoolAnnouncementForm.tsx` + `actions.ts`
+- Create: `src/app/(portal)/admin/oppslag/page.tsx` + `[announcementId]/page.tsx` + `[announcementId]/AnnouncementControls.tsx` + `ny/page.tsx` + `ny/NewSchoolAnnouncementForm.tsx` + `actions.ts`
 - Modify: `src/lib/dal/announcements.ts`
 - Modify: `src/app/(portal)/admin/AdminNav.tsx`
 - Modify: `src/app/action-guards.test.ts` (76 → 79)
@@ -3465,6 +3601,7 @@ Create `src/app/(portal)/admin/oppslag/actions.ts`. It is `laerer/oppslag/action
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { osloLocalToInstant } from '@/lib/dates';
 import { requireStaffRole } from '@/lib/dal/session';
 import { PG_ERROR } from '@/lib/pg-error';
 import { createClient } from '@/lib/supabase/server';
@@ -3505,8 +3642,10 @@ export async function createAnnouncementAction(
     title: parsed.data.title,
     body: parsed.data.body,
     created_by: user.id,
+    // ⚠ osloLocalToInstant, not new Date(): the picked value is Oslo
+    // wall-clock and the server is UTC in production. Same as the teacher's.
     ...(parsed.data.publisertAt
-      ? { published_at: new Date(parsed.data.publisertAt).toISOString() }
+      ? { published_at: osloLocalToInstant(parsed.data.publisertAt).toISOString() }
       : {}),
   });
   if (error) {
@@ -3621,7 +3760,15 @@ description="Beskjeder til hele skolen eller til en enkelt klasse. Et oppslag ka
 
 `src/app/(portal)/admin/oppslag/ny/page.tsx` — `listAllClasses()` into `NewSchoolAnnouncementForm`. ⚠ Unlike the teacher's version there is **no empty-state branch**: an admin with zero classes can still publish to the whole school, so an empty list is a valid state and the form must render.
 
-`src/app/(portal)/admin/oppslag/[announcementId]/page.tsx` — the teacher's detail page with `requireStaffRole('admin')` and `basePath` `/admin/oppslag`. It keeps `<ReadStatus>`: for a school-wide announcement the roster is every enrolled pupil at publication, which is exactly the «who do we phone» list D12's no-e-mail ruling makes the office's only instrument.
+`src/app/(portal)/admin/oppslag/[announcementId]/page.tsx` — the teacher's detail page with `requireStaffRole('admin')` and `basePath` `/admin/oppslag`. It keeps `<ReadStatus>`: for a school-wide announcement the roster is every enrolled pupil at publication, which is exactly the «who do we phone» list D12's no-e-mail ruling makes the office's only instrument. It renders its own `AnnouncementControls`, imported from `./AnnouncementControls` — **not** the teacher's, which imports the teacher's actions.
+
+`src/app/(portal)/admin/oppslag/[announcementId]/AnnouncementControls.tsx` — the teacher's component with three differences:
+
+- it imports `../actions` from **admin**, so `requireStaffRole('admin')` is the guard;
+- the delete form is rendered **unconditionally**, not only for a scheduled row — `announcements_delete_admin` has no `published_at` condition, and removing a published notice is the one thing only an admin can do. Label it «Slett oppslaget», and put the consequence next to it: *«Oppslaget forsvinner for alle, og registreringen av hvem som har lest det forsvinner med det.»* (the `announcement_reads` cascade);
+- the edit form is still gated on `canEdit`, which for an admin viewing a **teacher's** notice is `false`. There is no admin override and that is deliberate — see the note below.
+
+⚠ **Do not "fix" the missing edit form for admins by widening `can_edit_announcement` or `announcements_update_author`.** An edit changes what the school said without changing whose name is on it.
 
 - [ ] **Step 5: Nav, and the stale comment**
 
@@ -3631,7 +3778,17 @@ In `AdminNav.tsx`, add after «Meldinger»:
   { href: '/admin/oppslag', label: 'Oppslag', exact: false },
 ```
 
-and rewrite the comment above the «Meldinger» entry, which currently says it is *"Last, as on the other three navs"* — that stopped being true in Task 7. It should now say that Meldinger and Oppslag are the last two, in that order, on all four navs.
+and rewrite the comment above the «Meldinger» entry, which currently says it is *"Last, as on the other three navs"*.
+
+⚠ **Do not replace it with «Meldinger and Oppslag are the last two on all four navs» — that would be false too.** The original sentence was **already false before this plan**: `LaererNav` is I dag · Oppgaver · **Meldinger** · **Vurdering**, so Meldinger is last on three navs, not four. Task 7 then put Oppslag between Meldinger and Vurdering. The true sentence is:
+
+```ts
+  // Oppslag sits directly after Meldinger on all four navs. On ForelderNav,
+  // ElevNav and here it is the last item; on LaererNav both are followed by
+  // Vurdering. `exact: false` on both so the pill stays lit inside a thread or
+  // an announcement — with `exact: true` an admin reading one would see
+  // nothing marked current at all.
+```
 
 ⚠ `AdminNav` is also the only one of the four whose `<nav>` lacks `className="print:hidden"`. Leave it — fixing it is unrelated to this plan and belongs in its own commit.
 
@@ -3643,13 +3800,13 @@ and rewrite the comment above the «Meldinger» entry, which currently says it i
 cd ~/dev/iqra-portal && npm run typecheck && npm run lint && npm run knip && npm test && npm run build
 ```
 
-A human, as `admin@test.local` / `test-passord-123` (re-enrol MFA first):
+A human, as `admin@test.local` / `test-passord-123` (re-enrol MFA first, and keep Task 8's enrolment window open — item 5 counts an as-of roster, so with the seed's dates it is empty; A14):
 
 1. `/admin/oppslag` lists **every** announcement in the school, including the teacher's and every scheduled one.
 2. «Nytt oppslag» → «Hele skolen» → the warning line appears → publish → it shows in the parent's and the pupil's lists too.
 3. ★ Choose a class, blank the title, submit — and confirm the select still says that class, **not** «Hele skolen». This is the highest-severity refusal path in the plan.
-4. Open a **teacher's** announcement as admin: the edit control refuses with the «Bare den som skrev oppslaget» sentence, and the delete control works.
-5. The read-tracking block on the school-wide announcement lists every enrolled pupil.
+4. Open a **teacher's** announcement as admin: **there is no edit form at all** (`can_edit_announcement` is false — editing is authorship, and an admin corrects by deleting and writing their own), and the delete control works. Then open one the admin wrote: the edit form is there.
+5. The read-tracking block on the school-wide announcement lists every enrolled pupil, and any pupil with no guardian account and no login of their own is marked «ingen pålogging» rather than sitting silently in the unread list.
 6. `/admin/oppslag` and a detail page at **1280 and 375**.
 
 - [ ] **Step 7: Commit**
@@ -3661,7 +3818,7 @@ git add "src/app/(portal)/admin/oppslag" src/lib/dal/announcements.ts \
 git commit -m "feat(oppslag): the whole school, and a publish time chosen in advance"
 ```
 
-Body must state that an admin may delete but not edit another author's announcement, and why that is the same argument as D5.
+Body must state that an admin may delete but not edit another author's announcement, why that is the same argument as D5, and that the AdminNav comment it rewrote had been false since before this plan (Meldinger was last on three navs, not four).
 
 ---
 
@@ -3676,16 +3833,19 @@ pgTAP 37 proves the **database** refuses. This proves the TypeScript in front of
 
 ```bash
 cd ~/dev/iqra-portal && sed -n '1,60p' tests/api/threads.test.ts && grep -n "fc000000\|Klasse" supabase/seed.sql | head -20
+grep -n "enrolled_on" supabase/seed.sql tests/api/*.test.ts | head -20
 ```
 
-You need the exact class ids and which teacher teaches which. ⚠ **Do not guess them from this document** — plan 1's ledger records four separate defects that came from a plan asserting a repo fact it had not read.
+You need the exact class ids and which teacher teaches which. ⚠ **Do not guess them from this document** — plan 1's ledger records four separate defects that came from a plan asserting a repo fact it had not read. (Verified 2026-08-06: `KLASSE_1 = 'fc000000-0000-0000-0000-000000000001'` taught by `laerer@`, `KLASSE_3 = 'fc000000-0000-0000-0000-000000000002'` taught by `laererforelder@` — `supabase/seed.sql:108-109`.)
+
+⛔ **And you need to know that this file cannot work over the seed as it stands (A14).** Every seeded enrolment starts `2026-08-20`; today is earlier; so the as-of roster of anything published now is **empty**, and three of the tests below fail or pass vacuously for reasons that have nothing to do with the code they claim to guard. The second grep tells you which other api files pin the seed's date — at the time of writing `school-actions.test.ts:1105` asserts `'2026-08-20'` verbatim, and `assignments-core`, `assignments-actions` and `attendance-core` key off it. **That is why this file opens its own window and closes it again rather than moving the seed.**
 
 The harness is `tests/api/harness.ts`: it **mocks** `@/lib/supabase/server` with `createServerClientMock` and calls actions and DAL functions **directly**. There is no `signIn()`, no `serviceClient()` export, and no PostgREST driving. Copy the four-`vi.mock` preamble from `threads.test.ts` verbatim.
 
 - [ ] **Step 2: Write the suite**
 
 ```ts
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Repeated per-file mock preamble (ledger #14) — mock factories are hoisted.
 vi.mock('server-only', () => ({}));
@@ -3704,7 +3864,10 @@ vi.mock('next/navigation', async () => {
 
 import { randomUUID } from 'node:crypto';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { createAnnouncementAction } from '@/app/(portal)/laerer/oppslag/actions';
+import {
+  createAnnouncementAction,
+  deleteAnnouncementAction,
+} from '@/app/(portal)/laerer/oppslag/actions';
 import { getAnnouncement, getReadStatus } from '@/lib/dal/announcements';
 import { getPublicEnv } from '@/lib/env';
 import type { Database } from '@/lib/supabase/database.types';
@@ -3732,6 +3895,51 @@ function scaffoldingServiceClient() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
+
+/**
+ * ⛔ THE SEED ENROLS NOBODY UNTIL 2026-08-20, SO NOTHING BELOW WOULD WORK (A14).
+ *
+ * The announcement audience is resolved AS OF published_at (D9), and the two
+ * new helpers are the first in this repo anchored on now(). Every seeded
+ * class_students row starts 2026-08-20; before that date the as-of roster of an
+ * announcement published *now* is EMPTY. Without this window:
+ *   · «the read records itself» gets null from getAnnouncement and fails;
+ *   · «read-tracking is staff-only» throws TypeError on `.get(id)!.length`;
+ *   · and the scheduling test's «a family cannot read it» passes VACUOUSLY —
+ *     it would pass with `pub <= now()` deleted from the read predicate, which
+ *     is the one deletion that assertion exists to notice.
+ * The whole pgTAP suite stays green throughout: file 37's fixture is hermetic
+ * and now()-relative, so the DB tests cannot see this at all.
+ *
+ * ⚠ UPDATE, never INSERT: class_students_one_active is
+ * UNIQUE (student_id) WHERE (left_on IS NULL), so a second open enrolment for
+ * the same pupil raises 23505.
+ * ⚠ And it must be restored: school-actions.test.ts asserts enrolled_on ===
+ * '2026-08-20' verbatim, and three other api files key off the same dates.
+ * `fileParallelism: false` (vitest.config.api.ts) is what makes that safe —
+ * files run one at a time, so no other file can observe the window. If this
+ * file is ever run with parallelism on, or the process is killed mid-file, run
+ * `supabase db reset` before trusting the rest of the suite.
+ */
+const KLASSE_1_ENROLLED_ON = '2026-08-20';
+
+beforeAll(async () => {
+  const service = scaffoldingServiceClient();
+  const openedOn = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const { error } = await service
+    .from('class_students')
+    .update({ enrolled_on: openedOn })
+    .eq('class_id', KLASSE_1);
+  if (error) throw new Error(`Kunne ikke åpne påmeldingsvinduet: ${error.message}`);
+});
+
+afterAll(async () => {
+  const service = scaffoldingServiceClient();
+  await service
+    .from('class_students')
+    .update({ enrolled_on: KLASSE_1_ENROLLED_ON })
+    .eq('class_id', KLASSE_1);
+});
 
 beforeEach(() => {
   signOut();
@@ -3791,6 +3999,18 @@ describe('creation entitlement', () => {
     const service = scaffoldingServiceClient();
     const { data } = await service.from('announcements').select('id').eq('title', `${SCRATCH}fremmed`);
     expect(data).toHaveLength(0);
+
+    // ★ THIS TEST'S OWN POSITIVE CONTROL, IN THE SAME it(), AS THE SAME ACTOR.
+    // Without it the whole test passes under a TOTAL creation outage: the
+    // action converts every 42501 into exactly the sentence above, and "no row"
+    // is satisfied by the outage too. That is F6 from plan 1's panel,
+    // reproduced inside the file whose header claims to have eliminated it —
+    // and step 4 below could not have caught it, because step 4 IS the outage.
+    const ok = await createAnnouncementAction(
+      idleForm,
+      form({ classId: KLASSE_3, title: `${SCRATCH}egen`, body: 'x', publisertAt: '' }),
+    ).catch((e: Error) => e);
+    expect(String(ok)).toContain('NEXT_REDIRECT:/laerer/oppslag');
   });
 
   it('refuses the whole school before it reaches the database', async () => {
@@ -3894,12 +4114,57 @@ describe('read-tracking is staff-only', () => {
     expect((await getReadStatus([id])).get(id)).toBeUndefined();
 
     // ★ The positive control. Without it, a projection that returned nothing to
-    // ANYONE would pass the assertion above.
+    // ANYONE would pass the assertion above. ⚠ It is also the assertion that
+    // depends on beforeAll's enrolment window: with the seed's own dates the
+    // Map has no entry for the teacher either, and this line throws TypeError
+    // rather than failing — which reads as a broken test, not a missing roster.
     await signInAsAAL2('laerer@test.local');
     expect((await getReadStatus([id])).get(id)!.length).toBeGreaterThan(0);
   });
 });
+
+describe('the filtered delete', () => {
+  it('withdraws the author\'s scheduled notice and refuses her published one', async () => {
+    const service = scaffoldingServiceClient();
+    const when = new Date(Date.now() + 86_400_000).toISOString().slice(0, 16);
+
+    await signInAsAAL2('laerer@test.local');
+    await createAnnouncementAction(
+      idleForm,
+      form({ classId: KLASSE_1, title: `${SCRATCH}slett-planlagt`, body: 'x', publisertAt: when }),
+    ).catch(() => undefined);
+    await createAnnouncementAction(
+      idleForm,
+      form({ classId: KLASSE_1, title: `${SCRATCH}slett-publisert`, body: 'x', publisertAt: '' }),
+    ).catch(() => undefined);
+
+    const { data: rows } = await service
+      .from('announcements').select('id, title').like('title', `${SCRATCH}slett-%`);
+    const scheduled = rows!.find((r) => r.title.endsWith('planlagt'))!.id;
+    const published = rows!.find((r) => r.title.endsWith('publisert'))!.id;
+
+    // A2's positive control: her own unpublished notice goes.
+    await expect(
+      deleteAnnouncementAction(form({ id: scheduled })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+    const { data: gone } = await service.from('announcements').select('id').eq('id', scheduled);
+    expect(gone).toHaveLength(0);
+
+    // ⚠ And the refusal is BY EFFECT, not by an exception RLS never raises: a
+    // filtered DELETE returns OK with rows=0. The sentence exists because the
+    // action checks `count`, which is the only way to tell the two apart.
+    await expect(
+      deleteAnnouncementAction(form({ id: published })),
+    ).rejects.toThrow(/skoleadministrasjonen/);
+    const { data: survived } = await service.from('announcements').select('id').eq('id', published);
+    expect(survived).toHaveLength(1);
+  });
+});
 ```
+
+⚠ `deleteAnnouncementAction` returns `Promise<void>` and signals success by `redirect()`, which the harness's `redirectMock` throws — so **both** arms above are `rejects.toThrow`, and only the message tells them apart. Add it to the import from `@/app/(portal)/laerer/oppslag/actions`.
+
+⚠ `when` is a **UTC-shaped** `YYYY-MM-DDTHH:mm` string standing in for a `datetime-local` value, which the action reads as Oslo wall-clock. That shifts the real publication time by an hour or two — irrelevant here, since the assertion is only "in the future and unstamped", and deliberately so: a test that pinned the exact instant would be pinning `osloLocalToInstant`, whose own tests live in `src/lib/dates.test.ts` where they can run under `TZ=UTC`.
 
 ⚠ `createAnnouncementAction` **redirects on success**, which the harness's `redirectMock` turns into a thrown `NEXT_REDIRECT:` error. Every success path above therefore either asserts the thrown string or uses `.catch(() => undefined)` when the redirect is incidental. **The first test must assert the string** — swallowing it there is exactly how F6's outage hid.
 
@@ -3911,9 +4176,25 @@ cd ~/dev/iqra-portal && eval "$(supabase status -o env | sed 's/^/export /')" &&
 
 Expected: the whole api suite green. Budget **21 minutes** and expect no output until it finishes. ⚠ The suite is **not flaky** — apparent flakiness is GoTrue session churn, and it resets between runs.
 
-- [ ] **Step 4: ★ Prove the positive control does its job**
+- [ ] **Step 4: ★ Prove the positive controls do their job**
 
-Break creation on purpose — set `announcements_insert_staff` to `with check (false)` — and re-run just this file. **Every test in it must fail, not only the positive ones.** If the refusal blocks stay green, they are asserting an outage rather than a wall, and that is F6 reproduced. Restore the policy by re-running the migration and confirm with:
+Break creation on purpose — set `announcements_insert_staff` to `with check (false)` — and re-run just this file.
+
+⛔ **"Every test must fail" is the wrong instruction, and the first draft's version of this step would have been passed by a suite with a hole in it.** Under a total creation outage:
+
+| test | under the outage | why |
+|---|---|---|
+| publishes to a class the teacher actually teaches | **must fail** | no `NEXT_REDIRECT` |
+| refuses a class the teacher does not teach | **must fail** | only because of the Klasse-3 control added inside it — without that line it passes, since the action turns every 42501 into the asserted sentence and "no row" is satisfied by the outage |
+| accepts a future time, unstamped and unreadable | **must fail** | `data` is empty |
+| the enumeration-quiet null | **must fail** | `data![0]` throws |
+| the read records itself | **must fail** | `data![0]` throws |
+| read-tracking is staff-only | **must fail** | `data![0]` throws |
+| the filtered delete | **must fail** | neither row is created |
+| refuses the whole school before it reaches the database | **stays green — expected** | pure zod/branch, never reaches the DB |
+| refuses a past time | **stays green — expected** | pure zod, never reaches the DB |
+
+So: **seven of the nine must fail; the two pure-validation tests are expected to stay green.** If any of the seven stays green, it is asserting an outage rather than a wall — F6 reproduced — and the fix is a discriminator inside that same `it()`, not a note in the commit body. Restore the policy by re-running the migration and confirm with:
 
 ```bash
 docker exec supabase_db_iqra-portal psql -U postgres -q -t -A -c "select pg_get_expr(polwithcheck, polrelid) from pg_policy where polname='announcements_insert_staff';"
@@ -3927,7 +4208,7 @@ git add tests/api/announcements.test.ts
 git commit -m "test(oppslag): wall-1 assertions for publication, scheduling and the quiet null"
 ```
 
-Body must state that every refusal block carries a positive control and that the whole file was watched fail under a `with check (false)` policy.
+Body must state that every refusal block carries a positive control **inside its own `it()`**, that seven of the nine tests were watched fail under a `with check (false)` policy and which two were expected to stay green and why, and that the file opens and restores its own enrolment window because the seed enrols nobody until 2026-08-20 (A14).
 
 ---
 
@@ -3937,13 +4218,19 @@ The file is written once in Task 1 and grown twice. **Inserting §H and §I renu
 
 | after | §A | §B | §C | §D | §E | §F | §G | §H | §I | §J | `plan()` |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Task 1 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | — | — | 35–39 | 39 |
-| Task 4 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | 35–42 | — | 43–47 | 47 |
-| Task 5 | 1–4 | 5–13 | 14–16 | 17–20 | 21–27 | 28–30 | 31–34 | 35–42 | 43–47 | 48–52 | 52 |
+| Task 1 | 1–5 | 6–14 | 15–18 | 19–22 | 23–31 | 32–34 | 35–42 | — | — | 43–47 | 47 |
+| Task 4 | 1–5 | 6–14 | 15–18 | 19–22 | 23–31 | 32–34 | 35–42 | 48–60 | — | 61–65 | 60 |
+| Task 5 | 1–5 | 6–14 | 15–18 | 19–22 | 23–31 | 32–34 | 35–42 | 48–60 | 61–66 | 67–71 | 66 |
 
-Each task's mutation table uses the numbering **as of that task**. If you re-run Task 1's mutations after Task 5 has landed, its §J references (35, 36, 37) are now 48, 49 and 50.
+⚠ **§H and §I are INSERTED before §J, not appended after it.** So §J's five assertions move twice — 43–47, then 61–65, then 67–71 — while everything above §H never moves at all. A mutation table that names §J at the wrong task's numbers is the failure mode this table exists to prevent.
 
-⚠ **§H must be inserted after §G, and §I after §H, both before §J.** §H's «exactly one family has read it» depends on the read row §G's assertion 31 inserts. §J is order-independent by construction — it operates on `…046` and `…047`, which nothing else touches — but keeping it last keeps the table above true.
+⚠ **And §J's own header comment inside the file moves with it.** Task 1 writes `-- ── §J 43-47 the delete pair ──`; Task 4 rewrites it to **61-65** and Task 5 to **67-71**. Do it in the same edit that inserts the new section, not afterwards — a section header that disagrees with the assertion numbers is how the next reader mis-attributes a failure, and it costs nothing to keep right.
+
+Section sizes: §A 5 · §B 9 · §C 4 · §D 4 · §E 9 · §F 3 · §G 8 · §H 13 · §I 6 · §J 5 = **66**.
+
+Each task's mutation table uses the numbering **as of that task**. If you re-run Task 1's mutations after Task 5 has landed, its §J references (43, 44, 45) are now 67, 68 and 69, and its §G references (35–42) have not moved.
+
+⚠ **§H must be inserted after §G, and §I after §H, both before §J.** §H's «exactly two families have read it» depends on the two read rows §G's assertions 35 and 39 insert — one guardian's and one pupil's own. §J is order-independent by construction — it operates on `…046` and `…047`, which nothing else touches — except that §G's three read-visibility assertions (40–42) read `…046`'s read row, so they must stay ahead of §J's deletes. Keeping §J last satisfies both.
 
 ---
 
@@ -3951,15 +4238,16 @@ Each task's mutation table uses the numbering **as of that task**. If you re-run
 
 Not the phase's exit gate (that is plan 4) — these are the conditions for calling plan 2 done.
 
-- [ ] `supabase db reset && supabase test db --local` → **one more file than the Task 0 baseline**, `Tests=` baseline + 52 (file 37) + 6 (file 34) + 9 (file 31), `Result: PASS`.
-- [ ] `npm test` → all pass; the count has risen by the nav and component tests added here.
-- [ ] `npm run test:api` → all pass (budget 21 min).
+- [ ] `supabase db reset && supabase test db --local` → **one more file than the Task 0 baseline**, `Tests=` baseline + 66 (file 37) + 6 (file 34) + 9 (file 31), `Result: PASS`.
+- [ ] `npm test` → all pass; the count has risen by the nav and component tests, the three `audienceLabel` cases and the three `osloLocalToInstant` cases added here. Run the date tests under `TZ=UTC` as well as the default — that is the whole point of them.
+- [ ] `npm run test:api` → all pass (budget 21 min), **and `class_students.enrolled_on` for Klasse 1 is back to `2026-08-20` afterwards** (`select enrolled_on from public.class_students where class_id = 'fc000000-0000-0000-0000-000000000001';`). Task 11 opens that window in `beforeAll` and closes it in `afterAll`; if a run is interrupted, `supabase db reset` before trusting `school-actions.test.ts`.
 - [ ] `npm run typecheck` → 0 · `npm run lint` → 0 errors · `npm run knip` → only the pre-existing findings · `node scripts/audit-gate.mjs` → pass.
 - [ ] `npm run build` → clean. Stop the dev server first.
 - [ ] `action-guards.test.ts` asserts **79**, and the number was reached by two deliberate bumps (Tasks 8 and 10), each stated in its commit body.
-- [ ] `29_definer_fingerprints.sql` asserts the value **measured** after Task 6, not the one predicted here, and the commit body says which.
-- [ ] Every ★ mutation in Tasks 1–6 was run, each reddened **alone**, and each restore was verified by an object-definition diff — not merely issued. Record which, in the final commit body.
-- [ ] A human has clicked all four surfaces at 1280 and 375, after re-enrolling MFA. Specifically: a teacher publishes and schedules; **a refused publish leaves both selects showing what was chosen**; a parent and a pupil see the published notice and not the scheduled one; the admin publishes school-wide and every role sees it; the admin can delete a teacher's notice but not edit it; the read count moves when a parent opens it.
+- [ ] `29_definer_fingerprints.sql` asserts the value **measured** after Task 6, not the one predicted here, and the commit body says which. Its «the live SECURITY DEFINER count is 52» prose reads 60 in both places.
+- [ ] Every ★ mutation in Tasks 1–6 was run — **19 in Task 1, 6 in Task 2, 6 in Task 3, 11 in Task 4, 5 in Task 5, 3 + the F1 check in Task 6** — each reddened **alone**, and each restore was verified by an object-definition diff, not merely issued. Record which, in the final commit body.
+- [ ] The three `has_function_privilege('anon', …)` assertions (§A, §H, §I) exist and were each watched fail under a `grant execute … to anon`. Nothing else in the suite sweeps function ACLs (standing rule 14).
+- [ ] A human has clicked all four surfaces at 1280 and 375, after re-enrolling MFA **and after opening the Klasse-1 enrolment window** (A14 — without it every family surface is correctly empty and proves nothing). Specifically: a teacher publishes and schedules; **the scheduled time reads back as the time that was picked**; **a refused publish leaves both selects showing what was chosen**; a parent and a pupil see the published notice and not the scheduled one; the admin publishes school-wide and every role sees it; the admin can delete a teacher's notice and has no edit form for it; the read count moves when a parent opens it.
 
 ---
 
@@ -3975,24 +4263,38 @@ Say these out loud when handing over, so nobody reports them as defects.
 - **Deleting a class that has ever been announced to now fails.** `announcements.class_id` is `on delete restrict`, so `deleteClassAction` (`src/app/(portal)/admin/klasser/actions.ts:87`) will raise `23503` and surface as «Kunne ikke slette klasse: …». That is the intended trade — an announcement is a record of what the school told a family — but the message is a raw database error and the admin flow has no branch for it. **Fixing the message is a one-line `PG_ERROR.FOREIGN_KEY` branch in that action and it is deliberately not done here**, because it touches a Phase-3 surface this plan otherwise leaves alone.
 - **`announcements.body` is free text no pupil-keyed erasure reaches**, and `announcement_reads` rows keyed to a *pupil's own login* survive the `students` cascade, because `student_user_id` is `on delete set null`. Both are spec §10.11 items and both belong to Phase 7's retention job. This plan makes them possible to sweep (`service_role` holds `select, delete` on both tables) and sweeps nothing.
 - **The announcement lists are unpaginated, and the read policy is not inlinable.** `listAnnouncements()` selects every announcement the caller may read, and `reads_announcement_row` is SECURITY DEFINER with `set search_path = ''`, so PostgreSQL calls it **once per row scanned** — measured at roughly 20 buffer hits and ~2 ms per candidate on the dev host, and each call may fan out to three more definer helpers. At this school's volume (a few notices a week) that is nothing; over several years of history it becomes a visibly slow parent page. The `(published_at desc)` index is there for it, and the fix when it bites is a `.limit()` plus «vis eldre», not a widened policy. **Plan 3 inherits the sharper version of this** — see A7's narrow-then-filter note, because its recipient query runs inside the announcement INSERT's own transaction.
+- **A scheduled announcement addresses a roster nobody can see yet, and the author cannot correct it — only withdraw it.** `published_at` moves the audience in **both** directions (A1): forward-dating drops families whose enrolment closes before the new date and adds families who join after today. The 120-day CHECK bounds how far that can reach, and A2's withdraw path is how it is undone. Nothing on any screen previews «who would get this if I schedule it for March», and read-tracking deliberately shows nothing for an unpublished row. If the school starts scheduling months ahead, that preview is the next thing to build.
+- **`announcement_read_status` names pupils the school cannot reach through the portal at all.** A pupil with no guardian account and no login of her own can never clear the unread list; the `reachable` flag makes the screen say «ingen pålogging» instead of pretending. **What it does not do is fix the underlying gap** — those families exist because nobody has been invited yet, which is plan 4's invite/credential flow.
 - **A departed family sees «Klasseoppslag» instead of the class name.** `audienceLabel` degrades to a true, vaguer word rather than the false «Hele skolen» (see Task 7 step 2). Recovering the real name would need a definer projection over `classes` — the `thread_counterparts` pattern again — and that is a schema + RLS change this plan does not make.
-- **No announcement is seeded.** `supabase/seed.sql` is untouched on purpose — see the scope note. The walkthrough creates its own.
+- **No announcement is seeded, and no enrolment is moved.** `supabase/seed.sql` is untouched on purpose — see the scope note and A14. The consequence is that **every family-facing surface is empty out of the box until somebody back-dates an enrolment**, which is a trap for the next person who opens the portal expecting to see something. The api suite opens and closes its own window; the walkthrough tells the human to. Neither is a fix, and the real fix — a seed whose dates are relative to `current_date` — is a change to five committed api assertions and belongs in its own commit.
 - **The Norwegian copy is a draft.** §12 Q3 is answered only in part: the user has not edited these strings and the board has not seen them. The disclosure block's copy-and-policies-are-one-change rule (§4.2) applies to the empty-state sentence «Du får ikke e-post om oppslag» too — it is true only because of D12.
 
 ---
 
 ## Plan review ledger — 2026-08-06
 
-Reviewed against the goal before any code, per CLAUDE.md. A single focused pass
-in the main loop, plus one lens dispatched by the coordinator mid-write. **Seven
-defects found in the plan**, six of them in material the plan had already
+Reviewed against the goal before any code, per CLAUDE.md. **Two rounds.**
+
+**Round 1** — a focused pass in the main loop plus one lens dispatched
+mid-write: **seven defects**, six of them in material the plan had already
 written and read as correct.
 
-★ **Five of the seven came from running a query against the database rather than
-from re-reading the plan.** That is now the fifth round on this project where
-checking a claim against the repo, not against the plan's own consistency, is
-what found the defect. Two came from tracing a mutation's *effect* by hand
-rather than trusting the sentence that named it.
+**Round 2** — the full panel CLAUDE.md calls for on RLS plans: three independent
+lenses over the round-1 document — **assertion vacuity** (9 findings),
+**RLS / privilege escalation** (7), **repo integration** (5 + 5 minors). Every
+finding marked *proved* was executed against the live database, most inside
+`begin; … rollback;` replays of the three migrations verbatim. **All 21 were
+applied.** The round-2 tables are below the round-1 one.
+
+★ **Across both rounds, almost every finding came from running something rather
+than from re-reading the plan.** That is now the sixth round on this project
+where checking a claim against the repo — not against the plan's own internal
+consistency — is what found the defect. The rest came from tracing a mutation's
+*effect* by hand instead of trusting the sentence that named it.
+
+### Round 1 — the focused pass and one lens
+
+⚠ Assertion numbers in this table are the **round-1 file's** (39 → 47 → 52). Round 2 added assertions in §A, §C, §E, §G, §H and §I, so the current numbering is the one in «Assertion numbering in file 37, across tasks» — 47 → 60 → 66. The findings below are unchanged; only their addresses moved.
 
 | # | Defect | How it was caught | Consequence if executed |
 |---|---|---|---|
@@ -4004,37 +4306,95 @@ rather than trusting the sentence that named it.
 | 6 | **The three sibling tables' safety was undocumented** | Same lens. | `announcement_reads_select_own_or_staff`, and plan 3's `notifications_select_own` and `private.email_pings`, are all safe from the `RETURNING` hazard for three *different* reasons. A plan-3 author who has just read this plan's row-form argument would over-apply it. Now written out as **A7b**, with the reason per table. |
 | 7 | **The definer-predicate cost was unrecorded, and it lands on plan 3 hardest** | Same lens, measured: SECURITY DEFINER + `set search_path = ''` blocks inlining, so the planner emits one call per row scanned (~20 buffer hits, ~2 ms per candidate). | D21 says the fan-out must **call** the read predicate. Read literally, that becomes `select p.id from profiles p where reads_announcement(p.id, …)` — O(school roll) definer invocations inside the announcement INSERT's own transaction. Now A7 says **narrow first, then filter**, and «leaves broken» records the milder version this plan does ship (unpaginated lists over a non-inlinable policy). |
 
+### Round 2 — the three-lens panel
+
+★★ **The most important finding was found TWICE, independently, by two lenses that were not talking to each other** — the vacuity lens tracing which api assertions could fail, and the integration lens replaying the migrations against the real seed. When two different questions converge on one fact, that fact is the one to fix first.
+
+| # | Lens(es) | Defect | Consequence if executed |
+|---|---|---|---|
+| ★★1 | **vacuity + integration**, both proved | **No seeded family is in any class as of today.** Every `class_students.enrolled_on` is `2026-08-20`/`21`; `current_date` is `2026-08-05`. The two new helpers are the **first in the repo anchored on `now()`** — the eight existing sites resolve against a lesson/test/assignment date inside the term, and the live `guardian_in_class` never looks at `enrolled_on` at all, which is why plan 1's thread tests pass over the same seed. | Two api tests fail on `null`/`TypeError`, **one passes vacuously** (the family-cannot-read-a-scheduled-notice assertion would pass with `pub <= now()` deleted), and four walkthrough items are unperformable. **pgTAP stays 100% green throughout** — file 37's fixture is hermetic and `now()`-relative. Now A14, standing rule 15, a Task 0 probe, a `beforeAll`/`afterAll` window in Task 11, and a sentence in all three walkthroughs. |
+| 2 | vacuity, proved | **`announcement_reads_select_own_or_staff` had no assertion at all.** §G tested INSERTs; §H goes through a definer projection that never evaluates the policy; §J read the table only after `reset role`, as `postgres`, which holds `rolbypassrls`. | The policy could have been `using (true)` **or** `using (false)` with all 52 assertions of the round-1 file green — the same shape as commit `3f67907` on this very branch. Now a §G triple over one fixture row (guardian 0 / class teacher 1 / admin 1) plus mutation 17. |
+| 3 | vacuity + integration, proved | **Task 2 passed the TERM id where the CLASS id belongs** (`bd…031` is `terms.id`, the class is `bd…041`). | Four assertions redden, **and the two that expect `false` pass for the wrong reason** — because the fixture row does not exist, not because `left_on` is exclusive. Fix what is red and both boundary negatives stay permanently untested. Plan 1's «wrong pupil's login», verbatim. |
+| 4 | vacuity, proved | **Task 1's mutation 10 would have aborted the file instead of reddening.** Dropping the `created_by` pin from `using` while keeping it in `with check` does not make the UPDATE a no-op — it raises `new row violates row-level security policy`, and §F's UPDATEs are bare statements, so the transaction aborts, everything after fails `25P02` and `finish()` never runs. | The mutation that guards the Phase-4 authorship defect would have read as a broken file. Now dropped from **both** clauses. And the comment justifying the pin was rewritten: the laundering attack it described is impossible anyway (`created_by` has no UPDATE grant) — the real reason is that a co-teacher could otherwise retitle a colleague's notice. |
+| 5 | vacuity, proved | **Assertion 45's scalar-subquery shape made Task 5's mutation 1 abort the file.** `select (select announcement_id from claim_due_announcements())` raises `more than one row returned by a subquery` the moment the claim returns two rows — which is exactly what the mutation makes it do. | The most valuable mutation in §I would have destroyed the evidence instead of producing it. Now `array_agg(… order by …)`, and the table corrected: mutation 1 reddens three assertions, mutation 2 reddens two. |
+| 6 | **RLS**, proved | **A1's central claim was false: forward-dating moves the audience too.** At `published_at = now()+90d` a guardian whose `left_on` falls inside the window drops out and one who joins is added. No upper bound existed at all (`'2999-01-01'` accepted), and — proved — the author **cannot withdraw** a scheduled row after she leaves the class. | A sentence in a migration comment that is wrong in the security-relevant direction. Now A1 states both directions, a `120 days` CHECK bounds the forward one (flagged as a revisable **product** decision, mirrored in zod), and A2's withdraw policy drops the `writes_announcement` conjunct that was disabling the very path A2 promises. |
+| 7 | **RLS**, proved | **The `UPDATE … RETURNING` comment named the wrong mechanism.** It told a future engineer the row form would catch a later `update (published_at)` grant. It would not: `author = uid` short-circuits, and both the bare update and `… returning title` succeed. `class_id` *is* refused — but by `announcements_update_author`'s `with check`, not by the SELECT policy. | This project has been bitten specifically by wrong reasons in comments. Rewritten to say what is true: **`published_at` has no policy guard of any kind — the absent UPDATE grant is the only wall** — while keeping the row-form argument for the INSERT/`RETURNING` case it was actually introduced for. |
+| 8 | **RLS**, proved | **`cls is null` admitted any authenticated account, including one with zero `user_roles` rows.** `handle_new_user` gives every auth user a profile; roles are assigned separately; `src/proxy.ts` is not the wall because PostgREST is reachable directly with any valid session. | A created-but-unassigned account, or a departed family whose roles were revoked, keeps reading every school-wide notice. Now one extra clause (A15), a fixture user with no role, assertion 17 and mutation 15. |
+| 9 | **RLS**, proved | **A3 was false: the read-tracking denominator is not the set the read predicate admits.** The projection counts *pupils*; the predicate admits *users*. The fixture's A4 witness has no login and no guardian account, so «0 av 3» could never reach 3. | The office is told to phone a family with no account, and the same fixture pupil conflates «protected» with «unreachable». Judgement call: the fifth `reachable` column was **taken now** — with assertion 59's `pg_get_function_result` string, the fingerprint entry, the counter, the DAL type and `ReadStatus.tsx`'s «ingen pålogging» all moved with it. |
+| 10 | vacuity, proved | **Three mutations could not be applied as written.** A fifth output column needs `drop function` (42P13 otherwise); `and not s.protected` cannot go in the lateral (`s` is joined after it); and Task 6's F1 rename needs `announcements_select_audience` and `private.reads_announcement` dropped first. | Three "run this mutation" steps that stop with an error unrelated to what they were testing. All three now carry their sequence. |
+| 11 | vacuity, proved | **Nothing asserted `revoke execute … from public`, and `00_grant_firewall.sql` does not sweep functions** — it filters `relkind in ('r','p','v','m','S')` and never touches `pg_proc`. The round-1 ledger's claim that it "sweeps every current and future public object" is true for tables and **false for functions**. | An anon-executable definer projection over every class roster, by name, with read state attached — caught by nothing. Now three `has_function_privilege('anon', …)` assertions (§A, §H, §I), one mutation each, and standing rule 14. |
+| 12 | vacuity, proved | **A5's pupil-login arm had no witness, and no fixture pupil had two guardians.** The only read row belonged to a guardian, so deleting `ar.user_id = s.student_user_id` reddened nothing. | Half of A5 was untested and «exactly one FAMILY» could not distinguish per-family from per-user counting. Now a pupil records their own read in §G, `…031` carries two guardians, assertion 52 expects **2**, and 53 names the pupil arm. |
+| 13 | vacuity, proved | **Task 11 step 4's "every test must fail" was false for three of eight.** The foreign-class refusal passes under a total outage — the action converts every 42501 into exactly the asserted sentence, and "no row" is satisfied by the outage. | F6 from plan 1's panel, reproduced **inside the file whose header claims to have eliminated it**. Now that test carries a Klasse-3 publish as its own discriminator, and step 4 is a table: seven of nine must fail, two pure-validation tests are expected to stay green. |
+| 14 | integration, proved | **`export async function listAnnouncements()` fails `npm run knip` at ERROR level** — consumed only inside its own module. The `listThreads` precedent does not apply (it is imported by `src/lib/admin/threads.ts`). | The plan's own standing rule 10, broken by the plan. Fails at Task 7 step 6 and every gate after. `export` dropped. |
+| ★15 | integration, proved | **`datetime-local → new Date().toISOString()` publishes 1–2 HOURS LATE in production** and the walkthrough cannot see it, because the dev machine runs Europe/Oslo and Vercel runs UTC. The zod `refine` computes `Date.parse` the same way, so inside that window the validator and `announcements_not_backdated` disagree. | **The plan spends A8 closing this exact hazard in SQL and then reopened it in TypeScript**, in both actions. D8's own example is «publiser lørdag 07:00». Now `osloLocalToInstant` in `src/lib/dates.ts` with its own tests, used by both actions and all three refines — and the walkthrough says to read the time back. |
+| 16 | integration, proved | **Two exported actions per file had no caller, and the walkthrough asked a human to click controls the plan never writes.** `AnnouncementDetail.canEdit` was fetched by an RPC on every detail view and read by nobody. | Four more knip errors on top of #14, plus two walkthrough steps that cannot be performed. Judgement call: **the components were added** (one per staff surface), and the walkthrough steps were rewritten to match what they actually do. |
+| 17 | integration | **AdminNav's «Last, as on the other three navs» was already false** — `LaererNav` is I dag · Oppgaver · Meldinger · **Vurdering** — and the round-1 replacement text would have been false too, since Task 7 inserts Oppslag before Vurdering. | Replacing one wrong comment with another. The true sentence is now written out in Task 10 step 5, ready to paste. |
+| 18–21 | integration, minors | File 29's «the live SECURITY DEFINER count is 52» becomes **60** (8 new definers; the stamp trigger is not one) · Task 1 step 5 mis-described `26_rls_force.sql` (`plan(4)` = three table sweeps + one role attribute) · the `PG_ERROR.CHECK` branch's message also fires for the length CHECKs and now for the schedule bound (unreachable — zod runs first, with both limits mirrored) · the prefix inventory omitted `33, 55, 77, f1–f5, f7, fa` (`c0` is still genuinely free). | Each fixed in place. |
+
+**Also fixed while applying the above** (found by this pass, not by a lens): Task 0 step 2 queried `pg_constraint` for `class_students_one_active`, which is a partial unique **index** and never appears there — the check would have read as "the constraint is gone". It now queries `pg_indexes`.
+
 **Verified sound and left unchanged** (checked by running the query, not assumed):
 
 - `postgres` **is** a member of `service_role`, so §I's `set local role service_role` works — and five existing pgTAP files already do it.
 - `students.first_name` and `last_name` are both `NOT NULL`, so `first_name || ' ' || last_name` cannot yield NULL.
 - `class_teachers_select_admin_or_own_class` is `has_role(admin) or teaches_class(uid, class_id)` — **self-satisfying for a teacher's own rows**, so `listPublishableClasses` will return rows. Plan 1's measured 0-row result was for a **guardian**, and the distinction matters: the same query is safe here and was not there.
 - `pg_get_function_result` really renders `TABLE(col type, …)`, verified against `thread_counterparts` and `guardian_thread_options`, so Task 4's return-shape assertion is written in a form that can pass.
-- `29_definer_fingerprints.sql` really ends in `49`; `31_column_locks.sql` really is `plan(22)`; `34_enrollment_boundary.sql` really is `plan(24)` with D = 2026-09-15; `action-guards.test.ts` really asserts `73`; the migration head really is `20260805123000`; `37` and prefix `c0` are free in both tests and migrations.
-- `26_rls_force.sql` sweeps **all** public tables and asserts three things per table, so the two new tables fail it by name if either verb is missed; `00_grant_firewall.sql` likewise sweeps every current and future public object, so a missing `revoke all … from anon` reddens with no edit to that file.
+- `29_definer_fingerprints.sql` really ends in `49`; `31_column_locks.sql` really is `plan(22)`; `34_enrollment_boundary.sql` really is `plan(24)` with D = 2026-09-15; `action-guards.test.ts` really asserts `73`; the migration head really is `20260805123000`; `37` and prefix `c0` are free in both tests and migrations. **Re-measured by two of the three round-2 lenses**, one of them after a concurrent `db reset`: all still true, on PostgreSQL 17.6.
+- `26_rls_force.sql` sweeps **all** public tables — `plan(4)` is three per-table sweeps (enabled, forced, has-a-policy) plus one role attribute — so the two new tables fail it by name if either verb is missed. `00_grant_firewall.sql` (`plan(6)`) sweeps every current and future public **table, view, matview and sequence**, so the `revoke all … from anon, authenticated, service_role` is required (measured: `pg_default_acl` grants `Dxtm` to all three on postgres-created tables in `public`) and a missing one reddens with no edit to that file. ⛔ **It does NOT sweep functions** — corrected from the round-1 ledger, and now standing rule 14.
+- **All three migrations apply cleanly, verbatim, in one transaction** on PG 17.6, in the order their timestamps give them; the scoped `create trigger … execute function private.audit_row_change('id','class_id')` is valid (the function takes no declared args and reads `tg_argv`); `set_updated_at`, `has_role` and `teaches_class` all exist with the assumed signatures.
+- **All 26 round-1 fingerprint markers were confirmed present in the installed bodies** by running file 29's own `position(m in pg_get_functiondef(...)) = 0` query over every one: 0 missing. **No marker is satisfiable from a function header** — checked individually, including the deliberate `_row` suffix on `private.reads_announcement`'s marker and the `cls` / `pub` / `cid` parameter names. (Round 2 then added two markers, so the counter is 77, not 75.)
+- **Every repo-wide invariant survives, measured post-apply:** 0 RLS/force violations, 0 anon table privileges, 0 DDL verbs held by api roles, 0 tables without a policy. No other test sweeps all tables or all definer functions.
+- **The full role × row matrix over the three fixture announcements was executed** — admin, both teachers, four guardian positions, the pupil's own login, economy and a role-less user against the class notice, the school-wide notice and the scheduled one. `left_on` exclusive and `enrolled_on` inclusive confirmed **at the edge**; **no path admits `economy` to a class announcement** and none excludes it from a school-wide one; `private.is_staff` really is `role in ('admin','teacher','economy')`, so standing rule 11's ban is correct and no policy here uses it.
+- **The `select distinct` in the roster lateral is necessary, not defensive:** `class_students_one_active` forbids two OPEN enrolments, `class_students_interval_unique` is `(class_id, student_id, enrolled_on)` — so two overlapping **closed** intervals containing one `published_at` are possible, and the school-wide branch would double-count without it.
+- **Both `RETURNING` claims hold:** row form + `returning` succeeds for immediate and scheduled inserts; the by-id spelling raises 42501 while the predicate evaluates true. The by-id delegate is used in exactly two places, both safe.
+- **Grants:** every UPDATE lock holds (`published_at`, `created_at`, `class_id`, `created_by`, `fanned_out_at` all refused; only `title`/`body` pass, and only for the author); `id` is not INSERT-grantable, so a client cannot choose an announcement id; `read_at` forged at INSERT → 42501. **No enumeration oracle** — a real-but-unreadable id and a non-existent one both give 42501, RLS being evaluated before the FK.
+- **`claim_due_announcements` behaves under real concurrency:** two sessions, 50 due rows — A claims 50, B claims 0, no blocking, no double-claim. `service_role` holds only `select, delete` on the table, so there is no second write path.
+- **Every referenced UI primitive exists with the assumed shape** — `Chip {tone:'warning'}`, `EmptyState`, `PillLink`, `Field`, `Input`, `Button {loading}`, `BackLink`, `useNoFormReset`, `FormState`, `idleForm`, `firstIssue`, `uuidField`, `PG_ERROR.*`, `formatDateNb`/`formatDateTimeNb`/`osloDateOf`, `requireRole`/`requireStaffRole` — as do every Tailwind token used (`ease-brand`, `divide-hairline`, `ring-ring`, `surface-tint`, `border-input`, `warning-ink`, `danger-ink`). The harness's `signInAs`, `signInAsAAL2`, `signOut`, `createServerClientMock` and `redirectMock` all exist, and `SeedEmail` includes `forelder2@` and `laererforelder@`.
+- **`db:types` produces the argument names the DAL uses** — the SQL parameter name verbatim, so `p_announcement_ids` and `aid` are right.
+- **Refuted as an exploit, recorded so nobody re-derives it:** `created_at` defaults to `now()` = `transaction_timestamp()`, so `announcements_not_backdated` compares against the transaction's *start*. In a transaction held open two seconds, `published_at = transaction_timestamp() + interval '1 second'` was accepted and landed 1.38 s in the real past. The window equals the transaction's age; PostgREST runs one transaction per request, so through the app it is milliseconds — the same race A1 already closes by omitting the column for an immediate publish. **No fix needed.**
+- **Left alone on purpose, and the plan says so where it matters:** the three sibling tables of A7b are each safe from the `RETURNING` hazard for a *different* reason (`announcement_reads_select_own_or_staff`'s first arm is a plain column on the row being written and its third subqueries a different, committed table; plan 3's `notifications_select_own` is a plain column *and* written only by a definer trigger owned by a BYPASSRLS role; `private.email_pings` has no RLS at all). **None of them should be "hardened" into a row form** — a plan-3 author who has just read this plan's row-form argument is exactly the person who would.
 - ⚠ **Every count above was re-verified after the branch moved under this plan.** A concurrent session committed `3f67907` («the three policies that could be deleted with the suite green») while this document was being written, cleaning three files that were dirty when Task 0 was drafted. Re-measured afterwards: fingerprint counter still **49**, `action-guards` still **73**, migration head still `20260805123000`, highest test file still **36**, `31` still `plan(22)`, `34` still `plan(24)` — and `35`/`36` are `plan(41)`/`plan(14)`, which is where the previously-uncommitted work landed. Nothing this plan depends on moved, but **the branch is shared and it moved once during a two-hour write**; Task 0 exists because of that.
 - The 21-line teardown named in the brief is **not** what shipped: `35_threads_rls.sql` and `36_thread_counterparts.sql` both carry a **9-line** block — the short one plus `delete from public.assignments`, which is the single ON DELETE RESTRICT edge on the path to `classes`. File 37 copies that block and adds the two announcement deletes ahead of it, because `announcements.class_id` is a **second** such edge. (File 34's 20-line version is a different file's history, not the house standard.)
 
-⚠ **Not done, and it is the honest gap:** CLAUDE.md calls for the **full review
-panel** on RLS plans. This was one focused pass plus one dispatched lens — and
-that lens alone produced three of the seven findings, which is the argument for
-the panel rather than against it. If you want it before execution, dispatch
-independent escalation / assertion-vacuity / repo-integration lenses over Task
-1's SQL, the way plan 1's overnight run did. This ledger is a floor, not a
-ceiling.
+✅ **The full review panel CLAUDE.md calls for on RLS plans has now been run**,
+and the round-1 gap note that used to stand here is withdrawn. Three lenses,
+21 findings, all applied. What that bought, stated plainly so the next plan's
+author can decide how much of it to repeat:
 
-⚠ **Two things this plan asserts that it could not verify by running them**, and
-they should be attacked first:
+- The **critical** finding was found by two lenses independently — from two
+  different questions ("can this assertion fail?" and "does this apply to the
+  real repo?") converging on one row of seed data. Neither the round-1 pass nor
+  a third re-read would have found it, because it is not visible in the plan.
+- The **RLS lens found nothing exploitable and two false sentences**, both in
+  comments — which is the finding. On this project a wrong reason in a comment
+  is how the right line gets deleted six months later.
+- The **integration lens found the two things that stop execution dead** (a knip
+  error and an empty roster) and the one defect that ships silently because the
+  dev machine's clock hides it.
+- **Every lens also reported what it verified sound**, and that list is longer
+  than the defect list. It is above, deliberately: re-reviewing settled ground
+  is the other way a panel wastes a night.
 
-1. **That a BEFORE INSERT trigger may assign `fanned_out_at` when the caller
-   holds no grant on it.** The rule is well established and spec §2.2 records it
-   as verified during Phase 4 — but it was not re-run here, and Task 5's entire
-   design rests on it. **Task 1 step 3 is a probe that answers it in ten
-   seconds**, deliberately placed before the 39 assertions that sit on top.
-2. **That `for update skip locked` inside `where id in (…)` is accepted in a
-   `language sql` function that `returns table`.** Standard queue idiom, not
-   exercised in this repo. If it is refused, the shape is a plpgsql function
-   with the same statement, and the fingerprint markers are unaffected.
+✅ **Both things round 1 could not verify by running them have now been run**, by
+two lenses independently, and both hold:
+
+1. **A BEFORE INSERT trigger does assign `fanned_out_at` when the caller holds no
+   grant on it** — immediate row stamped, scheduled row null; naming the column
+   in the statement gives `42501 permission denied for table`. (EXECUTE on a
+   trigger function is checked at `CREATE TRIGGER`, not at fire time, so the
+   `revoke` is harmless.) Task 1 step 3's probe is kept anyway: it costs ten
+   seconds and sits under 47 assertions.
+2. **`for update skip locked` inside `where id in (…)` in a `language sql`
+   function that `returns table` compiles and behaves as a claim** — and holds
+   under real concurrency (two sessions, 50 due rows: A claims 50, B claims 0,
+   no blocking, no double-claim, 50/50 stamped).
+
+⚠ **What is still unattacked, and should be said out loud:** the `pub <= now()`
+**equality** boundary is exercised by no fixture in this plan; the Norwegian
+copy has still not been read by the user or the board (§12 Q3); and the whole of
+Tasks 7–11 is reviewed as *code in a document*, not as a running app — no lens
+clicked anything, because nothing is built yet. The human walkthroughs are not a
+formality.
 
 
 
