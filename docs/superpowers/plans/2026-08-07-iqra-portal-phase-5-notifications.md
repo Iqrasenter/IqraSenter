@@ -957,14 +957,40 @@ as $$
     -- the house's live spelling, matching private.teaches_student. It is NOT
     -- the as-of interval — a thread is a conversation happening now, not a
     -- record resolved against a publication instant.
+    --
+    -- ⛔⛔ `t.kind = 'laerer'` IS LOAD-BEARING AND IT IS NOT REDUNDANT WITH THE
+    -- FILTER BELOW. Panel finding C-F1, measured on the live stack.
+    -- private.reads_thread_row's FIRST arm is a bare private.has_role(uid,
+    -- 'admin') (20260805123000:49). So the `where private.reads_thread(…)`
+    -- filter admits a candidate for ANY reason — it cannot tell "reads because
+    -- they teach" from "reads because they are an admin". A person holding
+    -- teacher+admin — a TEACHING REKTOR, which 20260805120000:22-26 says is a
+    -- real person at this school, not a hypothetical — therefore enters this
+    -- CTE as a teacher and survives the filter as an admin.
+    -- Two things then go wrong at once, and they are the two the design exists
+    -- to prevent:
+    --   1. On a 'kontor' thread they are notified AND MAILED that an office
+    --      conversation about their own pupil exists. That is the family's
+    --      complaint reaching the teacher it may be about.
+    --   2. They also land in staff_substantive, so `not exists (…)` is false
+    --      and the rollover fallback NEVER FIRES — the only other admin gets
+    --      nothing, and the message reaches exactly the wrong person and
+    --      nobody else.
+    -- `kind` is precisely what decides whether teachers read at all: both
+    -- teacher arms of reads_thread_row are kind = 'laerer'-gated. This clause
+    -- is NARROWING-ONLY, so it cannot admit anyone the wall would refuse.
     select ct.teacher_id as uid
       from public.class_teachers ct
       join public.class_students cs on cs.class_id = ct.class_id
       join t on t.student_id = cs.student_id
      where cs.left_on is null
+       and t.kind = 'laerer'
   ),
   named_staff as (select t.staff_id as uid from t),
-  -- Everyone who reads for a SUBSTANTIVE reason — i.e. not by bare oversight.
+  -- ⚠ NOT "everyone who reads for a substantive reason" — an earlier draft
+  -- said that and it was FALSE, for the reason spelled out in `teachers`.
+  -- This is: every CANDIDATE the wall admits. What makes the set substantive
+  -- is how the candidate arms are built, not this filter.
   substantive as (
     select c.uid
       from (select uid from family
@@ -998,31 +1024,83 @@ comment on function private.thread_recipients(uuid) is
 -- created_at moves forward and read_at clears, so an already-read conversation
 -- becomes unread again when something new arrives.
 --
--- ★ AND THE PING ROW IS UPSERTED IN THE SAME TRANSACTION. queued_seq bumps on
--- every message; the drain's watermark compares against it. Filtering on
--- email_pings_enabled HERE as well as in resolve_ping_address is deliberate
--- belt-and-braces: this one stops the row being marked pending at all, the
--- other stops a send for someone who opted out in between.
+-- ★ THE RECIPIENT SET IS RESOLVED EXACTLY ONCE (panel finding B9, measured).
+-- An earlier draft called thread_recipients() twice — once per insert. Those
+-- are two statements inside a VOLATILE plpgsql function, so under READ
+-- COMMITTED each takes a FRESH SNAPSHOT, and the lens measured the two calls
+-- returning different counts with a concurrent commit between them (2, then
+-- 3). The sets diverging means a ping queued for someone with no bell entry —
+-- mailed a count that does not include the thread — or the mirror. Resolving
+-- into an array once also halves the reads_thread cost on the phase's hottest
+-- write.
+--
+-- ⛔ THE PING WRITE MUST NEVER ABORT THE MESSAGE (panel finding B10). This
+-- trigger runs inside the teacher's INSERT transaction, so before the
+-- exception block below, ANY failure of the queue write — a lock-wait, a
+-- statement timeout, a deadlock between two concurrent messages with
+-- overlapping recipients, a constraint violation — ROLLED BACK THE MESSAGE.
+-- The architecture says the in-app varsel is the source of truth and the mail
+-- is a content-free nicety; the schema was giving the nicety a veto over the
+-- source of truth, and the symptom is «sending a message stops working».
+-- The notifications insert is deliberately NOT wrapped: that one IS the source
+-- of truth, and a message nobody is told about is worth failing for.
+--
+-- ⛔ PUPILS ARE NEVER MAILED (user decision, 2026-08-05; panel finding D-5).
+-- A 'laerer' thread admits the pupil's own login, pupil accounts are real auth
+-- users with real addresses, and email_pings_enabled defaults true — so
+-- without this clause a 13-year-old is e-mailed about parent–teacher exchanges
+-- concerning themselves, and their address goes into Resend's US-held logs
+-- (databehandleravtale-iqra.md:150). «Ingen alarmstrøm til barn» was enforced
+-- in the bell and nowhere else. They still get the varsel; only the mail stops.
 create or replace function private.fan_out_thread_message()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
+declare
+  recipients uuid[];
 begin
-  insert into public.notifications (user_id, entity, entity_id)
-  select r.recipient, 'thread', new.thread_id
+  select array_agg(r.recipient)
+    into recipients
     from private.thread_recipients(new.thread_id) r
-   where r.recipient <> new.sender_id
+   where r.recipient <> new.sender_id;
+
+  if recipients is null then
+    return null;
+  end if;
+
+  insert into public.notifications (user_id, entity, entity_id)
+  select u, 'thread', new.thread_id
+    from unnest(recipients) u
   on conflict (user_id, entity, entity_id)
     do update set created_at = now(), read_at = null;
 
-  insert into private.email_pings (user_id, pending, queued_seq)
-  select r.recipient, true, 1
-    from private.thread_recipients(new.thread_id) r
-    join public.profiles p on p.id = r.recipient
-   where r.recipient <> new.sender_id
-     and p.email_pings_enabled
-  on conflict (user_id)
-    do update set pending    = true,
-                  queued_seq = private.email_pings.queued_seq + 1;
+  begin
+    insert into private.email_pings (user_id, pending, queued_seq)
+    select u, true, 1
+      from unnest(recipients) u
+      join public.profiles p on p.id = u
+     where p.email_pings_enabled
+       -- The pupil's own login is not a mail recipient. Keyed on the
+       -- relationship (students.student_user_id), never on a role.
+       and not exists (
+         select 1 from public.students s where s.student_user_id = u
+       )
+    on conflict (user_id)
+      do update set pending    = true,
+                    queued_seq = private.email_pings.queued_seq + 1;
+  exception
+    -- ⚠ A BARE `when others` IS DELIBERATE HERE and it is the only one in this
+    -- plan. Every failure mode of the queue write is a reason to skip the
+    -- ping, never a reason to lose the message. It is logged as a WARNING so
+    -- the failure is visible in the Postgres log rather than silent — the
+    -- house rule is "never swallow an exception", and this is the exception to
+    -- it, so it says why in the code and it still leaves a trace.
+    -- ⛔ Note this block wraps ONLY the email_pings insert. Widening it to
+    -- cover the notifications insert would turn a message nobody is told about
+    -- into a silent success.
+    when others then
+      raise warning '[fan_out] e-postping kunne ikke køes for tråd %: % (%)',
+        new.thread_id, sqlerrm, sqlstate;
+  end;
 
   return null;
 end;
@@ -1053,6 +1131,18 @@ delete from public.notifications;
 delete from private.email_pings;
 delete from public.messages;
 delete from public.threads;
+-- ⛔ THESE THREE ARE NOT OPTIONAL AND ARE NOT ABOUT THIS FILE'S SUBJECT.
+-- assignments.class_id (20260728092000:27) and announcements.class_id are the
+-- two ON DELETE RESTRICT edges on the path to classes, and seed.sql:258 seeds
+-- assignments on the seeded class. Without these, `delete from public.classes`
+-- raises 23503 and ABORTS THE WHOLE TRANSACTION — taking the 27 assertions
+-- from Tasks 1–3 that were already green. File 37:25-31 states this verbatim
+-- and file 35:23 carries the same line. (announcement_reads/announcements are
+-- latent today, since the seed creates none; 37 includes them anyway because a
+-- seeded one later would abort this file and 22 others.)
+delete from public.announcement_reads;
+delete from public.announcements;
+delete from public.assignments;
 delete from public.class_students;
 delete from public.class_teachers;
 delete from public.guardian_student;
@@ -1090,8 +1180,10 @@ values ('c1000000-0000-0000-0000-0000000000e1', 'C1-termin',
         current_date - 30, current_date + 60, false);
 insert into public.classes (id, term_id, name)
 values ('c1000000-0000-0000-0000-0000000000c1', 'c1000000-0000-0000-0000-0000000000e1', 'C1-klasse');
-insert into public.students (id, first_name, last_name, status)
-values ('c1000000-0000-0000-0000-0000000000d1', 'C0', 'Elev', 'active');
+-- ⚠ birth_year is `not null` with NO DEFAULT (20260717164230:15). Omitting it
+-- is 23502 and the transaction aborts before assertion 19 runs.
+insert into public.students (id, first_name, last_name, birth_year, status)
+values ('c1000000-0000-0000-0000-0000000000d1', 'C1', 'Elev', 2014, 'active');
 insert into public.class_students (class_id, student_id, enrolled_on)
 values ('c1000000-0000-0000-0000-0000000000c1', 'c1000000-0000-0000-0000-0000000000d1', current_date - 20);
 insert into public.class_teachers (class_id, teacher_id)
@@ -1113,10 +1205,16 @@ select is(
     where entity_id = 'c1000000-0000-0000-0000-0000000000b1'),
   1, 'læreren skriver: nøyaktig én mottaker varsles');
 
+-- ⛔ array_agg, NOT a scalar subquery. Under mutation 3 (remove the
+-- sender-exclusion) this returns TWO rows, and a scalar subquery then raises
+-- 21000 «more than one row returned by a subquery used as an expression» —
+-- which is not a red assertion, it ABORTS THE TRANSACTION. The mutation that
+-- matters most in this section would have read as a broken file rather than as
+-- a caught defect. File 37 documents this exact trap.
 select is(
-  (select user_id from public.notifications
+  (select array_agg(user_id order by user_id) from public.notifications
     where entity_id = 'c1000000-0000-0000-0000-0000000000b1'),
-  'c1000000-0000-0000-0000-000000000012'::uuid, 'og det er forelderen');
+  array['c1000000-0000-0000-0000-000000000012'::uuid], 'og det er forelderen');
 
 select is(
   (select count(*)::int from public.notifications
@@ -1181,13 +1279,92 @@ select is(
       and user_id = 'c1000000-0000-0000-0000-000000000013'),
   1, 'men admin som er trådens staff_id varsles — hen er motparten');
 
+-- ── 26b. ★★ THE TEACHING REKTOR — panel finding C-F1 ────────────────
+-- ⛔ ASSERTION 26 ABOVE IS STRUCTURALLY BLIND TO THIS. Its teacher holds only
+-- `teacher`, so it cannot see that reads_thread_row's FIRST arm is a bare
+-- has_role(uid,'admin'). Give 011 the admin role too — 20260805120000:22-26
+-- says a person who both teaches and administers is real here — and without
+-- `t.kind = 'laerer'` on the teachers CTE they enter as a teacher, survive the
+-- filter as an admin, and are told an office thread about their own pupil
+-- exists. This is the assertion that actually guards the rule.
+insert into public.user_roles (user_id, role)
+values ('c1000000-0000-0000-0000-000000000011', 'admin')
+on conflict do nothing;
+
+delete from public.notifications where entity_id = 'c1000000-0000-0000-0000-0000000000b2';
+insert into public.messages (thread_id, sender_id, body)
+values ('c1000000-0000-0000-0000-0000000000b2', 'c1000000-0000-0000-0000-000000000012', 'Klage 2');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b2'
+      and user_id = 'c1000000-0000-0000-0000-000000000011'),
+  0, 'kontortråd: en lærer som OGSÅ er admin får fortsatt ikke vite at samtalen finnes');
+
+-- The control: they genuinely read the thread, so assertion 26b is about the
+-- fan-out rule and not about a missing relationship.
+select is(
+  private.reads_thread('c1000000-0000-0000-0000-000000000011',
+                       'c1000000-0000-0000-0000-0000000000b2'),
+  true, 'kontroll: den undervisende rektoren KAN lese tråden — varselet mangler ved regel');
+
+-- ★ And the second half of C-F1: they must not suppress the fallback either.
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b2'
+      and user_id = 'c1000000-0000-0000-0000-000000000013'),
+  1, 'og motparten varsles fortsatt — rektoren fyller ikke staff_substantive');
+
+delete from public.user_roles
+ where user_id = 'c1000000-0000-0000-0000-000000000011' and role = 'admin';
+
+-- ── 26c. ★ PUPILS GET THE VARSEL, NEVER THE MAIL ────────────────────
+-- User decision 2026-08-05 (panel finding D-5). A 'laerer' thread admits the
+-- pupil's own login; without the carve-out they are e-mailed about their own
+-- parent–teacher exchanges and their address reaches a US-held provider log.
+update public.students set student_user_id = 'c1000000-0000-0000-0000-000000000014'
+ where id = 'c1000000-0000-0000-0000-0000000000d1';
+delete from private.email_pings;
+delete from public.notifications where entity_id = 'c1000000-0000-0000-0000-0000000000b1';
+
+insert into public.messages (thread_id, sender_id, body)
+values ('c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-000000000012', 'Til eleven');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b1'
+      and user_id = 'c1000000-0000-0000-0000-000000000014'),
+  1, 'eleven får varselet i appen — «ingen alarmstrøm» gjelder utformingen, ikke tilgangen');
+
+select is(
+  (select count(*)::int from private.email_pings
+    where user_id = 'c1000000-0000-0000-0000-000000000014'),
+  0, 'men eleven køes aldri for e-post — adressen når aldri Resend');
+
+-- The control over the IDENTICAL message: an adult recipient IS queued, so the
+-- assertion above is about the pupil carve-out and not about a dead mail path.
+select is(
+  (select count(*)::int from private.email_pings
+    where user_id = 'c1000000-0000-0000-0000-000000000011'),
+  1, 'kontroll: den voksne mottakeren av samme melding køes');
+
+update public.students set student_user_id = null
+ where id = 'c1000000-0000-0000-0000-0000000000d1';
+
 -- ── 27. ★ the rollover fallback ─────────────────────────────────────
 -- The teacher leaves. The family writes. With no staff reader other than bare
 -- oversight, EVERY admin is admitted — otherwise the message reaches nobody.
 delete from public.class_teachers
  where class_id = 'c1000000-0000-0000-0000-0000000000c1';
-delete from public.notifications;
 
+-- ⛔ NO `delete from public.notifications` HERE. An earlier draft wiped the
+-- table one line after removing the teaching relationship, which made the T-12
+-- invariant below scan exactly ONE row — everything the fan-out produced for
+-- b1 and for the kontor thread b2 was already gone — while its comment claimed
+-- «a scan over EVERY notification row this file produced». Worse, it deleted
+-- precisely the rows that the relationship change had just made STALE, which
+-- is the one failure mode the invariant exists to observe. Scope the counts by
+-- entity_id instead, and let the rows accumulate.
 insert into public.messages (thread_id, sender_id, body)
 values ('c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-000000000012', 'Er du der?');
 
@@ -1243,11 +1420,14 @@ Expected: `Files=39, Tests=885, PASS`.
 
 - [ ] **Step 5: Three named mutations — run one at a time, reset between**
 
-1. Delete the `and private.reads_thread(c.uid, tid)` filter from `substantive`. Expected: assertion 26 (`kontor`: the teacher is not told) **FAILS** — this is the drift the spec's hand-written list actually had.
-2. Change the admin fallback's `not exists (select 1 from staff_substantive)` to `not exists (select 1 from substantive)`. Expected: assertion 27 **FAILS** — the «no staff reader at all» wording that can never fire.
-3. Remove the `where r.recipient <> new.sender_id` clause from the notifications insert. Expected: assertion 21 **FAILS**.
+1. Delete the `and private.reads_thread(c.uid, tid)` filter from `substantive`. Expected: assertion 26 (`kontor`: the teacher is not told) **FAILS** — the drift the spec's hand-written list actually had.
+2. ★ **Delete `and t.kind = 'laerer'` from the `teachers` CTE.** Expected: assertion **26b FAILS** (the teaching rektor is told about the office thread) **and 26b's third assertion FAILS** (the counterpart stops being notified, because the rektor now fills `staff_substantive` and suppresses the fallback). This is panel finding C-F1 and it is the most important mutation in this plan — two assertions, one line.
+3. Change the admin fallback's `not exists (select 1 from staff_substantive)` to `not exists (select 1 from substantive)`. Expected: assertion 27 **FAILS** — the «no staff reader at all» wording that can never fire.
+4. Remove the `where r.recipient <> new.sender_id` clause from the array_agg. Expected: assertion 21 (`og det er forelderen`) **FAILS** with a two-element array. ⚠ It must **fail**, not abort — if you see `21000: more than one row returned by a subquery`, the assertion was left as a scalar subquery and the mutation is telling you nothing.
+5. ★ Delete the `not exists (select 1 from public.students s where s.student_user_id = u)` clause. Expected: assertion **26c's second FAILS** — the pupil is queued for mail.
+6. Delete the `exception when others` block around the `email_pings` insert, then force a failure inside it (temporarily add `insert into private.email_pings (user_id, pending, queued_seq) values (gen_random_uuid(), true, 1);` before it, which violates the FK). Expected: **the message INSERT itself fails** — which is the veto B10 describes. With the block restored, the message lands and only a WARNING is logged.
 
-Restore after each and confirm green. Record the three results in the commit body.
+Restore after each and confirm green. Record all six results in the commit body — and per §8's binding rule, state any you skipped and why, rather than letting silence read as coverage.
 
 - [ ] **Step 6: Commit**
 
