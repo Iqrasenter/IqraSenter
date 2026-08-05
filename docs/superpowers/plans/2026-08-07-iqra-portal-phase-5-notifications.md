@@ -4006,3 +4006,23 @@ CLAUDE.md requires a review of the plan itself before a line is executed, on the
 ★ **R4 is the one worth generalising.** It reads correctly, it would pass every test in this plan on most runs, and it fails only under a planner decision nobody controls. The class — *a side effect placed where SQL only promises a value* — is invisible to both review-by-reading and test-by-running.
 
 **Not fixed, recorded instead:** D29 (the fan-outs depend on `postgres` holding `BYPASSRLS`, which a contemplated hardening step would remove) and the announcement-invariant restatement, which drifts only in the narrowing direction and is stated as such.
+
+---
+
+## Panel ledger — what six independent lenses changed, 2026-08-05
+
+Full adjudicated detail: `2026-08-07-phase-5-plan-3-REVIEW-PANEL.md`. **~78 findings, essentially all real, with very little overlap between lenses.** Applied across eight revision commits.
+
+**The three that my own review pass did not find, and would not have:**
+
+| | Finding | Why it survived a careful read |
+|---|---|---|
+| **D-1** | The content-free-e-mail test was **vacuous, measured**. It spread a *human description* (`'a pupil name'`) as the object key, so a reviewer copied it verbatim, wrote a builder leaking a pupil's name into the body and a teacher's into the subject, and got **6/6 green** | Task 7 was the **only task with no mutation step**. I checked that the assertions existed, not that they could fail. The comment above them stated the false reasoning out loud |
+| **C-F1** | `reads_thread_row`'s **first** arm is a bare `has_role(uid,'admin')`, so the `reads_thread` filter cannot distinguish "reads because they teach" from "reads because they are an admin". A **teaching rektor** — a real person at this school — was belled *and mailed* that a `kontor` thread about their own pupil existed, **and** filled `staff_substantive`, suppressing the rollover fallback so the family's complaint reached only that teacher | Assertion 26 was **structurally blind**: its teacher held no admin role, so the fixture could not express the case |
+| **F-B1/B2/B3** | **Three declared mutations reddened nothing.** Two left the recipient set byte-identical; one named a marker appearing twice in the body, so deleting one occurrence still matched | A mutation table is the evidence this project's whole test discipline rests on. Three entries were predictions, not measurements — the failure the table exists to prevent, inside the table itself |
+
+**Two blockers** — `database.types.ts` never regenerated (`tsc` red from Task 8 on, so the plan's own build gate could never pass) and `vi.mock('server-only')` missing where the repo uses it in ten files — are now standing instructions at the top of this document rather than per-task steps.
+
+**What the panel cleared**, so it is not re-litigated: `for update skip locked` in both claims · the watermark's old-value semantics · the `FOR … IN` over a data-modifying CTE (and that R4 fixed a real defect correctly) · the grant firewall and every revoke ordering · role naming on the `public` RPC revokes, and that `private` needs only `from public` · the proxy exclusion's position and fail-closed behaviour · the admin carve-out keying on relationship rather than role · no duplicate recipients from either fan-out · secrets unreachable from the client · the gate's cryptography.
+
+★ **The generalisation worth carrying.** My own pass found seven defects and believed itself thorough; it found none of the three above. Every lens that caught a serious defect **ran something** — the privacy lens executed my test against a leaking implementation, the RLS lens built fixtures on the live stack, the pgTAP lens traced each mutation's actual recipient set. Reading a plan carefully and running it are different activities, and on this project every serious defect has lived in the gap between them.

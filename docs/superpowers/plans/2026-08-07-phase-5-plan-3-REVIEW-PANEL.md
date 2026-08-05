@@ -2,7 +2,9 @@
 
 Six read-only lenses over `2026-08-07-iqra-portal-phase-5-notifications.md`, each told to verify claims against the tree rather than against the plan's own consistency. This file is the adjudicated ledger; the plan itself carries the fixes.
 
-**Panel status:** claims-vs-tree ✅ · concurrency ✅ · RLS ⏳ · pgTAP ⏳ · route/secret ⏳ · privacy ⏳
+**Panel status: COMPLETE** — claims-vs-tree ✅ · concurrency ✅ · RLS ✅ · pgTAP ✅ · route/secret ✅ · privacy ✅
+
+**Disposition: all ~78 findings applied to the plan**, across eight revision commits (`8c9b9bb` → `85b36ff`). One required a user decision (D-5, pupils and the mail path — answered *never mail a pupil*, 2026-08-05). Nothing was deferred except the two items that cannot be discharged without IQRA's Resend account, which are carried to plan 4 explicitly.
 
 ⚠ Findings are **not** taken at face value. Each is marked with how it was settled. The precedent: on the Phase-5 spec panel one lens cleared a multi-enrolment case another had correctly flagged as critical, and the flag was right.
 
