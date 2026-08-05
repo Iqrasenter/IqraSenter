@@ -2828,3 +2828,97 @@ and omits this third one, which is the likeliest.
   fragment rather than an identifier like the other 47 — closer to the whole-text
   hash that file argues against. Reflowing the line would redden it for a
   non-change.
+
+## ★★ The bug that mattered most — `INSERT … RETURNING` and a self-referential read policy
+
+Found by Task 11's api suite **while it was being written**, before it was even
+finished. Commit `0dd56ca`.
+
+**Thread creation was broken for every actor.** No teacher, no guardian, no
+surface could open a single thread — every call returned 42501 «new row violates
+row-level security policy» while `private.can_start_thread` evaluated **TRUE**
+for the same arguments in the same request. **The entire 737-assertion pgTAP
+suite was green over it.**
+
+**Why.** PostgreSQL applies a table's SELECT policies as an additional
+`WITH CHECK` when an INSERT carries `RETURNING`. Both start actions insert with
+`.select('id').single()` because they need the new id to redirect to, so
+PostgREST issues `INSERT … RETURNING "id"` and `threads_select_related` ran
+against the new row. That policy called `private.reads_thread(uid, id)`, whose
+body resolves the row by **re-querying `public.threads`**. Inside the very
+command doing the insert, that subquery's snapshot cannot see the new tuple, so
+`exists` was false and every creation was refused. The rule was right; asking it
+**by id** was what could not work.
+
+**Why nothing caught it.** Every INSERT assertion in file 35 is a bare
+`insert … values (…)`. **The app's own statement shape was untested anywhere in
+the suite.** That is not a weak assertion — it is a whole statement shape the
+suite was blind to, which is a category worse.
+
+**The fix moves the rule down rather than copying it.**
+`private.reads_thread_row(uid, sid, kind)` becomes the source; `reads_thread(uid,
+tid)` becomes a thin lookup that delegates to it. Inlining the four arms into the
+policy would also have fixed the symptom — and would have been D21's own drift
+reintroduced, two copies of the readership rule with one untested.
+
+Also deliberately **not** fixed by granting `insert(id)` and letting the client
+choose the uuid, because a caller-chosen primary key turns 23505 into an
+enumeration oracle.
+
+### Panel review of that fix — one regression it introduced, one hole it exposed
+
+The implementer flagged their own change as unpanelled and asked for review. Two
+lenses were dispatched. The correctness lens proved semantic equivalence by
+brute force: it reconstructed the original monolithic body from the migration
+history as a scratch function and compared **490 (profile × student × staff ×
+kind) pairs** — **zero mismatches**, with every arm exercised including the
+load-bearing `kontor`+teacher and `kontor`+pupil cases that must *not* admit.
+
+**F1 — the commit made a load-bearing fingerprint marker unfailable.** Moving the
+markers to `private.reads_thread_row(uuid,uuid,text)` kept the marker `'kind'` —
+but `pg_get_functiondef` renders the header `(uid uuid, sid uuid, kind text)`, so
+**the parameter name satisfies the marker regardless of the body**. Proven: with
+both `kind = 'laerer'` guards deleted — the D19/D20 escalation, which makes
+`reads_thread_row(teacher, taught_pupil, 'kontor')` return true — assertion 2
+reports **zero missing markers and passes**. Against the old by-id shape the same
+mutation reddened it. Fix: marker `'kind'` → `'kind = ''laerer'''`. ⚠ Do **not**
+rename the parameter to `tkind` instead — `kind` is a substring of `tkind` and
+the marker stays vacuous. (The escalation is still caught behaviourally by file
+35's assertions 5 and 8, so this is lost defence-in-depth, not an open door.)
+
+**F2 — `threads_select_related` has no refusal test at all.** It is the only
+object this migration changes, and **nothing in `supabase/tests/` selects from
+`public.threads` as an authenticated role** — every read assertion counts
+`public.messages`, which goes through the *by-id* form. Assertions 32–33 cover
+only the admit direction. Proven: with the policy set to `using (true)`, under
+which a stranger parent reads another family's thread subject, **file 35 is 33/33
+green and file 36 is 13/13 green**. Fix: one assertion selecting from
+`public.threads` as an unrelated guardian expecting 0, with an entitled control.
+The fixtures already exist.
+
+**F3 — the dead-end worry is closed.** A sweep of all 490 `(uid, sid, staff,
+kind)` combinations found 19 that pass `can_start_thread` and **zero** that then
+fail `reads_thread_row`. The one shape that does dead-end — an actor who is both
+a pupil's login *and* a teacher of that pupil's class, creating a `kontor` thread
+— is a **correct** refusal: before this commit the bare insert would have
+succeeded and left an invisible orphan thread.
+
+**A correction to the commit's own reasoning.** It says the rejected
+client-chosen-uuid alternative would let "anyone probe which thread ids exist".
+Measured: RLS `WITH CHECK` runs **before** the unique-index insert, so an
+RLS-denied payload gives 42501 and only an RLS-*allowed* payload on a taken id
+gives 23505. It is a confirmation oracle gated behind `can_start_thread`, not
+open enumeration. The rejection is still right — global scope, and it breaks the
+server-generated-id discipline — but for a smaller reason than stated. The
+chosen fix has no equivalent: `threads_pkey` is the only unique index, ids stay
+server-generated, and the success/failure difference leaks only what
+`public.guardian_thread_options()` already hands the caller directly.
+
+Verified sound besides: the delegation preserves by-id behaviour for
+`messages_select_related` and `thread_counterparts` (same 490-pair proof) · no
+BEFORE INSERT trigger on `threads`, so proposed row = stored row · the row form
+is strictly *safer* if `kind` ever becomes updatable · `reads_thread_row` is
+unreachable over HTTP because `PGRST_DB_SCHEMAS` is `public,graphql_public` ·
+the "watched fail" claim is true, restoring the by-id policy reddens exactly 32
+and 33 · fingerprint arithmetic 48 → **49** is right, 13 signatures, live definer
+count 52.
