@@ -651,10 +651,27 @@ as $$
      where p.user_id in (
              select q.user_id
                from private.email_pings q
+               join public.profiles pr on pr.id = q.user_id
               where q.pending
                 and not q.failed
-                and q.claimed_at is null
+                -- ⛔ A LEASE, NOT `claimed_at is null` (panel finding B1/E-4).
+                -- With the strict test, a drain killed mid-batch — a serverless
+                -- duration limit, a deploy swapping the instance, an OOM —
+                -- leaves every remaining row `pending, claimed_at set,
+                -- failed = false` FOREVER: invisible to every future claim,
+                -- invisible to the admin screen (which lists only `failed`),
+                -- and untouchable by reset_failed_ping (which requires
+                -- `failed`). Those users never receive another ping. Worse,
+                -- each stranded row then inflates oldest_pending_minutes
+                -- without bound, permanently breaking the ONE number that is
+                -- supposed to mean "the cron is dead". The trigger is not
+                -- exotic — it is the first busy drain.
+                and (q.claimed_at is null or q.claimed_at < now() - interval '15 minutes')
                 and q.next_attempt_at <= now()
+                -- Opting out removes you from the queue at the claim, so a
+                -- pending row cannot age into a false «kom ikke fram» entry
+                -- (panel finding B6).
+                and pr.email_pings_enabled
               order by q.next_attempt_at
               limit batch_size
                 for update skip locked
@@ -662,8 +679,24 @@ as $$
     returning p.user_id
   )
   select c.user_id,
-         (select count(*)::int from public.notifications n
-           where n.user_id = c.user_id and n.read_at is null)
+         -- ★ THREAD NOTIFICATIONS ONLY, AND ONLY REACHABLE ONES.
+         -- Two panel findings meet here.
+         -- B7: announcements deliberately never queue mail (D12), yet an
+         -- unfiltered count let a stale unread class notice both inflate the
+         -- number and DEFEAT THE SKIP PATH — so after any school-wide notice,
+         -- every pending ping mailed someone about something they had already
+         -- read. The count must describe what the mail is about.
+         -- D-2/C-F2: `notifications` has no FK, so a row outlives its entity's
+         -- REACHABILITY — guardianship removed, teacher unassigned, term
+         -- rollover, pupil erased, login disabled. An unfiltered count is then
+         -- an exact measure of what the reader may no longer see, mailed to
+         -- them. 20260803001000 exists to abolish exactly that arithmetic.
+         (select count(*)::int
+            from public.notifications n
+           where n.user_id = c.user_id
+             and n.read_at is null
+             and n.entity = 'thread'
+             and private.reads_thread(n.user_id, n.entity_id))
   from claimed c;
 $$;
 
@@ -681,15 +714,35 @@ comment on function public.claim_email_pings(integer) is
 -- functions created by supabase_admin — which is the CLOUD path, so an
 -- omission here leaves this callable by every logged-in parent in PRODUCTION
 -- ONLY (20260728200000:229).
+-- ★ `retryable` SEPARATES A PROVIDER PROBLEM FROM A RECIPIENT PROBLEM, and it
+-- is what stops D28 from destroying the queue on day one (panel finding B5).
+-- With every error class equal, a missing RESEND_API_KEY — the EXPECTED state
+-- until IQRA's account exists — burned the ceiling in five ticks: 75 minutes
+-- after deploy, every pending user is `failed`, the admin screen is a wall of
+-- red, and each row needs an individual manual reset before the mechanism
+-- works at all. The same shape hits Resend's 2 req/s free-tier limit against
+-- 100 unpaced sends. A rate limit is the most retryable error there is.
+--   retryable  → back off and try again, attempts UNCHANGED, never `failed`.
+--                The row stays visible in oldest_pending_minutes, which is the
+--                correct signal: "the drain runs but does not deliver".
+--   permanent  → a fact about this recipient (bad address, 422). Burn one
+--                attempt; at 5, stop and tell a human.
 create or replace function public.record_email_ping_outcome(
-  target uuid, succeeded boolean, error_code text default null)
+  target uuid, succeeded boolean, error_code text default null,
+  retryable boolean default false)
 returns void
 language plpgsql volatile security definer set search_path = ''
 as $$
 begin
   if succeeded then
     update private.email_pings p
-       set sent_at    = now(),
+       set -- ★ ONLY A REAL SEND STAMPS sent_at. The drain also calls this with
+           -- succeeded = true on the SKIP path — the user already read
+           -- everything in the portal, so there is nothing to send. Stamping
+           -- sent_at there would record a delivery that never happened, in the
+           -- one ledger the admin health screen reads. The skip passes
+           -- error_code = 'SKIPPED' precisely so this line can tell them apart.
+           sent_at    = case when error_code is null then now() else p.sent_at end,
            claimed_at = null,
            attempts   = 0,
            -- ★ THE WATERMARK TEST. If a message arrived while the send was in
@@ -699,15 +752,36 @@ begin
            pending    = (p.queued_seq <> p.claimed_seq),
            last_error_code = null
      where p.user_id = target;
+  elsif retryable then
+    -- No attempts increment, no `failed`. Just try again later.
+    update private.email_pings p
+       set claimed_at      = null,
+           next_attempt_at = now() + interval '5 minutes',
+           last_error_code = error_code
+     where p.user_id = target
+       and p.claimed_at is not null;
   else
     update private.email_pings p
        set claimed_at      = null,
-           attempts        = p.attempts + 1,
+           -- ⛔ `least(…, 5)` IS NOT BELT-AND-BRACES — panel finding B4,
+           -- MEASURED reaching 6 and aborting on email_pings_attempts_bound.
+           -- The path is entirely internal: the RPC commits, its response is
+           -- lost (socket reset, a duration-boundary abort, a gateway 5xx
+           -- after commit), the drain's catch calls this a second time. One
+           -- lost HTTP response would otherwise take out the whole remaining
+           -- batch, because that throw escapes the loop and strands every row
+           -- not yet recorded.
+           attempts        = least(p.attempts + 1, 5),
            -- Exponential backoff: 2, 4, 8, 16, 32 minutes.
-           next_attempt_at = now() + (interval '1 minute' * power(2, p.attempts + 1)),
-           failed          = (p.attempts + 1 >= 5),
+           next_attempt_at = now() + (interval '1 minute' * power(2, least(p.attempts + 1, 5))),
+           failed          = (least(p.attempts + 1, 5) >= 5),
            last_error_code = error_code
-     where p.user_id = target;
+     -- ★ AND ONLY A ROW THAT IS ACTUALLY CLAIMED. Without this, a late or
+     -- duplicated outcome — the same lost-response path, or an operator
+     -- re-invoking the route by curl — releases a claim another in-flight
+     -- drain still believes it holds, opening a window for a second send.
+     where p.user_id = target
+       and p.claimed_at is not null;
   end if;
 end;
 $$;
@@ -1907,7 +1981,7 @@ describe('the content-free ping', () => {
   it('names the count and nothing else that varies', () => {
     const mail = buildPingEmail({ unreadCount: 3, portalUrl: 'https://portal.iqrasenter.no' });
     expect(mail.subject).toBe('Nytt varsel i IQRA-portalen');
-    expect(mail.text).toContain('3 nye varsler');
+    expect(mail.text).toContain('3 nye meldinger');
   });
 
   // ★ THE SUBJECT IS A FIXED STRING, NEVER TEMPLATED. A subject line is the one
@@ -1925,26 +1999,41 @@ describe('the content-free ping', () => {
     // A URL is not private: it travels through Resend, the recipient's mail
     // provider, their client's history and any forward. A thread id in a link
     // is content about who is talking to whom.
-    expect(mail.text).not.toMatch(/portal\.iqrasenter\.no\/[a-z]/);
+    // ⚠ `\/.` — ANY path character. The earlier `\/[a-z]` missed a UUID
+    // beginning with a DIGIT (…iqrasenter.no/7f3c…) and any uppercase path,
+    // which is most of the deep links this could accidentally grow.
+    expect(mail.text).not.toMatch(/portal\.iqrasenter\.no\/./);
   });
 
-  // ★ THE OMISSION TEST, PARAMETERISED. Each of these is a deliberate
-  // omission from spec §5.3, and each would be a plausible "improvement".
+  // ★★ THE OMISSION TEST. ⛔ AN EARLIER VERSION OF THIS TEST WAS VACUOUS AND
+  // THE PANEL MEASURED IT: it spread `{ [_label]: secret }` where `_label` was
+  // the HUMAN DESCRIPTION ('a pupil name'), not a field name — so the builder
+  // would have had to read a property literally called "a pupil name" for the
+  // assertion to bite. A reviewer copied it verbatim, wrote a builder that put
+  // a teacher's name in the SUBJECT and a pupil's name in the BODY, and got
+  // 6/6 GREEN. This repo has already shipped one privacy wall whose test could
+  // not fail; this is the only assertion anywhere that the mail carries no
+  // child data.
+  //
+  // The keys below are REAL field names. `buildPingEmail`'s parameter type does
+  // not declare them, so TypeScript rejects them at compile time — which is
+  // half the wall — and the cast forces them through at runtime so the test
+  // still proves the OUTPUT ignores them. Both halves are needed: the type
+  // alone would not catch a builder that reads `(input as any).pupilName`.
   it.each([
-    ['a pupil name', 'Yusuf'],
-    ['a teacher name', 'Leila'],
-    ['a class name', '3A'],
-    ['a thread subject', 'Om leksene'],
-    ['message text', 'Han var ikke på skolen'],
-    ['the recipient own name', 'Fatima'],
-  ])('never carries %s even when it is available to the caller', (_label, secret) => {
+    ['pupilName', 'Yusuf'],
+    ['teacherName', 'Leila'],
+    ['className', '3A'],
+    ['subject', 'Om leksene'],
+    ['body', 'Han var ikke på skolen'],
+    ['recipientName', 'Fatima'],
+    ['threadId', '7f3c1b2a-0000-4000-8000-000000000001'],
+  ])('never carries %s even when the caller passes one', (field, secret) => {
     const mail = buildPingEmail({
       unreadCount: 2,
       portalUrl: 'https://portal.iqrasenter.no',
-      // The builder takes no such field; the test proves the TYPE cannot carry
-      // it by proving the OUTPUT never does, whatever is passed.
-      ...({ [_label]: secret } as Record<string, unknown>),
-    });
+      ...({ [field]: secret } as Record<string, unknown>),
+    } as Parameters<typeof buildPingEmail>[0]);
     expect(mail.text).not.toContain(secret);
     expect(mail.subject).not.toContain(secret);
   });
@@ -1998,7 +2087,13 @@ export function buildPingEmail(input: { unreadCount: number; portalUrl: string }
     // delivered to a parent as "Du har 0 nye varsler".
     throw new Error('En ping uten uleste varsler skal aldri sendes.');
   }
-  const plural = input.unreadCount === 1 ? 'nytt varsel' : 'nye varsler';
+  // ⚠ «meldinger», not «varsler» — panel finding B7. The mail path exists for
+  // thread messages ALONE (D12: announcements never queue mail), and the count
+  // the drain passes is now thread-scoped for exactly that reason. Saying
+  // «varsler» would name a set larger than the one being counted, and it was
+  // that mismatch which let an unread class notice inflate the number. D27's
+  // decision — keep the count — is unchanged; only the noun is corrected.
+  const plural = input.unreadCount === 1 ? 'ny melding' : 'nye meldinger';
   return {
     subject: SUBJECT,
     text: [
@@ -2020,7 +2115,31 @@ export function buildPingEmail(input: { unreadCount: number; portalUrl: string }
 cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/ping-email.test.ts 2>&1 | tail -6
 ```
 
-Expected: PASS, 10 tests.
+Expected: PASS, 11 tests.
+
+- [ ] **Step 4b: ★★ WATCH THE OMISSION TEST FAIL — this step is not optional**
+
+⛔ Task 7 previously had **no mutation step at all**, and that is exactly how a vacuous version of this test survived review. The omission assertions are the only place in the entire plan where the content-free promise is checked. A privacy wall that has never been watched fail is decoration, and this repo has shipped one.
+
+Temporarily replace `buildPingEmail`'s body with a deliberately leaking version:
+
+```typescript
+export function buildPingEmail(input: { unreadCount: number; portalUrl: string }): PingEmail {
+  const leak = input as unknown as Record<string, string>;
+  return {
+    subject: `${SUBJECT} fra ${leak.teacherName ?? ''}`,
+    text: `Du har ${input.unreadCount} nye meldinger om ${leak.pupilName ?? ''}. ${input.portalUrl}/${leak.threadId ?? ''}`,
+  };
+}
+```
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/ping-email.test.ts 2>&1 | tail -12
+```
+
+Expected: **FAIL** — at minimum `never carries pupilName`, `never carries teacherName`, `never carries threadId`, and `links the root, never a deep link`. If any of those stay green, the test is still vacuous and must be fixed before the real implementation goes back.
+
+Restore the real implementation and confirm 11 green.
 
 - [ ] **Step 5: Commit**
 
