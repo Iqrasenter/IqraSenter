@@ -3168,3 +3168,127 @@ baseline · `next build` clean.
 
 Everything else — the five open decisions, the browser checklist, the known
 gaps — is in the MORNING HANDOFF section above.
+
+## Third lens — blast radius. The panel is now complete.
+
+Two lenses had run (semantic equivalence, test coverage). The third asked what
+else the change touches and what it breaks next. It found the most consequential
+thing of the night, and it is not about code already written.
+
+### ★★ F1 — `announcements`, as the spec sketches it, ships this outage a SECOND time
+
+§3.2's `announcements_select_audience` → `private.reads_announcement(auth.uid(),
+id)` must resolve `published_at`, `class_id` and `created_by` by re-querying
+`public.announcements` — structurally identical to the predicate that made every
+thread uncreatable. The INSERT policy's own check is a row form and passes, so
+the 42501 would again be blamed on the wrong policy.
+
+Whether it fires turns on a decision plan 2 had not yet made: task 3b needs the
+new id for the fan-out, §7 has a detail route, and **`.insert(…).select('id')` is
+the repo's idiom at 20 sites.** Sent to plan 2's author mid-write, with the fix:
+`reads_announcement_row(uid, class_id, published_at, created_by)` as the source
+from day one.
+
+**The other three tables are safe, and the reasons are now written down so nobody
+"fixes" them:** `announcement_reads_select_own_or_staff` leads with
+`user_id = auth.uid()`, a plain column the INSERT policy pins to the caller ·
+`notifications` rows are written only by a definer trigger owned by `postgres`,
+so no policy runs at INSERT · `email_pings` has no RLS.
+
+### ★ F2 — `public.submissions` carries the identical trap TODAY
+
+`submissions_select_related` is that table's only SELECT policy and is
+`private.reads_submission(auth.uid(), id)` — a self-requery with no row-form arm.
+Measured as `elev@test.local`: the bare insert succeeds, **the same insert with
+`returning id` is refused**, and a client-chosen uuid does **not** rescue it —
+only dropping `RETURNING` does.
+
+It does not fire only because `src/lib/dal/submissions.ts:138` generates
+`randomUUID()` in TypeScript and inserts bare. **Anyone who modernises that to a
+server default plus `.select('id')` — exactly the shape the Phase 5 thread
+actions use — kills hand-in for every pupil in the school**, and Phase 4's pgTAP
+has the same blind spot Phase 5 just closed. Spun off as its own task.
+
+Note the two phases solved the same problem in opposite ways and neither
+migration mentions the other: `20260805123000` warns *against* granting
+`insert(id)` as "the other obvious way to drop the RETURNING" — a route Phase 4
+had already taken.
+
+### ★ F3 — the equivalence proof holds for SELECT and INSERT, NOT for UPDATE
+
+Measured: under `update … returning id`, the by-id spelling resolves the
+**pre-update** tuple and permits the write; the identical rule written as a plain
+column reference sees the **new** tuple and refuses. So a by-id predicate
+silently authorises an update against stale column values.
+
+Harmless on `threads` today — `subject` is the only updatable column and no
+predicate reads it — but `threads_update_subject_author` still uses the by-id
+`writes_thread`, which re-checks `kind`, `staff_id` and `student_id` against
+pre-update values. The migration says `kind` "deliberately has no UPDATE grant"
+because flipping it is an escalation; **after this change that safety rests on
+the grant alone, and the second reason is written nowhere.**
+
+### F4 — performance: the change is an improvement; the path under it is O(school)
+
+Measured on a synthetic 300-pupil / 2 700-thread school, rolled back:
+
+- **Not inlined, and `stable` does not mean cached.** SECURITY DEFINER +
+  `search_path=''` both block inlining; one call per row scanned, fanning out to
+  up to four more.
+- **The new form is strictly cheaper**: admin 5 445 buffers vs 13 545; guardian
+  56 576 vs 64 593. The delta is exactly 2 700 × 3 — the `threads_pkey` lookup
+  the old form did per row.
+- **No index serves the access path, and the composite is dead for it.** Every
+  list read is `select … order by updated_at desc` with **no predicate** — RLS
+  does all the filtering by design (D21) — so every role gets a Seq Scan plus a
+  top-N sort. `threads_student_updated_idx` was justified by "every thread list
+  is `student_id in (…) order by updated_at desc`", **which is not what was
+  built**. `threads_staff_idx` is unused by any shipped query.
+- **Cost is O(threads in the school), not O(the caller's threads).** A parent
+  with one child pays the admin's scan.
+
+Verdict: fine now (~0.2–0.6 s in production at year-one volume), stops being fine
+around **3 000–5 000 total threads** without retention pruning. Inherited, not
+introduced — and marginally better than before. Measured and **rejected**:
+hoisting the admin arm into the policy is 6.6× faster for admins but re-creates
+D21's drift.
+
+### F5 — the admin audit row can claim a listing that was truncated
+
+`PGRST_DB_MAX_ROWS=1000` and `listThreads()` has no `.limit()`/`.range()`. The
+cap applies *after* the RLS filter, so it saves no cost — but past 1 000 threads
+the oversight list silently drops the oldest, and `listThreadsForAdmin` then
+writes `meta: { count: threads.length, filter: 'none' }`: **an audit row
+asserting a complete listing that was not complete.** For an oversight read whose
+whole purpose is being on the record, that is the wrong failure.
+
+### F6 — the `writes_thread` asymmetry, with the breaking refactor named
+
+Three call sites, all verified against the live catalog. Nothing reachable today.
+But **the repo names the refactor that breaks it**: both start actions say
+rolling the thread back "would need a definer RPC we have no other reason to
+build". Written as plpgsql with two sequential INSERTs it is fine — the second
+statement sees the thread. Written as one statement with a CTE, every send is
+refused, and the user-visible symptom would be «Samtalen ble opprettet, men den
+første meldingen ble ikke sendt.» on 100% of new threads — copy that already
+exists for a different cause, which is what would make it hard to attribute.
+
+### F7 — two comments now read false
+
+`comment on column public.threads.kind` still says "Input to
+private.reads_thread" — it is now an input to `reads_thread_row` and a direct
+operand of the SELECT policy. And `private.reads_thread` has **no comment at
+all**, while the warning that re-inlining it "would compile, pass every
+behavioural test and silently restore the self-referential lookup" lives only in
+the git log.
+
+### Verified sound
+
+Every caller of the changed functions gets the same answer, and none relied on
+the old failure mode — swept all policies in all schemas, all `public`/`private`
+bodies, views, trigger functions and check constraints. `private` is unreachable
+over HTTP, confirmed independently by two request shapes. **Zero** functions and
+**zero** tables in `public` are reachable by `anon`, repo-wide. Helper index
+coverage is complete — the cost is function-call overhead, not missing indexes.
+The fix itself works: `insert … returning id` as `laerer@test.local` succeeds
+after a clean replay.
