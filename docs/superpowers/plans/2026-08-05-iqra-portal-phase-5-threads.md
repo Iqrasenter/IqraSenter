@@ -2536,3 +2536,75 @@ Behaviour now pinned but NOT closed, as assertions 11, 12 and 30 — see the fou
 open decisions above. Mutations 12, 13 and 14 are the candidate fixes for
 D-OPEN-1 and D-OPEN-3, and each was confirmed to redden its own pin, so whoever
 takes the decision already has the change and its proof.
+
+## Tasks 2, 3, 4 — done
+
+| Task | Commit | Subject |
+|---|---|---|
+| 2 | `3d357db` | test(meldinger): pin the thread and message column grants |
+| 3 | `292a247` | feat(meldinger): counterpart names through a projection, not a wider profiles policy |
+| 4 | `3a78093` | test(meldinger): fingerprint the three thread predicates and the projection |
+
+Suite `Files=37, Tests=728, Result: PASS`; typecheck 0, lint 0 errors. Reconciles
+exactly against the post-Task-1 baseline: +1 file, +6 in file 31
+(`plan(16)`→`22`), +4 in file 36. Task 4 adds no assertions — only the marker
+count inside file 29 moves, from 26 to **43**, observed live.
+
+The corrections the panel supplied were all confirmed by measurement rather than
+taken on faith:
+
+- **`has_table_privilege` really is blind to column grants.** Under
+  `grant update (body) on public.messages`, the plan's original probe reported
+  **false** — it would have stayed green while messages became mutable, in the
+  assertion whose entire claim is D7 immutability. `has_any_column_privilege`
+  reported true. The asymmetry is now documented in the file: `threads` keeps
+  the table-level probe, because there a table grant is exactly what would
+  silently undo the column revoke.
+- **The 43 was verified before it was written**, by checking all 17 markers
+  against `pg_get_functiondef` — rather than asserting 43 and reconciling
+  afterwards, which is how a wrong counter gets talked into looking right.
+
+### ★ Three findings from this task worth more than the tasks themselves
+
+**1. Supabase ships a `realtime.messages` table, and file 31's existing house
+style walks straight into it.** Assertions 9, 10, 15 and 16 query
+`information_schema` filtering on `table_name` with **no `table_schema`
+predicate**. An unqualified query for `'messages'` therefore returns realtime's
+`binary_payload`/`topic`/`extension` columns *and a live UPDATE grant that is
+not ours*, merged with our own. The four existing assertions are not wrong today
+— there is no `realtime.submissions` or `realtime.assignments` — but the pattern
+is a live trap for anyone who adds a commonly-named table. The new assertions
+avoid it by using `has_*_privilege`, which takes a schema-qualified regclass and
+cannot collide. **Worth fixing the existing four in a later pass.**
+
+**2. The anon assertion is failable — but the plan named the wrong half.** Read
+from `pg_default_acl`: omitting `revoke … from public` **does** redden it
+locally, because Postgres grants EXECUTE to PUBLIC on every new function and
+`anon` is a member. Omitting `revoke … from anon` does **not**, because that
+stray grant comes from the `(supabase_admin, public, f)` row — cloud migrations
+run as `supabase_admin`, local ones as `postgres`, whose row is `{postgres=X}`
+only. So the assertion is a local wall *and* a cloud wall, but for two different
+revokes. The file now records which half is a local no-op, instead of the
+plan's claim that the whole assertion was untestable.
+
+**3. ★ A mutation harness silently restored nothing, and the output still looked
+plausible.** `psql -f <host path>` run inside `docker exec` resolves the path
+**in the container**, not on the host. Three restores did nothing, and two later
+mutations therefore ran against an already-mutated database — producing results
+that read as sensible. Only a byte-for-byte `pg_get_functiondef` diff caught it.
+The harness was rebuilt to restore by replaying the migration files, everything
+was re-run clean, and all three functions were verified identical afterwards.
+
+**This is the second time on this project that a mutation harness has had its own
+failure mode.** The lesson is now house practice: a mutation result is only
+evidence if the restore was *verified*, not merely issued. Diff the object
+definition after every restore.
+
+### One gap flagged, not silently expanded
+
+Nothing in file 36 asserts the **values** of `display_name` or `role_label` —
+only row counts and the column shape. A projection returning the *caller's own*
+name instead of the counterpart's would pass all four assertions. Not a leak
+(the caller already knows their own name), so it was left rather than scope-crept
+mid-task. The fixture already contains witnesses for both `role_label` branches
+(`Lærer` on thread …041, `Skolen` on …042) if this gets pinned later.
