@@ -3354,3 +3354,45 @@ The diff is `supabase/tests/*.sql` only, and nothing under `tests/` or
 change. **But "unlikely" is not "verified"** — a clean re-run with no second
 session active is running now, and the result belongs in this ledger before
 anyone calls the gate green.
+
+## ✅ `test:api` — GREEN. The 5 failures were session churn, and here are the numbers
+
+| run | `auth.sessions` at start | duration | result |
+|---|---|---|---|
+| after a night of agent work | **615** (+646 refresh tokens) | **2 032 s** | 5 failed / 355 passed |
+| immediately after `supabase db reset` | **0** | **934 s** | **360 passed / 360, 13 files** |
+
+**2.2× slower**, which is what pushed five tests past the 15 s per-test timeout.
+That matches the 2.1× this project measured during Phase 4 — the api suite is
+**not flaky**; it degrades linearly with accumulated GoTrue sessions, and a
+`db reset` restores it.
+
+Worth keeping the diagnostic shape, because "some tests time out" reads like
+flakiness and gets re-run rather than diagnosed:
+- **every** failure was `Test timed out in 15000ms` — not one assertion failed;
+- all of them sat in `school-core` / `school-actions`, Phase 3 and 4 suites that
+  nothing in this branch touches;
+- the branch's only change under a test directory is `supabase/tests/*.sql`,
+  which the api suite does not reference.
+
+Each of those was an argument for churn. None of them was evidence. The
+before/after with the session count is.
+
+---
+
+# ✅ PLAN 1 EXIT CRITERIA — ALL MET
+
+| criterion | result |
+|---|---|
+| `supabase db reset && supabase test db --local` | **Files=37, Tests=748, PASS** |
+| `npm test` | **587 passed / 53 files** |
+| `npm run test:api` | **360 passed / 13 files** (after reset) |
+| `npm run typecheck` | **0 errors** |
+| `npm run lint` | **0 errors**, 5 pre-existing warnings |
+| `npm run knip` | **baseline only** |
+| `npm run build` | **clean** |
+| every ★ mutation run, each reddening alone | **yes** — 19 in Task 1, and every restore verified by diffing the object definition |
+| a human has clicked all four surfaces | ⛔ **NOT DONE** — see the morning handoff |
+
+**14 commits on `feat/phase-5-meldinger`, nothing pushed.** The one remaining
+exit criterion is the browser pass, which needs a person.
