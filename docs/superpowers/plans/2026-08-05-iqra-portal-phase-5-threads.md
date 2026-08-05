@@ -2685,3 +2685,69 @@ My read: the privacy delta is small, because a teacher already knows their
 pupil's guardians and a guardian already knows their child's teachers — but
 "small" is not a call to make at 6am against a school's own judgement, and it is
 outside this plan's scope. Remaining plan scope comes first.
+
+## Tasks 8, 9 — done, the family surfaces
+
+| Task | Commit | Subject |
+|---|---|---|
+| 8 | `df99bab` | feat(meldinger): the parent surface, and the only actor who may choose a counterpart |
+| 9 | `440e199` | feat(meldinger): a pupil reads and answers, and cannot open a channel |
+
+typecheck 0 · lint 0 errors · knip at baseline · `npm test` **581 passing / 51
+files** · `next build` clean, with all five family routes present and **no**
+`/elev/meldinger/ny` · pgTAP **37 files / 737 assertions** · `action-guards`
+69 → 71 → 72.
+
+### ★ The previous task's fix was a race, not a fix — and only measurement found it
+
+Task 7's remedy for the controlled-`<select>` revert was committed at `5fa1f71`
+with the claim that both approaches had been checked. Task 8's implementer
+measured the committed code before writing anything and found
+`NewThreadForm.test.tsx` **fails 1 run in 6**.
+
+The mechanism: React sometimes delivers the action state in one commit and
+performs the form reset in a *later* one, so the post-commit `useEffect` fires
+while the DOM is still correct, no-ops, and never runs again. React's `onReset`
+prop **never fires** for this reset at all (verified with a logging listener), so
+cancelling it through React is not available. A **native** `reset` listener does
+fire, and the event is cancelable by spec — `src/lib/use-no-form-reset.ts` now
+cancels it, and both select-bearing forms use it.
+
+Evidence: 10/10 green on the parent suite, 8/8 on the teacher's, and detaching
+the ref fails both 4/4. Independently re-run in the main loop afterwards: 5/5
+green.
+
+**This is the single most valuable thing the overnight run produced.** A
+one-in-six flake in a test guarding "the form does not silently point at a
+different child" is worse than no test — it would have been re-run, seen green,
+and believed. The lesson generalises: when a fix targets a *timing* bug, one
+green run is not evidence. Run it until the flake rate would have shown.
+
+### The plan's recipient list returned nothing — a projection was added
+
+Task 8 step 1 read counterparts through RLS, on the stated grounds that
+`guardian_in_class` covers `class_teachers`. Measured as a real guardian against
+the seed: `class_teachers` → **0 rows** (its one select policy is
+admin-or-`teaches_class`; the enrollment migration adds guardian arms to
+`classes`, `class_subjects` and `class_schedule` and stops there),
+`user_roles where role='admin'` → **0 rows** (own-or-admin). **Every family would
+have opened «Ny melding» to an empty recipient list.**
+
+Widening any of those three is exactly what D14 exists to prevent, so the house
+pattern was followed instead: `20260805122000_guardian_thread_options.sql`, a
+definer projection with the caller bind inside the `where`, mirroring
+`can_start_thread` conjunct by conjunct — including `not is_guardian_of(staff,
+student)`, which matters because most admins here are also parents and would
+otherwise be offered as their own child's «Kontoret» counterpart. File 36 4 → 13
+assertions; fingerprint pairs 43 → 48.
+
+⚠ **This is a schema + RLS change made outside the plan**, so per CLAUDE.md it
+needs the panel. A focused review was dispatched against it; its result is
+recorded below.
+
+### A product question, not a defect
+
+The office picker lists **individual admins by name** rather than one «Kontoret»
+entry, because `can_start_thread` needs a concrete admin uuid. If the school
+would rather families saw a single «Kontoret» option, that is a routing decision
+— someone has to say which admin receives it.
