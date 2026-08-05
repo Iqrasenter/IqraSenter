@@ -2500,3 +2500,39 @@ plan 4's exit gate should know about.
 `26` · `action-guards.test.ts:214` really asserts `toBe(67)` · the pre-Task-1
 suite really is `Files=35, Tests=687` · and the plan's `Files=36, Tests=712`
 prediction for post-Task-1 was **exactly right**.
+
+## Task 1 — done, `c520c6e`
+
+`feat(meldinger): threads and messages, with kind deciding who else reads` — 3
+files, +819. Verified independently of the implementer's own report: **31 ok, 0
+not ok**, no plan mismatch; suite `Files=36, Tests=718, Result: PASS`; typecheck
+and lint clean; no AI trailers in the commit body.
+
+The file grew from the plan's 25 assertions to **31**, and from 4 mutations to
+**14**. Every mutation was applied alone, reverted, and the file re-confirmed
+31/31 green between each — so no mutation is masking another.
+
+**Three mutations reddened MORE than predicted, and the explanations are worth
+keeping**, because in each case the instinct would be to weaken the assertion:
+
+- M5 and M8 also redden assertion **30**, and M6 does too. Assertion 30 is an
+  exact message count. When the refusal under test flips, the message that was
+  supposed to be refused *lands*, and the count becomes 3 instead of 2. The
+  over-reddening is the assertion working, one table over. Recorded in the file
+  so a future reader fixes the upstream assertion rather than loosening 30.
+
+**The implementer corrected me on a prediction I got wrong.** I told it
+assertion 30 should count 1 message; the real value is 2, because the guardian's
+reply added at assertion 18 lands in that same thread. It measured, asserted the
+measured value, and said so — which is the behaviour that makes delegation
+safe. Worth noting because the instruction it was given said explicitly to treat
+a mismatch with my claim as a finding rather than something to make agree.
+
+**Two of my three review-panel dispatches paid for themselves inside this one
+task**, and the third (operational) paid for itself in Tasks 3 and 4 before they
+were even started.
+
+Behaviour now pinned but NOT closed, as assertions 11, 12 and 30 — see the four
+open decisions above. Mutations 12, 13 and 14 are the candidate fixes for
+D-OPEN-1 and D-OPEN-3, and each was confirmed to redden its own pin, so whoever
+takes the decision already has the change and its proof.
