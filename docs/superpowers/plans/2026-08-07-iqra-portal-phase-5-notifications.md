@@ -29,7 +29,7 @@ The spec orders work, and the work invalidates the spec's own numbers. Every one
 | `expect(allActions.length).toBe(67)` | **79** | `src/app/action-guards.test.ts:214` |
 | fingerprints cover **26** pairs | **83** | `supabase/tests/29_definer_fingerprints.sql:411` |
 | new pgTAP files **35–38** | 35, 36, 37 taken → this plan writes **38** | `supabase/tests/` |
-| pgTAP fixture prefixes `be`/`bf`/`c0` | `be` and `bf` taken by plans 1–2 → this plan uses **`c0`** | `supabase/tests/35–37` |
+| pgTAP fixture prefixes `be`/`bf`/`c0` | **all three taken** — file 37 alone carries 200 `c0…` ids incl. 001–014 → this plan uses **`c1`**, measured free across `supabase/tests/*` and `seed.sql` | `supabase/tests/35–37` |
 | «no `app/api/` route» | still true — **`find src/app -name route.ts` returns 0** | verified |
 
 ★ Two of these counters are hard-coded literals that redden on every addition. Bump each **once, deliberately**, in the task that causes it, and state the new number in the commit message.
@@ -275,7 +275,7 @@ select plan(15);
 -- only that the actor has a session — the shape that let four Phase-4
 -- assertions survive replacing a guarded body with `select true`.
 --
--- Fixture prefix c0 (be and bf are taken by files 35–37).
+-- Fixture prefix c1 — MEASURED free 2026-08-05.
 
 delete from public.notifications;
 
@@ -283,35 +283,35 @@ insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, ra
 select '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated',
        u.email, '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
 from (values
-  ('c0000000-0000-0000-0000-000000000001'::uuid, 'c0-eier@test.no'),
-  ('c0000000-0000-0000-0000-000000000002'::uuid, 'c0-annen@test.no')
+  ('c1000000-0000-0000-0000-000000000001'::uuid, 'c1-eier@test.no'),
+  ('c1000000-0000-0000-0000-000000000002'::uuid, 'c1-annen@test.no')
 ) as u(id, email)
 on conflict (id) do nothing;
 
 insert into public.profiles (id, full_name)
-values ('c0000000-0000-0000-0000-000000000001', 'C0 Eier'),
-       ('c0000000-0000-0000-0000-000000000002', 'C0 Annen')
+values ('c1000000-0000-0000-0000-000000000001', 'C1 Eier'),
+       ('c1000000-0000-0000-0000-000000000002', 'C1 Annen')
 on conflict (id) do nothing;
 
 -- Written as the table owner, because no client role may insert here at all —
 -- which is itself assertion 5.
 insert into public.notifications (id, user_id, entity, entity_id)
-values ('c0000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-000000000001',
-        'thread', 'c0000000-0000-0000-0000-0000000000f1');
+values ('c1000000-0000-0000-0000-0000000000a1', 'c1000000-0000-0000-0000-000000000001',
+        'thread', 'c1000000-0000-0000-0000-0000000000f1');
 
 -- ── 1. the owner reads their own varsel ─────────────────────────────
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000001","role":"authenticated"}';
 
 select is(
-  (select count(*)::int from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  (select count(*)::int from public.notifications where id = 'c1000000-0000-0000-0000-0000000000a1'),
   1, 'eieren leser sitt eget varsel');
 
 -- ── 2. another user does not — with the owner as the control ────────
-set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000002","role":"authenticated"}';
 
 select is(
-  (select count(*)::int from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  (select count(*)::int from public.notifications where id = 'c1000000-0000-0000-0000-0000000000a1'),
   0, 'en annen bruker ser ikke varselet');
 
 select is(
@@ -320,32 +320,32 @@ select is(
 
 -- The entitled-reader control over the IDENTICAL row: assertion 2 is only
 -- meaningful if the row is actually there for someone.
-set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000001","role":"authenticated"}';
 select is(
-  (select user_id from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
-  'c0000000-0000-0000-0000-000000000001'::uuid,
+  (select user_id from public.notifications where id = 'c1000000-0000-0000-0000-0000000000a1'),
+  'c1000000-0000-0000-0000-000000000001'::uuid,
   'kontroll: raden finnes for den berettigede leseren');
 
 -- ── 3. nobody may forge a varsel — 42501, not a policy refusal ──────
 select throws_ok(
   $$insert into public.notifications (user_id, entity, entity_id)
-    values ('c0000000-0000-0000-0000-000000000001', 'thread', gen_random_uuid())$$,
+    values ('c1000000-0000-0000-0000-000000000001', 'thread', gen_random_uuid())$$,
   '42501',
   'permission denied for table notifications',
   'authenticated har ingen INSERT-rett — avvist i rettighetslaget, før RLS');
 
 -- ── 4. nor delete one ───────────────────────────────────────────────
 select throws_ok(
-  $$delete from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'$$,
+  $$delete from public.notifications where id = 'c1000000-0000-0000-0000-0000000000a1'$$,
   '42501',
   'permission denied for table notifications',
   'ingen DELETE-rett — et varsel kan ikke skjules for seg selv');
 
 -- ── 5. the owner may mark it read ───────────────────────────────────
 update public.notifications set read_at = now()
- where id = 'c0000000-0000-0000-0000-0000000000a1';
+ where id = 'c1000000-0000-0000-0000-0000000000a1';
 select is(
-  (select (read_at is not null) from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  (select (read_at is not null) from public.notifications where id = 'c1000000-0000-0000-0000-0000000000a1'),
   true, 'eieren kan markere som lest');
 
 -- ── 6. but may not move it to someone else ──────────────────────────
@@ -353,20 +353,20 @@ select is(
 -- grant. Assertion 8 pins the policy half separately, so widening the grant
 -- later cannot silently take both.
 select throws_ok(
-  $$update public.notifications set user_id = 'c0000000-0000-0000-0000-000000000002'
-     where id = 'c0000000-0000-0000-0000-0000000000a1'$$,
+  $$update public.notifications set user_id = 'c1000000-0000-0000-0000-000000000002'
+     where id = 'c1000000-0000-0000-0000-0000000000a1'$$,
   '42501',
   'permission denied for table notifications',
   'user_id har ingen UPDATE-rett — et varsel kan ikke overdras');
 
 -- ── 7. and may not mark ANOTHER user's varsel read ──────────────────
 insert into public.notifications (id, user_id, entity, entity_id)
-select 'c0000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-000000000002',
-       'announcement', 'c0000000-0000-0000-0000-0000000000f2';
+select 'c1000000-0000-0000-0000-0000000000a2', 'c1000000-0000-0000-0000-000000000002',
+       'announcement', 'c1000000-0000-0000-0000-0000000000f2';
 
-set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000001","role":"authenticated"}';
 update public.notifications set read_at = now()
- where id = 'c0000000-0000-0000-0000-0000000000a2';
+ where id = 'c1000000-0000-0000-0000-0000000000a2';
 
 -- ⚠ THE CHECK MUST RUN AS SOMEONE WHO CAN SEE THE ROW. Read back as user 001
 -- and the select returns NO ROWS — the policy hides it — so `is(null, true)`
@@ -374,7 +374,7 @@ update public.notifications set read_at = now()
 -- to the owner to observe the row's actual state.
 reset role;
 select is(
-  (select (read_at is null) from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a2'),
+  (select (read_at is null) from public.notifications where id = 'c1000000-0000-0000-0000-0000000000a2'),
   true, 'en annens varsel er urørt — UPDATE traff null rader, ikke en feil');
 
 -- ── 8. the grant SHAPE, which is what assertions 3-7 stand on ───────
@@ -418,8 +418,8 @@ select is(
 -- ── 10. D25's uniqueness, which the fan-outs depend on ──────────────
 select throws_ok(
   $$insert into public.notifications (user_id, entity, entity_id)
-    values ('c0000000-0000-0000-0000-000000000001', 'thread',
-            'c0000000-0000-0000-0000-0000000000f1')$$,
+    values ('c1000000-0000-0000-0000-000000000001', 'thread',
+            'c1000000-0000-0000-0000-0000000000f1')$$,
   '23505',
   null,
   'ett varsel per (bruker, entitet) — det er denne indeksen fan-out-ene upserter mot');
@@ -781,7 +781,7 @@ select is(
 
 -- ── 12. the claim skips a row that is not due ───────────────────────
 insert into private.email_pings (user_id, pending, queued_seq, next_attempt_at)
-values ('c0000000-0000-0000-0000-000000000001', true, 1, now() + interval '1 hour');
+values ('c1000000-0000-0000-0000-000000000001', true, 1, now() + interval '1 hour');
 
 select is(
   (select count(*)::int from public.claim_email_pings()),
@@ -789,22 +789,22 @@ select is(
 
 -- ── 13. a due row is claimed, stamped, and carries its unread count ──
 update private.email_pings set next_attempt_at = now() - interval '1 minute'
- where user_id = 'c0000000-0000-0000-0000-000000000001';
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
 
 -- ⚠ Assertion 7 marked this user's only notification READ, so without the line
 -- below the count here is 0 and the assertion fails for a reason that has
 -- nothing to do with the claim. Make the fixture say what the assertion means.
 update public.notifications set read_at = null
- where user_id = 'c0000000-0000-0000-0000-000000000001';
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
 
 select is(
   (select unread_count from public.claim_email_pings()
-    where user_id = 'c0000000-0000-0000-0000-000000000001'),
+    where user_id = 'c1000000-0000-0000-0000-000000000001'),
   1, 'claim returnerer brukerens faktiske antall uleste');
 
 select is(
   (select (claimed_at is not null and claimed_seq = queued_seq)
-     from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+     from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
   true, 'claimed_at og vannmerket settes i samme setning');
 
 -- ── 14. a claimed row is invisible to the next drain ────────────────
@@ -816,34 +816,34 @@ select is(
 -- The 2026-08-04-b defect: the counter rose in both places, so the real
 -- ceiling was 2-3 sends rather than 5.
 select is(
-  (select attempts from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  (select attempts from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
   0, 'claim øker ikke attempts — den stiger på nøyaktig ett punkt');
 
 -- ── 16. ★ the watermark: a message mid-send is not swallowed ────────
 update private.email_pings set queued_seq = queued_seq + 1
- where user_id = 'c0000000-0000-0000-0000-000000000001';
-select public.record_email_ping_outcome('c0000000-0000-0000-0000-000000000001', true);
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome('c1000000-0000-0000-0000-000000000001', true);
 
 select is(
-  (select pending from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  (select pending from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
   true, 'meldingen som kom mens sendingen pågikk holder pending = true');
 
 -- And the ordinary case: nothing arrived, so pending clears.
 update private.email_pings set claimed_seq = queued_seq, claimed_at = now()
- where user_id = 'c0000000-0000-0000-0000-000000000001';
-select public.record_email_ping_outcome('c0000000-0000-0000-0000-000000000001', true);
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome('c1000000-0000-0000-0000-000000000001', true);
 select is(
-  (select pending from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  (select pending from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
   false, 'uten nye meldinger klareres pending');
 
 -- ── 17. failure backs off, and the fifth stops for good ─────────────
 update private.email_pings set pending = true, attempts = 4, failed = false
- where user_id = 'c0000000-0000-0000-0000-000000000001';
-select public.record_email_ping_outcome('c0000000-0000-0000-0000-000000000001', false, '535');
+ where user_id = 'c1000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome('c1000000-0000-0000-0000-000000000001', false, '535');
 
 select is(
   (select (failed and attempts = 5 and last_error_code = '535')
-     from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+     from private.email_pings where user_id = 'c1000000-0000-0000-0000-000000000001'),
   true, 'femte forsøk gir failed med en feilkode — ingenting prøver i det uendelige');
 
 select is(
@@ -852,9 +852,9 @@ select is(
 
 -- ── 18. opting out makes the address unresolvable ───────────────────
 update public.profiles set email_pings_enabled = false
- where id = 'c0000000-0000-0000-0000-000000000001';
+ where id = 'c1000000-0000-0000-0000-000000000001';
 select is(
-  public.resolve_ping_address('c0000000-0000-0000-0000-000000000001'),
+  public.resolve_ping_address('c1000000-0000-0000-0000-000000000001'),
   null, 'en bruker som har slått av e-postvarsel har ingen adresse å sende til');
 ```
 
@@ -1064,137 +1064,137 @@ insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, ra
 select '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated',
        u.email, '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
 from (values
-  ('c0000000-0000-0000-0000-000000000011'::uuid, 'c0-laerer@test.no'),
-  ('c0000000-0000-0000-0000-000000000012'::uuid, 'c0-forelder@test.no'),
-  ('c0000000-0000-0000-0000-000000000013'::uuid, 'c0-admin@test.no'),
-  ('c0000000-0000-0000-0000-000000000014'::uuid, 'c0-fremmed@test.no')
+  ('c1000000-0000-0000-0000-000000000011'::uuid, 'c1-laerer@test.no'),
+  ('c1000000-0000-0000-0000-000000000012'::uuid, 'c1-forelder@test.no'),
+  ('c1000000-0000-0000-0000-000000000013'::uuid, 'c1-admin@test.no'),
+  ('c1000000-0000-0000-0000-000000000014'::uuid, 'c1-fremmed@test.no')
 ) as u(id, email)
 on conflict (id) do nothing;
 
 insert into public.profiles (id, full_name) values
-  ('c0000000-0000-0000-0000-000000000011', 'C0 Lærer'),
-  ('c0000000-0000-0000-0000-000000000012', 'C0 Forelder'),
-  ('c0000000-0000-0000-0000-000000000013', 'C0 Admin'),
-  ('c0000000-0000-0000-0000-000000000014', 'C0 Fremmed')
+  ('c1000000-0000-0000-0000-000000000011', 'C1 Lærer'),
+  ('c1000000-0000-0000-0000-000000000012', 'C1 Forelder'),
+  ('c1000000-0000-0000-0000-000000000013', 'C1 Admin'),
+  ('c1000000-0000-0000-0000-000000000014', 'C1 Fremmed')
 on conflict (id) do nothing;
 
 insert into public.user_roles (user_id, role) values
-  ('c0000000-0000-0000-0000-000000000011', 'teacher'),
-  ('c0000000-0000-0000-0000-000000000012', 'parent'),
-  ('c0000000-0000-0000-0000-000000000013', 'admin'),
-  ('c0000000-0000-0000-0000-000000000014', 'teacher')
+  ('c1000000-0000-0000-0000-000000000011', 'teacher'),
+  ('c1000000-0000-0000-0000-000000000012', 'parent'),
+  ('c1000000-0000-0000-0000-000000000013', 'admin'),
+  ('c1000000-0000-0000-0000-000000000014', 'teacher')
 on conflict do nothing;
 
 insert into public.terms (id, name, starts_on, ends_on, is_current)
-values ('c0000000-0000-0000-0000-0000000000e1', 'C0-termin',
+values ('c1000000-0000-0000-0000-0000000000e1', 'C1-termin',
         current_date - 30, current_date + 60, false);
 insert into public.classes (id, term_id, name)
-values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-0000000000e1', 'C0-klasse');
+values ('c1000000-0000-0000-0000-0000000000c1', 'c1000000-0000-0000-0000-0000000000e1', 'C1-klasse');
 insert into public.students (id, first_name, last_name, status)
-values ('c0000000-0000-0000-0000-0000000000d1', 'C0', 'Elev', 'active');
+values ('c1000000-0000-0000-0000-0000000000d1', 'C0', 'Elev', 'active');
 insert into public.class_students (class_id, student_id, enrolled_on)
-values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-0000000000d1', current_date - 20);
+values ('c1000000-0000-0000-0000-0000000000c1', 'c1000000-0000-0000-0000-0000000000d1', current_date - 20);
 insert into public.class_teachers (class_id, teacher_id)
-values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-000000000011');
+values ('c1000000-0000-0000-0000-0000000000c1', 'c1000000-0000-0000-0000-000000000011');
 insert into public.guardian_student (guardian_id, student_id)
-values ('c0000000-0000-0000-0000-000000000012', 'c0000000-0000-0000-0000-0000000000d1');
+values ('c1000000-0000-0000-0000-000000000012', 'c1000000-0000-0000-0000-0000000000d1');
 
 insert into public.threads (id, student_id, staff_id, kind, subject, created_by)
-values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-0000000000d1',
-        'c0000000-0000-0000-0000-000000000011', 'laerer', 'C0-tråd',
-        'c0000000-0000-0000-0000-000000000011');
+values ('c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-0000000000d1',
+        'c1000000-0000-0000-0000-000000000011', 'laerer', 'C1-tråd',
+        'c1000000-0000-0000-0000-000000000011');
 
 -- The teacher writes. The parent should be told; the teacher should not.
 insert into public.messages (thread_id, sender_id, body)
-values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000011', 'Hei');
+values ('c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-000000000011', 'Hei');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b1'),
   1, 'læreren skriver: nøyaktig én mottaker varsles');
 
 select is(
   (select user_id from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'),
-  'c0000000-0000-0000-0000-000000000012'::uuid, 'og det er forelderen');
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b1'),
+  'c1000000-0000-0000-0000-000000000012'::uuid, 'og det er forelderen');
 
 select is(
   (select count(*)::int from public.notifications
-    where user_id = 'c0000000-0000-0000-0000-000000000011'),
+    where user_id = 'c1000000-0000-0000-0000-000000000011'),
   0, 'avsenderen varsles aldri om sin egen melding');
 
 -- ★ The admin is a reader of this thread by oversight, and is NOT pinged.
 select is(
   (select count(*)::int from public.notifications
-    where user_id = 'c0000000-0000-0000-0000-000000000013'),
+    where user_id = 'c1000000-0000-0000-0000-000000000013'),
   0, 'bar oversikt utløser ikke varsel — ellers får hele admin-rosteret post om hver melding');
 
 -- Control over the IDENTICAL thread: the admin really can read it, so
 -- assertion 22 is about the fan-out and not about a missing relationship.
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000013","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"c1000000-0000-0000-0000-000000000013","role":"authenticated"}';
 select is(
-  (select count(*)::int from public.threads where id = 'c0000000-0000-0000-0000-0000000000b1'),
+  (select count(*)::int from public.threads where id = 'c1000000-0000-0000-0000-0000000000b1'),
   1, 'kontroll: admin leser tråden — varselet mangler ved regel, ikke ved manglende tilgang');
 reset role;
 
 -- ── 24. ★ D25: ten messages, one bell entry ─────────────────────────
 insert into public.messages (thread_id, sender_id, body)
-select 'c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000011',
+select 'c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-000000000011',
        'Melding ' || g
   from generate_series(1, 9) g;
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b1'),
   1, 'ti meldinger gir ett varsel — det er raden som koalescerer, ikke en indeks');
 
 select is(
   (select queued_seq from private.email_pings
-    where user_id = 'c0000000-0000-0000-0000-000000000012'),
+    where user_id = 'c1000000-0000-0000-0000-000000000012'),
   10, 'men vannmerket har talt alle ti');
 
 -- ── 25. an unrelated teacher is never a recipient ───────────────────
 select is(
   (select count(*)::int from public.notifications
-    where user_id = 'c0000000-0000-0000-0000-000000000014'),
+    where user_id = 'c1000000-0000-0000-0000-000000000014'),
   0, 'en lærer uten undervisningsforhold til eleven varsles ikke');
 
 -- ── 26. ★ the 'kontor' wall: the pupil's teachers are NOT told ──────
 -- This is one of the two drifts the spec's hand-written recipient list had.
 insert into public.threads (id, student_id, staff_id, kind, subject, created_by)
-values ('c0000000-0000-0000-0000-0000000000b2', 'c0000000-0000-0000-0000-0000000000d1',
-        'c0000000-0000-0000-0000-000000000013', 'kontor', 'C0-kontor',
-        'c0000000-0000-0000-0000-000000000012');
+values ('c1000000-0000-0000-0000-0000000000b2', 'c1000000-0000-0000-0000-0000000000d1',
+        'c1000000-0000-0000-0000-000000000013', 'kontor', 'C1-kontor',
+        'c1000000-0000-0000-0000-000000000012');
 insert into public.messages (thread_id, sender_id, body)
-values ('c0000000-0000-0000-0000-0000000000b2', 'c0000000-0000-0000-0000-000000000012', 'Klage');
+values ('c1000000-0000-0000-0000-0000000000b2', 'c1000000-0000-0000-0000-000000000012', 'Klage');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000b2'
-      and user_id = 'c0000000-0000-0000-0000-000000000011'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b2'
+      and user_id = 'c1000000-0000-0000-0000-000000000011'),
   0, 'kontortråd: elevens lærer får ikke vite at samtalen finnes');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000b2'
-      and user_id = 'c0000000-0000-0000-0000-000000000013'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b2'
+      and user_id = 'c1000000-0000-0000-0000-000000000013'),
   1, 'men admin som er trådens staff_id varsles — hen er motparten');
 
 -- ── 27. ★ the rollover fallback ─────────────────────────────────────
 -- The teacher leaves. The family writes. With no staff reader other than bare
 -- oversight, EVERY admin is admitted — otherwise the message reaches nobody.
 delete from public.class_teachers
- where class_id = 'c0000000-0000-0000-0000-0000000000c1';
+ where class_id = 'c1000000-0000-0000-0000-0000000000c1';
 delete from public.notifications;
 
 insert into public.messages (thread_id, sender_id, body)
-values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000012', 'Er du der?');
+values ('c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-000000000012', 'Er du der?');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'
-      and user_id = 'c0000000-0000-0000-0000-000000000013'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000b1'
+      and user_id = 'c1000000-0000-0000-0000-000000000013'),
   1, 'uten gjenværende ansatt-leser varsles admin likevel — meldingen når noen');
 
 -- ── 28. ★ THE INVARIANT (T-12), stated as a query ───────────────────
@@ -1207,21 +1207,21 @@ select is(
 
 -- ── 29. opting out stops the MAIL and not the varsel ────────────────
 update public.profiles set email_pings_enabled = false
- where id = 'c0000000-0000-0000-0000-000000000012';
+ where id = 'c1000000-0000-0000-0000-000000000012';
 delete from public.notifications;
 delete from private.email_pings;
 
 insert into public.messages (thread_id, sender_id, body)
-values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000013', 'Fra admin');
+values ('c1000000-0000-0000-0000-0000000000b1', 'c1000000-0000-0000-0000-000000000013', 'Fra admin');
 
 select is(
   (select count(*)::int from public.notifications
-    where user_id = 'c0000000-0000-0000-0000-000000000012'),
+    where user_id = 'c1000000-0000-0000-0000-000000000012'),
   1, 'avmelding stopper ikke varselet i appen — det er sannhetskilden');
 
 select is(
   (select count(*)::int from private.email_pings
-    where user_id = 'c0000000-0000-0000-0000-000000000012'),
+    where user_id = 'c1000000-0000-0000-0000-000000000012'),
   0, 'men ingen e-postping køes');
 ```
 
@@ -1310,7 +1310,7 @@ Create `supabase/migrations/20260807124000_announcement_fanout.sql`:
 -- ⛔ AND IT SUBTRACTS BARE OVERSIGHT, EXACTLY AS THE THREAD FAN-OUT DOES.
 -- ⚠ VERIFIED 2026-08-05, and it is the opposite of what the spec assumed:
 -- private.reads_announcement_row's SECOND clause is
--- `or private.has_role(uid, 'admin')` (20260806120000:~400), so an admin reads
+-- `or private.has_role(uid, 'admin')` (20260806120000_announcements.sql:301, fn declared at :294), so an admin reads
 -- EVERY announcement in the school. Filtering on the predicate alone would
 -- therefore bell every admin on every class notice — at ten classes that is
 -- ~ten a week nobody asked for, diluting the one surface D12 made
@@ -1456,29 +1456,29 @@ delete from public.announcements;
 -- ⚠ class_teachers was emptied by assertion 27, so restore it: the teacher
 -- must be able to author here.
 insert into public.class_teachers (class_id, teacher_id)
-values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-000000000011')
+values ('c1000000-0000-0000-0000-0000000000c1', 'c1000000-0000-0000-0000-000000000011')
 on conflict do nothing;
 
 insert into public.announcements (id, class_id, title, body, created_by)
-values ('c0000000-0000-0000-0000-0000000000a5', 'c0000000-0000-0000-0000-0000000000c1',
-        'Gymtøy', 'Husk gymtøy i morgen', 'c0000000-0000-0000-0000-000000000011');
+values ('c1000000-0000-0000-0000-0000000000a5', 'c1000000-0000-0000-0000-0000000000c1',
+        'Gymtøy', 'Husk gymtøy i morgen', 'c1000000-0000-0000-0000-000000000011');
 
 select is(
   (select (fanned_out_at is not null) from public.announcements
-    where id = 'c0000000-0000-0000-0000-0000000000a5'),
+    where id = 'c1000000-0000-0000-0000-0000000000a5'),
   true, 'et oppslag publisert nå er stemplet ved INSERT');
 
 -- ★ D26: the bell lights in the same transaction, not 15 minutes later.
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000a5'
-      and user_id = 'c0000000-0000-0000-0000-000000000012'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000a5'
+      and user_id = 'c1000000-0000-0000-0000-000000000012'),
   1, 'forelderen varsles med én gang — utløseren står i samme transaksjon');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000a5'
-      and user_id = 'c0000000-0000-0000-0000-000000000011'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000a5'
+      and user_id = 'c1000000-0000-0000-0000-000000000011'),
   0, 'forfatteren varsles ikke om sitt eget oppslag');
 
 -- ⛔ D12: announcements never touch the mail path, at any scope.
@@ -1488,13 +1488,13 @@ select is(
 
 -- ── 31. a scheduled oppslag notifies NOBODY until it is due ─────────
 insert into public.announcements (id, class_id, title, body, published_at, created_by)
-values ('c0000000-0000-0000-0000-0000000000a6', 'c0000000-0000-0000-0000-0000000000c1',
+values ('c1000000-0000-0000-0000-0000000000a6', 'c1000000-0000-0000-0000-0000000000c1',
         'Senere', 'Kommer senere', now() + interval '2 hours',
-        'c0000000-0000-0000-0000-000000000011');
+        'c1000000-0000-0000-0000-000000000011');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000a6'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000a6'),
   0, 'et planlagt oppslag varsler ingen ennå — ellers finnes varselet før raden er lesbar');
 
 select is(
@@ -1504,7 +1504,7 @@ select is(
 -- ── 32. when it falls due, the claim fans it out ────────────────────
 -- published_at has no UPDATE grant, so move it as the owner.
 update public.announcements set published_at = now() - interval '1 minute'
- where id = 'c0000000-0000-0000-0000-0000000000a6';
+ where id = 'c1000000-0000-0000-0000-0000000000a6';
 
 select is(
   (select count(*)::int from public.claim_due_announcements()),
@@ -1512,8 +1512,8 @@ select is(
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000a6'
-      and user_id = 'c0000000-0000-0000-0000-000000000012'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000a6'
+      and user_id = 'c1000000-0000-0000-0000-000000000012'),
   1, 'og forelderen varsles av claimen, ikke av utløseren');
 
 -- ── 33. ★ idempotence: a second claim does nothing ──────────────────
@@ -1537,17 +1537,17 @@ select is(
 select is(
   (select count(*)::int from public.notifications
     where entity = 'announcement'
-      and user_id = 'c0000000-0000-0000-0000-000000000013'),
+      and user_id = 'c1000000-0000-0000-0000-000000000013'),
   0, 'admin belles ikke på et klasseoppslag — bar oversikt trekkes fra her også');
 
 insert into public.announcements (id, class_id, title, body, created_by)
-values ('c0000000-0000-0000-0000-0000000000a7', null,
-        'Hele skolen', 'Fri på fredag', 'c0000000-0000-0000-0000-000000000013');
+values ('c1000000-0000-0000-0000-0000000000a7', null,
+        'Hele skolen', 'Fri på fredag', 'c1000000-0000-0000-0000-000000000013');
 
 select is(
   (select count(*)::int from public.notifications
-    where entity_id = 'c0000000-0000-0000-0000-0000000000a7'
-      and user_id = 'c0000000-0000-0000-0000-000000000011'),
+    where entity_id = 'c1000000-0000-0000-0000-0000000000a7'
+      and user_id = 'c1000000-0000-0000-0000-000000000011'),
   1, 'men et skoleomfattende oppslag når læreren — det er adressert til dem');
 ```
 
@@ -1596,7 +1596,7 @@ pgTAP 885 -> 897."
 
 ---
 
-## Task 6: Definer fingerprints — 83 → 88
+## Task 6: Definer fingerprints — 83 → 93
 
 **Files:**
 - Modify: `supabase/tests/29_definer_fingerprints.sql`
@@ -1686,7 +1686,7 @@ That is **10 new markers**, so change the literal from `83` to `93`:
 cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/29_definer_fingerprints.sql 2>&1 | tail -10
 ```
 
-Expected: PASS, and the plan count reflects 88 pairs.
+Expected: PASS, with the literal at 93. `plan(2)` is unchanged, so the suite total does not move.
 
 - [ ] **Step 4: Verify a fingerprint can actually fail**
 
@@ -1699,7 +1699,7 @@ Delete the `and private.reads_thread(c.uid, tid)` line from `private.thread_reci
 ```bash
 cd ~/dev/iqra-portal && git add supabase/tests/29_definer_fingerprints.sql && git commit -m "test(varsler): fingerprint the five definers whose stubbing is an escalation
 
-83 -> 88 pairs. thread_recipients stubbed mails the whole school about one
+83 -> 93 markers (2+2+3+1+2). thread_recipients stubbed mails the whole school about one
 family's message; fan_out_announcement stubbed is a school-wide disclosure;
 resolve_ping_address stubbed sends to someone who opted out. Each pair was
 watched fail under deletion of the line it names."
@@ -2682,7 +2682,7 @@ Create `src/components/portal/VarselBell.tsx` as a **server** component reading 
 ```tsx
 import Link from 'next/link';
 import { listVarsler, unreadCount } from '@/lib/varsler/queries';
-import { formatDateNb } from '@/lib/dates';
+import { formatDateTimeNb } from '@/lib/dates';
 
 /**
  * ⛔ `quiet` is the pupil variant and it is a PRODUCT RULE, not a style knob:
@@ -2709,7 +2709,7 @@ export async function VarselBell({ roleHome, quiet = false }: { roleHome: string
                 ) : null}
                 <span className="min-w-0 flex-1 truncate">{v.label}</span>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {formatDateNb(v.createdAt)}
+                  {formatDateTimeNb(v.createdAt)}
                 </span>
               </Link>
             </li>
