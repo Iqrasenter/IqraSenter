@@ -2267,3 +2267,148 @@ panel** on RLS plans, and this was one pass. The panel's value is independent
 lenses disagreeing with each other — the Phase-5 spec review had one agent clear
 a case another had correctly flagged as critical. If you want it, that needs
 agent dispatch authorised; this ledger is a floor, not a ceiling.
+
+---
+
+# Execution ledger — overnight run, 2026-08-05
+
+Agent dispatch **was** authorised for this run, so the review panel the ledger
+above called "a floor, not a ceiling" was run: three independent lenses
+(privilege escalation · assertion vacuity · repo/operational integration) over
+the Task 1 and Task 3 SQL, concurrently with Task 1's execution.
+
+★ **The panel earned its keep on the first task.** The single-pass review that
+wrote the plan was careful and internally consistent — and the panel still found
+a defect that would have aborted pgTAP file 35 before assertion 1 ever ran, plus
+two more assertions that could not fail for the reason they claimed. That is now
+the **fifth** time on this project that checking a claim against the repo, rather
+than against the plan's own consistency, is what found the defect.
+
+## ⚠ FOUR OPEN DECISIONS — these need the user, and nothing overnight changed them
+
+Each was **proven by executed SQL against the live database**, not inferred. In
+each case the code was left as the plan wrote it and the behaviour was **pinned
+by a new pgTAP assertion**, labelled `OPEN DECISION 2026-08-05`, so it is visible
+in the test output and cannot drift silently. Pinning is not endorsement.
+
+### D-OPEN-1 — the `kontor` wall is role-shaped, not person-shaped
+
+`reads_thread`'s admin arm is a bare `private.has_role(uid,'admin')`. Anyone
+holding **both** `admin` and `teacher` therefore reads and writes every office
+thread, including one about themselves. Proven: a dual-role user read a
+complaint naming them, posted into it, and `can_write_thread` returned true,
+while a plain teacher of the same pupil got 0 rows.
+
+**Why it was NOT closed overnight:** the fix (`and (t.kind <> 'kontor' or not
+teaches_student(uid, t.student_id))`) has an operational trap — if the only
+admin teaches the pupil, that family's office channel reaches **nobody**. That
+needs to be checked against who actually holds these roles at IQRA.
+
+**Mitigating, and why this is likely a documentation defect rather than a hole:**
+D20 already routes complaints about staff *out* of the portal, and the
+DisclosureBlock copy says so in as many words — «Gjelder det en klage på en
+ansatt, ta det opp med rektor på skolen — ikke i portalen.» The `kontor` channel
+is for office matters. What was genuinely wrong was the migration's **own header
+comment**, which claimed `kind` prevents a complaint reaching the teacher it is
+about. That comment was corrected — it now states what the predicate actually
+delivers.
+
+**The question for you:** does anyone at IQRA hold both `admin` and `teacher`?
+If no, this is theoretical and the pin is enough. If yes, decide (a) accept and
+say so in the disclosure copy, or (b) close it and guarantee a non-teaching admin.
+
+### D-OPEN-2 — a family can name a teacher-of-their-child as the office counterpart
+
+`can_start_thread`'s kontor arm asks only `has_role(staff,'admin')`. It never
+asks whether that person teaches the pupil. `thread_counterparts` then labels
+them **«Skolen»**, and Task 8's picker will offer them as the office. Compounds
+D-OPEN-1: the UI would actively present the complained-about teacher as the
+school office, and plan 3's notification routing would follow `staff_id` to them.
+
+**Why NOT closed:** the obvious fix (`and not teaches_student(staff, sid)`) has
+the same lockout trap as D-OPEN-1, and worse — it is a hard refusal at creation,
+so an affected family could not open an office thread at all.
+
+### D-OPEN-3 — a pupil's NEW teacher inherits the entire prior thread history
+
+`reads_thread`'s teacher arm has no temporal bound. Proven: a pupil transfers
+from class A to class B; the class B teacher, who has never had any relationship
+to that family, reads the full body of threads written about the class A
+teacher. A substitute added to a class on Monday reads years of that family's
+correspondence on Monday.
+
+The plan tested only the **losing** direction (T-18, assertions 22–24 — a former
+teacher correctly reads nothing). The **gaining** direction was untested and
+unmentioned; grep for «bytter klasse» in the plan returns nothing.
+
+**This is the one I would look at first.** It is the largest privacy surface of
+the four, it is invisible to every existing assertion, and unlike the other three
+it has no mitigating policy elsewhere. The fix is a real design choice, though:
+a new teacher legitimately needs *some* context about a pupil they now teach, so
+"bound it by the enrollment interval that made them a teacher" trades one
+complaint for another.
+
+### D-OPEN-4 — an admin can delete a thread and cascade the "immutable" log away
+
+`messages.thread_id` is `on delete cascade` and admins hold DELETE on `threads`.
+One statement erases the message log; `audit_row_change` records ids and column
+*names* only, so the bodies are unrecoverable. Combined with D-OPEN-1, a person
+who is the subject of a record can read it and destroy it.
+
+**Probably intentional** — GDPR erasure needs a delete path, and D7 says
+"DELETE admin-only" — so this is a governance question (who may erase, and is
+it recorded well enough), not obviously a bug. Raised because the `messages`
+comment says the log "is a record it may have to stand behind", which a
+one-statement cascade undercuts.
+
+### Also noted, low severity
+
+- The plan disagrees with itself on whether a pupil may start a thread: the
+  database permits it (`can_start_thread` conjunct 1, deliberately per its
+  comment), the file table says «no `ny` — D19». Not an escalation — a
+  `laerer` thread's readership does not depend on who created it — but a crafted
+  PostgREST call reaches what the UI does not offer. Pick one wording.
+- `private.reads_thread` / `can_start_thread` take a caller-supplied `uid` and
+  are granted to `authenticated`, so they compose into an "is person P on thread
+  T" probe. The grants are **required** (RLS predicates execute as the caller)
+  and the same shape already ships on `is_guardian_of` / `teaches_student`, so
+  this is house convention, not a regression.
+
+## Defects found and FIXED during execution
+
+| # | Defect | Lens | Consequence had it shipped |
+|---|---|---|---|
+| 1 | pgTAP 35's teardown omits `delete from public.assignments` | vacuity | **The whole file aborts before assertion 1.** `assignments.class_id` is `on delete restrict` and the seed populates it, so `delete from public.classes` raises 23503. File 34 already documents this exact trap; this plan did not inherit it. Zero assertions would have run — while the task reported a green migration. |
+| 2 | Assertion 17 (T-23, D23) was vacuous | vacuity | Thread `…042`'s `staff_id` **was** the posting admin, so `writes_thread` was satisfied by `t.staff_id = uid` alone and D23's `or t.kind = 'kontor'` arm was never consulted. Deleting the arm entirely left the assertion green. Fixed by giving `…042` a *different* admin as counterpart, which is what office continuity actually means. |
+| 3 | Assertion 18 (T-03) refused by the wrong conjunct | vacuity | Refused by conjunct 2 (`teaches_student(pupil_login, …)` is false), not by conjunct 3 — whose comment claims it makes elev↔elev unrepresentable. The fixture compared the *wrong pupil's* login. Conjunct 3 could be deleted in full with the file still green. |
+| 4 | T-02 claimed in the file's coverage, no assertion for it | vacuity | The cross-class teacher read wall — the arm most likely to be widened later — was untested. `…003` was declared as "teacher of another class" and never read anything. |
+| 5 | `has_table_privilege(…,'UPDATE')` does not see column grants | vacuity | Assertion 3 claimed to prove D7 immutability "at the privilege layer"; `grant update (body) on messages` would have left it green. Now `has_any_column_privilege`. |
+| 6 | Migration header comment overstated the `kontor` guarantee | escalation | See D-OPEN-1. A comment promising more than the code delivers is how the next reader deletes the wrong line. |
+| 7 | Forged `created_by` at thread INSERT had no assertion | escalation | Correctly refused by the policy, but unpinned — unlike the `sender_id` mirror at assertion 14. |
+| 8 | Mutation coverage was 5 of 25 assertions | vacuity | Violates the plan's own standing rule 2 ("every new assertion must be watched fail"). Six further mutations added, each targeting a specific previously-unmutated assertion. |
+
+## Verified sound, so nobody re-litigates it
+
+The escalation lens attacked and **refuted**: `writes_thread` ⊄ `reads_thread`
+(it is a genuine subset) · bracket precedence in the admin arm (the plan's
+mutation 3 is well-aimed) · NULL propagation (every predicate is `exists(…)`,
+and RLS `WITH CHECK` fails closed on NULL) · flipping `kind`/`staff_id` through
+the `subject` UPDATE policy (refused at the *grant* layer, before RLS) ·
+`thread_counterparts` as an existence oracle (a real-but-unreadable id and a
+nonexistent id are indistinguishable) · an error-code oracle on message INSERT
+(both return 42501, because `WITH CHECK` is evaluated before the FK trigger) ·
+`anon` reaching the predicates locally · self-granting participation by writing
+the derivation tables (all three are admin-only, and `class_teachers` also
+requires the target to hold `teacher`) · `audit_log` as a side channel into
+`kontor` · former-teacher access (a *future* `left_on` also cuts access
+immediately — fails closed) · a classmate reading another pupil's threads ·
+`touch_thread` hijack · `search_path` gaps in all five new functions ·
+`RETURNS TABLE` OUT-name shadowing.
+
+The vacuity lens independently confirmed all four of the plan's original
+mutations are correctly aimed, that `plan(25)` was the right count for the file
+as written, that the `set_config`/`set local role` ordering difference between
+blocks is immaterial, and that `left_on = '2026-09-01'` really does flip
+`teaches_student` despite being a future date — because that helper uses
+`cs.left_on is null`, **not** the half-open as-of idiom of file 34's eight
+functions.
