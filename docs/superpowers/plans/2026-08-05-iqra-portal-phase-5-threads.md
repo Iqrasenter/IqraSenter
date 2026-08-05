@@ -2608,3 +2608,80 @@ name instead of the counterpart's would pass all four assertions. Not a leak
 (the caller already knows their own name), so it was left rather than scope-crept
 mid-task. The fixture already contains witnesses for both `role_label` branches
 (`Lærer` on thread …041, `Skolen` on …042) if this gets pinned later.
+
+## Tasks 5, 6, 7 — done, the teacher surface complete
+
+| Task | Commit | Subject |
+|---|---|---|
+| 5 | `178d592` | feat(meldinger): teacher thread list |
+| 6 | `25eb074` | feat(meldinger): thread detail, the disclosure block, and sending a message |
+| 7 | `5fa1f71` | feat(meldinger): a teacher starts a thread about a pupil she teaches |
+
+Verified independently of the implementer's report: typecheck 0 · lint 0 errors,
+5 pre-existing warnings · `action-guards.test.ts` at **69** · `npm test` 569
+passing across 49 files · `next build` compiles all three new routes · working
+tree clean but for the untracked economy probe.
+
+**Seven more defects in the plan, found and fixed.** Five by reading the repo,
+two by measuring React's actual behaviour. The two React ones are the reason
+this task took as long as it did, and they are the ones worth reading:
+
+### ★ The near-miss: a controlled `<select>` that silently pointed at the wrong child
+
+React 19 auto-resets `<form action={fn}>` **even when the action fails**. The
+plan's uncontrolled composer therefore answered «Meldingen ble ikke sendt. Prøv
+igjen» while deleting the message it was asking the teacher to retype. That is
+defect 6, and it is merely annoying.
+
+Defect 7 is not. Making the inputs controlled fixes textareas and text inputs —
+React keeps their `defaultValue` in step — but **not a `<select>`**.
+`form.reset()` reverts the DOM to the first `<option>` while React state keeps
+the chosen pupil, and React never re-syncs the two. So after a refused send, the
+box read the wrong pupil, and pressing Send again would have sent the message
+**about the wrong child, to the wrong family** — with nothing on screen looking
+wrong to the teacher. Fixed with a post-commit effect; a keyed remount loses the
+ordering race and only measures green against the detached node, which was
+checked both ways.
+
+Task 8's parent form has **two** selects and is the higher-risk version of the
+same shape.
+
+### The other five
+
+1. **`formatDateNb(thread.updatedAt)` throws.** It anchors by string
+   concatenation, so a timestamptz becomes an Invalid Date and a `RangeError`.
+   The list would have 500'd the moment one thread existed — while the empty
+   state, the only thing a first click sees, rendered perfectly. Now
+   `formatDateNb(osloDateOf(…))`, pinned by a test carrying a real timestamptz.
+2. **`getThread` embedded `profiles(full_name)`.** `profiles_select_own_or_admin`
+   is own-or-admin, so the embed is NULL for every *other* sender — see the gap
+   below.
+3. **`formatDateTimeNb` omitted `timeZone`.** Every other helper in `dates.ts`
+   pins Europe/Oslo because prod runs UTC; the assertions are toothless on an
+   Oslo laptop and were mutation-evidenced under `TZ=UTC`.
+4. **`<ErrorPanel>{state.error}</ErrorPanel>` does not compile.** `ErrorPanel` is
+   the error-boundary body (`{digest, onRetry}`, renders its own `<h1>`).
+5. **The candidate list over-returned.** `students` carries two OR'd permissive
+   select policies, so a bare select returns every pupil the teacher *ever*
+   taught, while `can_start_thread` binds on live enrolment. Every stale pupil
+   would have answered «Sjekk at eleven er i klassen din». Rewritten to mirror
+   the predicate exactly.
+
+### ⚠ KNOWN GAP — message bylines, needs a decision
+
+A sender the reader is not entitled to name renders as **«Annen deltaker»**: a
+second guardian, a co-teacher, or an admin. On the teacher surface that is the
+**common** case, because the staff counterpart of a teacher's own thread is the
+teacher herself — so a parent's reply is unnamed.
+
+Closing it needs `public.thread_message_senders(uuid[])`, a definer projection
+mirroring `thread_counterparts`. That is a schema + RLS change, so per CLAUDE.md
+it needs the review panel, and it is also a genuine privacy decision — it names
+the other guardian to a teacher. Deliberately **not** slipped into a UI task.
+Documented in the `★ KNOWN GAP` comment in `src/lib/dal/threads.ts` and queued
+as a task chip.
+
+My read: the privacy delta is small, because a teacher already knows their
+pupil's guardians and a guardian already knows their child's teachers — but
+"small" is not a call to make at 6am against a school's own judgement, and it is
+outside this plan's scope. Remaining plan scope comes first.
