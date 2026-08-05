@@ -401,13 +401,33 @@ select plan(25);
 -- That is the shape that let four Phase-4 assertions survive replacing the
 -- guarded function body with `select true`.
 
+-- ⚠ CORRECTED 2026-08-05 by the review panel. The short eight-line teardown
+-- this plan originally carried ABORTS THE WHOLE FILE before assertion 1:
+-- assignments.class_id is ON DELETE RESTRICT and seed.sql populates
+-- public.assignments, so `delete from public.classes` raises 23503 and zero
+-- assertions run. Use the house order from 34_enrollment_boundary.sql:46-67 —
+-- children before parents. Copy THIS block into file 36, not the old one.
 delete from public.messages;
 delete from public.threads;
+delete from public.assignment_group_members;
+delete from public.assignment_groups;
+delete from public.assignments;
+delete from public.class_group_members;
+delete from public.class_groups;
+delete from public.term_grades;
+delete from public.test_results;
+delete from public.tests;
+delete from public.attendance;
+delete from public.absence_notices;
+delete from public.lessons;
 delete from public.class_students;
+delete from public.class_schedule;
+delete from public.class_subjects;
 delete from public.class_teachers;
 delete from public.guardian_student;
 delete from public.students;
 delete from public.classes;
+delete from public.subjects;
 delete from public.terms;
 
 insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -841,11 +861,22 @@ select is(
   'control: a genuine participant passing the IDENTICAL array gets exactly 1');
 reset role;
 -- The exact column set — D14's whole argument. A FIFTH column is where phone
--- would arrive. ⚠ Use columns_are, NOT results_eq: results_eq compares row
--- VALUES and in the 0-row half may not compare structure at all.
-select columns_are(
-  'public'::name, 'thread_counterparts'::name,
-  array['thread_id', 'user_id', 'display_name', 'role_label'],
+-- would arrive.
+--
+-- ⚠ CORRECTED 2026-08-05 by two independent review lenses. The original
+-- `columns_are('public','thread_counterparts', …)` CANNOT PASS: columns_are
+-- reads pg_attribute on a RELATION, and a `returns table (…)` function has no
+-- pg_class row at all. Measured against the identically-shaped existing
+-- function assignment_group_mate_names — it reports every column as "missing"
+-- and `select count(*) from pg_class where relname = …` returns 0. So the
+-- assertion would fail on first run, and mutation 2 (`add p.phone` → it
+-- reddens) would be untestable. D14's central claim would ship unpinned.
+--
+-- Also NOT results_eq: that compares row VALUES and in the 0-row half may not
+-- compare structure at all.
+select is(
+  pg_get_function_result('public.thread_counterparts(uuid[])'::regprocedure),
+  'TABLE(thread_id uuid, user_id uuid, display_name text, role_label text)',
   'the projection returns exactly D14''s four columns');
 select is(
   has_function_privilege('anon', 'public.thread_counterparts(uuid[])', 'EXECUTE'), false,
@@ -929,7 +960,20 @@ Following the existing `(signature, array[…])` shape:
 
 - [ ] **Step 3: Bump the count deliberately, once**
 
-Change `26` to `31` and the message to `'the fingerprint table still covers 31 (function, predicate) pairs'` — **five** functions are added by this plan, not four: the three predicates, the projection, and `public.can_write_thread`.
+⚠ **CORRECTED 2026-08-05 by the review panel: the number is 43, not 31.** The
+plan had been counting *functions*; assertion 1 counts **(function, predicate)
+pairs** — `select count(*) from definer_markers d, lateral unnest(d.markers)`
+(`29_definer_fingerprints.sql:145-149`). The existing 26 is 5+3+4+4+5+5 markers
+over **six** functions. The five entries above carry 5+4+5+2+1 = **17** markers,
+so the post-Task-4 total is **43** — built and measured live, with all 17
+markers confirmed present in `pg_get_functiondef`.
+
+Change `26` to `43` and the message to `'the fingerprint table still covers 43 (function, predicate) pairs'`.
+
+Note that this plan's own earlier ledger entry ("count 30 → **31**") carries the
+same miscount, from the same cause. Five functions are added — the three
+predicates, the projection, and `public.can_write_thread` — but that is not what
+the assertion counts.
 
 ⚠ This literal is the same hard-coded-counter trap as `expect(allActions.length).toBe(67)`. Bump it in the commit that adds the functions, and say the new number in the commit body — never adjust it to make an unrelated failure go away.
 
@@ -2412,3 +2456,47 @@ blocks is immaterial, and that `left_on = '2026-09-01'` really does flip
 `teaches_student` despite being a future date — because that helper uses
 `cs.left_on is null`, **not** the half-open as-of idiom of file 34's eight
 functions.
+
+## Plan-body corrections made during the run (so downstream tasks inherit them)
+
+Three of the panel's findings were defects in the **plan text itself**, not in
+the code written from it. Left alone, Tasks 3 and 4 would each have hit a hard
+stop, because they are executed from this document. All three are now patched in
+place, above, with the correction marked inline.
+
+| Where | Was | Is now | Why it mattered |
+|---|---|---|---|
+| Task 1, pgTAP 35 fixture teardown | An eight-line `delete` block | The 21-line house order from `34_enrollment_boundary.sql:46-67` | The short block raises 23503 on `delete from public.classes` (`assignments.class_id` is ON DELETE RESTRICT and the seed populates it) and **aborts the file before assertion 1**. Task 3 says "copy the fixture block from file 35", so file 36 would have inherited it. |
+| Task 3, the column-shape assertion | `columns_are('public','thread_counterparts', …)` | `is(pg_get_function_result(…), 'TABLE(thread_id uuid, …)', …)` | `columns_are` reads `pg_attribute` on a **relation**; a `returns table` function has no `pg_class` row. Measured against the identically-shaped `assignment_group_mate_names`: every column reported missing, `pg_class` count 0. The assertion could never pass, and mutation 2 would be untestable — so D14's central claim would ship unpinned. **Found independently by two lenses.** |
+| Task 4, the fingerprint counter | `26` → `31` | `26` → **43** | The assertion counts **(function, predicate) pairs**, not functions — `count(*) … lateral unnest(d.markers)`. The five new entries carry 17 markers. Built the post-Task-4 table and ran it live: 43. The plan had been counting functions throughout, including in its own earlier ledger ("count 30 → 31"). Task 4 Step 4 would have failed `have 43 / want 31` on a counter the plan explicitly forbids adjusting to silence a failure — an ambiguous stop for whoever hit it. |
+
+Two further corrections went to the migration's **comments**, where the
+behaviour is right but the stated reason is wrong — the exact defect class this
+plan's own review ledger flagged as item 7:
+
+- **`touch_thread`.** The comment claimed that dropping `security definer` would
+  make non-author messages "silently fail to bump the thread". Measured: it is a
+  hard 42501 that aborts **every** message INSERT, the author's included. The
+  comment also called the owner a superuser; `postgres` here is
+  `rolsuper=f, rolbypassrls=t`, so the mechanism is BYPASSRLS. Right outcome,
+  wrong reason, twice.
+- **The scoped audit trigger.** Justified by reference to `class_students_audit`.
+  All 13 audit triggers in this repo are unscoped — no trigger anywhere uses
+  `update of <cols>`. The reasoning for scoping it is sound and was kept; the
+  invented precedent was replaced with "deliberately unlike every existing audit
+  trigger, and here is why".
+
+Smaller drift recorded but not acted on: the plan says Postgres 15, the stack is
+**17.6** · `29_definer_fingerprints.sql`'s scope comment says the live definer
+count is 44, it is now 49 (50 after Task 3) · line 811's `pg_default_acl`
+warning does not reproduce locally, because migrations here run as `postgres`,
+whose default ACL grants no anon — the entry belongs to `supabase_admin`, so
+keep the explicit `revoke … from anon` as free defence but not for the stated
+reason · `threads.staff_id`/`created_by` and `messages.sender_id` are ON DELETE
+RESTRICT, so a staff profile becomes undeletable once they have messaged, which
+plan 4's exit gate should know about.
+
+**Baseline confirmed by measurement, not assumption:** `29_…` really carried
+`26` · `action-guards.test.ts:214` really asserts `toBe(67)` · the pre-Task-1
+suite really is `Files=35, Tests=687` · and the plan's `Files=36, Tests=712`
+prediction for post-Task-1 was **exactly right**.
