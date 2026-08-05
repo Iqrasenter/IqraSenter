@@ -2280,17 +2280,32 @@ import type { PingEmail } from './ping-email';
  * transactional endpoint is one POST, and a dependency here would be a
  * sub-processor's code running in our server bundle for no benefit.
  */
-export type SendResult = { ok: true } | { ok: false; errorCode: string };
+/**
+ * ★ `retryable` is the difference between "the provider is having a bad day"
+ * and "this address is wrong", and getting it wrong destroys the queue.
+ * Without it, a missing API key — the EXPECTED state until IQRA's Resend
+ * account exists (D28) — marks every pending user permanently `failed` within
+ * five cron ticks. A rate limit is the most retryable error there is; a 422 on
+ * a malformed recipient is the least.
+ */
+export type SendResult =
+  | { ok: true }
+  | { ok: false; errorCode: string; retryable: boolean };
 export type SendPing = (to: string, mail: PingEmail) => Promise<SendResult>;
+
+/** 4xx that are facts about the recipient, not about the provider. */
+const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 422]);
 
 const ENDPOINT = 'https://api.resend.com/emails';
 const FROM = 'IQRA skoleportal <varsler@varsler.iqrasenter.no>';
 
 export const sendViaResend: SendPing = async (to, mail) => {
   const key = getResendApiKey();
-  // ⛔ Not a success. A missing key must leave the ping in the ledger as
-  // unsent, so the admin health screen shows it and a human notices.
-  if (!key) return { ok: false, errorCode: 'NO_API_KEY' };
+  // ⛔ Not a success — the ping must stay in the ledger as unsent. But
+  // RETRYABLE: this is a configuration state that a human will fix, not a fact
+  // about the recipient, and burning the attempts ceiling on it would leave
+  // every family needing an individual manual reset the day the key arrives.
+  if (!key) return { ok: false, errorCode: 'NO_API_KEY', retryable: true };
 
   try {
     const response = await fetch(ENDPOINT, {
@@ -2298,10 +2313,18 @@ export const sendViaResend: SendPing = async (to, mail) => {
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
       body: JSON.stringify({ from: FROM, to: [to], subject: mail.subject, text: mail.text }),
     });
-    if (!response.ok) return { ok: false, errorCode: String(response.status) };
+    if (!response.ok) {
+      return {
+        ok: false,
+        errorCode: String(response.status),
+        // 429 and every 5xx are the provider's problem. Everything in
+        // PERMANENT_STATUSES is ours or the recipient's.
+        retryable: !PERMANENT_STATUSES.has(response.status),
+      };
+    }
     return { ok: true };
   } catch {
-    return { ok: false, errorCode: 'NETWORK' };
+    return { ok: false, errorCode: 'NETWORK', retryable: true };
   }
 };
 ```
@@ -2330,8 +2353,8 @@ describe('the ping drain', () => {
     const d = deps();
     const result = await drainPings(d);
     expect(d.send).toHaveBeenCalledTimes(1);
-    expect(d.recordOutcome).toHaveBeenCalledWith('u1', true, null);
-    expect(result).toEqual({ claimed: 1, sent: 1, skipped: 0, failed: 0 });
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', true, null, false);
+    expect(result).toEqual({ claimed: 1, sent: 1, skipped: 0, failed: 0, abandoned: 0, unrecorded: 0 });
   });
 
   // ★ A notification you have already seen should not follow you into your
@@ -2341,8 +2364,8 @@ describe('the ping drain', () => {
     const d = deps({ claim: vi.fn(async () => [{ user_id: 'u1', unread_count: 0 }]) });
     const result = await drainPings(d);
     expect(d.send).not.toHaveBeenCalled();
-    expect(d.recordOutcome).toHaveBeenCalledWith('u1', true, null);
-    expect(result).toEqual({ claimed: 1, sent: 0, skipped: 1, failed: 0 });
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', true, 'SKIPPED', false);
+    expect(result).toEqual({ claimed: 1, sent: 0, skipped: 1, failed: 0, abandoned: 0, unrecorded: 0 });
   });
 
   // ★ An unresolvable address is a FAILURE, not a skip. Skipping it would
@@ -2352,14 +2375,14 @@ describe('the ping drain', () => {
     const d = deps({ resolveAddress: vi.fn(async () => null) });
     const result = await drainPings(d);
     expect(d.send).not.toHaveBeenCalled();
-    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, 'NO_ADDRESS');
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, 'NO_ADDRESS', false);
     expect(result.failed).toBe(1);
   });
 
   it('passes the provider error code through to the ledger', async () => {
-    const d = deps({ send: vi.fn(async () => ({ ok: false as const, errorCode: '422' })) });
+    const d = deps({ send: vi.fn(async () => ({ ok: false as const, errorCode: '422', retryable: false })) });
     await drainPings(d);
-    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, '422');
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, '422', false);
   });
 
   // ★ One user's failure must not abandon the rest of the batch. The first
@@ -2377,16 +2400,61 @@ describe('the ping drain', () => {
         .mockResolvedValueOnce({ ok: true as const }),
     });
     const result = await drainPings(d);
-    expect(result).toEqual({ claimed: 2, sent: 1, skipped: 0, failed: 1 });
-    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, 'THREW');
-    expect(d.recordOutcome).toHaveBeenCalledWith('u2', true, null);
+    expect(result).toEqual({ claimed: 2, sent: 1, skipped: 0, failed: 1, abandoned: 0, unrecorded: 0 });
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, 'THREW', true);
+    expect(d.recordOutcome).toHaveBeenCalledWith('u2', true, null, false);
+  });
+
+  // ⛔ THE CASE THE SUITE NEVER HAD. An earlier version tested `send`
+  // rejecting but never `recordOutcome` rejecting — so the unguarded await
+  // inside the catch was invisible to the tests, and a DB blip would have
+  // stranded every remaining row in the batch.
+  it('keeps draining when even the failure cannot be recorded', async () => {
+    const d = deps({
+      claim: vi.fn(async () => [
+        { user_id: 'u1', unread_count: 1 },
+        { user_id: 'u2', unread_count: 1 },
+      ]),
+      send: vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue({ ok: true }),
+      recordOutcome: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('db gone'))
+        .mockResolvedValue(undefined),
+    });
+    const result = await drainPings(d);
+    expect(result.unrecorded).toBe(1);
+    expect(result.sent).toBe(1);
+    // u2 was still attempted — the point of the whole test.
+    expect(d.send).toHaveBeenCalledTimes(2);
+  });
+
+  // ★ The wall-clock budget. Abandoned rows are delayed, not lost: the
+  // 15-minute lease in claim_email_pings reclaims them.
+  it('stops claiming new work when the budget is spent', async () => {
+    let clock = 0;
+    const d = deps({
+      claim: vi.fn(async () => [
+        { user_id: 'u1', unread_count: 1 },
+        { user_id: 'u2', unread_count: 1 },
+        { user_id: 'u3', unread_count: 1 },
+      ]),
+      send: vi.fn(async () => {
+        clock += 1000;
+        return { ok: true as const };
+      }),
+      deadlineMs: 1500,
+      now: () => clock,
+    });
+    const result = await drainPings(d);
+    expect(result.sent).toBe(2);
+    expect(result.abandoned).toBe(1);
   });
 
   it('does nothing at all when nothing is due', async () => {
     const d = deps({ claim: vi.fn(async () => []) });
     const result = await drainPings(d);
     expect(d.send).not.toHaveBeenCalled();
-    expect(result).toEqual({ claimed: 0, sent: 0, skipped: 0, failed: 0 });
+    expect(result).toEqual({ claimed: 0, sent: 0, skipped: 0, failed: 0, abandoned: 0, unrecorded: 0 });
   });
 });
 ```
@@ -2413,12 +2481,29 @@ export type ClaimedPing = { user_id: string; unread_count: number };
 export type DrainDeps = {
   claim: () => Promise<ClaimedPing[]>;
   resolveAddress: (userId: string) => Promise<string | null>;
-  recordOutcome: (userId: string, succeeded: boolean, errorCode: string | null) => Promise<void>;
+  recordOutcome: (
+    userId: string,
+    succeeded: boolean,
+    errorCode: string | null,
+    retryable: boolean,
+  ) => Promise<void>;
   send: SendPing;
   portalUrl: string;
+  /** Wall-clock budget. The loop stops claiming new work when it is spent. */
+  deadlineMs?: number;
+  now?: () => number;
 };
 
-export type DrainResult = { claimed: number; sent: number; skipped: number; failed: number };
+export type DrainResult = {
+  claimed: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  /** Claimed but not attempted — the budget ran out. The lease recovers them. */
+  abandoned: number;
+  /** Attempted, but even the failure could not be written down. */
+  unrecorded: number;
+};
 
 /**
  * One drain pass. Pure over its dependencies so every branch is testable
@@ -2432,13 +2517,37 @@ export type DrainResult = { claimed: number; sent: number; skipped: number; fail
  */
 export async function drainPings(deps: DrainDeps): Promise<DrainResult> {
   const claimed = await deps.claim();
-  const result: DrainResult = { claimed: claimed.length, sent: 0, skipped: 0, failed: 0 };
+  const result: DrainResult = {
+    claimed: claimed.length,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    abandoned: 0,
+    unrecorded: 0,
+  };
+
+  const now = deps.now ?? Date.now;
+  const startedAt = now();
 
   for (const ping of claimed) {
+    // ★ A WALL-CLOCK BUDGET. The claim hands out up to 100 rows and each is a
+    // provider round trip; at 200–500 ms that is 20–50 s against a serverless
+    // duration limit measured in tens of seconds. Stopping early leaves the
+    // remaining rows claimed — but the 15-minute LEASE in claim_email_pings
+    // reclaims them, so they are delayed, never lost. Without the lease this
+    // would be the stranding bug; with it, this is just backpressure.
+    if (deps.deadlineMs !== undefined && now() - startedAt > deps.deadlineMs) {
+      result.abandoned = claimed.length - (result.sent + result.skipped + result.failed);
+      break;
+    }
+
     try {
       // Already read in the portal — clear the claim with no send.
+      // ⚠ 'SKIPPED' is not decoration: record_email_ping_outcome stamps
+      // sent_at only when error_code is null, so this is what keeps the ledger
+      // from recording a delivery that never happened.
       if (ping.unread_count < 1) {
-        await deps.recordOutcome(ping.user_id, true, null);
+        await deps.recordOutcome(ping.user_id, true, 'SKIPPED', false);
         result.skipped += 1;
         continue;
       }
@@ -2446,7 +2555,9 @@ export async function drainPings(deps: DrainDeps): Promise<DrainResult> {
       const address = await deps.resolveAddress(ping.user_id);
       if (!address) {
         // A failure, not a skip: clearing pending here would swallow the ping.
-        await deps.recordOutcome(ping.user_id, false, 'NO_ADDRESS');
+        // Permanent — an unresolvable address is a fact about the account, and
+        // opted-out users never reach this point (the claim excludes them).
+        await deps.recordOutcome(ping.user_id, false, 'NO_ADDRESS', false);
         result.failed += 1;
         continue;
       }
@@ -2456,16 +2567,27 @@ export async function drainPings(deps: DrainDeps): Promise<DrainResult> {
         buildPingEmail({ unreadCount: ping.unread_count, portalUrl: deps.portalUrl }),
       );
       if (outcome.ok) {
-        await deps.recordOutcome(ping.user_id, true, null);
+        await deps.recordOutcome(ping.user_id, true, null, false);
         result.sent += 1;
       } else {
-        await deps.recordOutcome(ping.user_id, false, outcome.errorCode);
+        await deps.recordOutcome(ping.user_id, false, outcome.errorCode, outcome.retryable);
         result.failed += 1;
       }
     } catch {
-      // ⚠ Never let one recipient strand the rest. The row must have an
-      // outcome recorded or it stays claimed forever.
-      await deps.recordOutcome(ping.user_id, false, 'THREW');
+      // ⛔ THE RECOVERY ITSELF MUST NOT THROW. An earlier version awaited
+      // recordOutcome here unguarded — and recordOutcome throws on any
+      // PostgREST error, whose realistic causes (DB unreachable, connection
+      // reset, pool exhaustion, a 5xx) are exactly the ones that fail
+      // REPEATEDLY. That throw escaped the loop, escaped drainPings, and the
+      // route had no try/catch, so every row claimed in the pass and not yet
+      // recorded was left claimed. The comment above it asserted the invariant
+      // the code did not enforce.
+      try {
+        await deps.recordOutcome(ping.user_id, false, 'THREW', true);
+      } catch {
+        // Nothing further is available. The lease is what recovers this row.
+        result.unrecorded += 1;
+      }
       result.failed += 1;
     }
   }
@@ -2480,7 +2602,7 @@ export async function drainPings(deps: DrainDeps): Promise<DrainResult> {
 cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/drain.test.ts 2>&1 | tail -6
 ```
 
-Expected: PASS, 6 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 7: Write the route handler**
 
