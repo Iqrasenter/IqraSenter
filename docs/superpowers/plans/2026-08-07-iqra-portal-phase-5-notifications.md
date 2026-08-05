@@ -1,0 +1,3068 @@
+# IQRA Skoleportal — Phase 5, Plan 3: Varsler + e-postping
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build the in-app notification substrate, fan it out from both message and announcement writes, and drain a coalesced content-free e-mail ping through the repo's first API route and first cron entry.
+
+**Architecture:** `public.notifications` is state, not an event log — one row per `(user_id, entity, entity_id)`, upserted, so a ten-message thread is one bell entry. Every recipient set is produced by **calling** the read predicate (`private.reads_thread` / `private.reads_announcement`) over a candidate set, never by restating it. Mail is coalesced to **one permanent row per user** in `private.email_pings` (D22) and drained by a Vercel Cron → `src/app/api/varsler/drain/route.ts`, which reaches the database only through three `security definer` RPCs granted to `service_role` alone.
+
+**Tech Stack:** PostgreSQL 15 + RLS/pgTAP · Next.js 15 App Router · TypeScript · Vitest · Resend (injected client; no account yet — see D28)
+
+---
+
+## Where this sits
+
+Plan 1 (threads) and plan 2 (announcements) are code-complete on `feat/phase-5-meldinger`, HEAD `8ba293e`, **nothing pushed**. This plan continues on that branch.
+
+Spec: `docs/phase-5-communication-spec-DRAFT.md` on branch `docs/phase-5-decisions` (§5, §7, §11 tasks 3, 3b, 5, 8, 8b, 8c, 9, 9b, and the notification halves of 12 and 13).
+
+**This plan does NOT cover:** the invite/credential flow (15-series), document reconciliation (task 14), or the exit gate (16-series). Those are plan 4.
+
+---
+
+## ⛔ Five claims in the spec that are STALE against the tree — verified 2026-08-05
+
+The spec orders work, and the work invalidates the spec's own numbers. Every one of these was checked against `feat/phase-5-meldinger` @ `8ba293e`:
+
+| Spec says | Tree says | Where |
+|---|---|---|
+| `expect(allActions.length).toBe(67)` | **79** | `src/app/action-guards.test.ts:214` |
+| fingerprints cover **26** pairs | **83** | `supabase/tests/29_definer_fingerprints.sql:411` |
+| new pgTAP files **35–38** | 35, 36, 37 taken → this plan writes **38** | `supabase/tests/` |
+| pgTAP fixture prefixes `be`/`bf`/`c0` | `be` and `bf` taken by plans 1–2 → this plan uses **`c0`** | `supabase/tests/35–37` |
+| «no `app/api/` route» | still true — **`find src/app -name route.ts` returns 0** | verified |
+
+★ Two of these counters are hard-coded literals that redden on every addition. Bump each **once, deliberately**, in the task that causes it, and state the new number in the commit message.
+
+**Verified as still TRUE** (do not re-check, but do not loosen):
+- `public.profiles` holds `grant update (full_name, phone, locale) on public.profiles to authenticated` and **no table-level UPDATE grant** (`20260716170230_core_identity.sql:122`). A new column is therefore **not** writable by default.
+- `service_role` carries **BYPASSRLS** (`20260716170230_core_identity.sql:115`), so no table needs a service_role policy — only grants.
+- `src/proxy.ts`'s matcher covers **everything** except Next internals and static-file extensions. The drain route **is** gated unless explicitly excluded.
+- `vercel.json` is `{"regions": ["arn1"]}` — no `crons` key.
+- No mail dependency in `package.json`.
+
+---
+
+## Decisions taken for this plan
+
+**D25 — `notifications` is state per `(user_id, entity, entity_id)`, not one row per event.**
+A unique index makes the fan-out an upsert: a second message in a thread refreshes `created_at` and clears `read_at` rather than adding a row. Consequences, all wanted: the bell counts *conversations with something new* (which is what a parent acts on); the table is bounded by (users × entities) instead of by message volume; and **the announcement fan-out is idempotent for free**, which is what lets the claim be retried safely.
+
+**D26 — the immediate-announcement fan-out is an `after insert` TRIGGER, not a call from the publish action.**
+The user chose «fan out inline at publish, one function two callers». This delivers exactly that, with the trigger as the second caller instead of the action. Why the trigger is the correct reading:
+- There are **two** publish actions (`laerer/oppslag/actions.ts` and `admin/oppslag/actions.ts`). An action-level call must be added to both and can drift; a trigger cannot be forgotten.
+- `claim_due_announcements()` is granted to `service_role` **only**. Calling it from a teacher's action would require either a new grant to `authenticated` (which would let any parent burn every pending fan-out — the exact hazard its own comment warns about) or a service-role round trip from a non-quarantined module.
+- The trigger runs **in the insert's transaction**, so an announcement can never be committed without its notifications.
+`private.stamp_announcement_fanout` already stamps `fanned_out_at` at INSERT when `published_at <= now()`, so `new.fanned_out_at is not null` is exactly «published immediately». The scheduled ones stay with the drain.
+
+**D27 — the e-mail keeps the count** (spec Q10 = (a)). «Du har 3 nye varsler.» Nothing else varies.
+
+**D29 — the fan-outs write `notifications` on the strength of `BYPASSRLS`, and that is a standing dependency worth naming.**
+`notifications` has **no INSERT policy at all** — deliberately, since `authenticated` holds no INSERT grant either. The two fan-outs write it as `security definer` functions owned by `postgres`, which carries `BYPASSRLS`, and BYPASSRLS is evaluated *before* the owner/FORCE rule. That is the repo's established pattern (`private.touch_thread` works the same way), so this plan follows it rather than inventing a second one.
+⚠ **But `20260728181000_force_row_level_security.sql:13` explicitly contemplates revoking BYPASSRLS from `postgres` as "a hardening step worth taking".** If that ever happens, every fan-out in this plan starts failing — and because a trigger's failure aborts the write that fired it, the visible symptom is *sending a message stops working*, not *notifications stop appearing*. Whoever does that hardening must add an INSERT policy to `notifications` in the same commit. Recorded here because nothing in the test suite can see it coming.
+
+**D28 — no Resend account yet; build against an injected client.**
+The `SendPing` function type is a parameter, defaulted to the real Resend caller and replaced by a fake in tests. Real sending is gated on `RESEND_API_KEY` being present; absent, the drain logs and treats the send as a **failure with a retryable error code**, never as a success. ⚠ **Exit-gate debt, carried to plan 4:** §11 task 9 requires confirming against a *real delivered message* that Resend's link-rewriting and open-tracking are OFF. `T-16` asserts over the template *before* the provider touches it and structurally cannot catch this. It cannot be discharged until IQRA's account and `varsler.iqrasenter.no` exist.
+
+---
+
+## File structure
+
+**Migrations** (head is `20260806122000`; these follow in order):
+
+| File | Responsibility |
+|---|---|
+| `supabase/migrations/20260807120000_notifications.sql` | the table, its grant firewall, two policies, the unread index |
+| `supabase/migrations/20260807121000_email_ping_opt_out.sql` | `profiles.email_pings_enabled` + **its column grant** |
+| `supabase/migrations/20260807122000_email_pings.sql` | `private.email_pings` (D22 one-row shape) + the three `public` definer RPCs |
+| `supabase/migrations/20260807123000_thread_fanout.sql` | `private.thread_recipients` + the `messages` fan-out trigger |
+| `supabase/migrations/20260807124000_announcement_fanout.sql` | `private.fan_out_announcement`, the `after insert` trigger, and `claim_due_announcements` rewritten to fan out inside its own statement |
+
+**Tests:**
+
+| File | Responsibility |
+|---|---|
+| `supabase/tests/38_notifications_rls.sql` | new — the read/write walls, both recipient resolvers, the `notified ⊆ readers` invariant |
+| `supabase/tests/31_column_locks.sql` | extend — the `notifications` and `profiles` grant shapes |
+| `supabase/tests/29_definer_fingerprints.sql` | extend — 5 new functions, counter 83 → 88 |
+| `src/app/route-guards.test.ts` | **new static wall** for `src/app/api/**/route.ts` |
+| `src/lib/varsler/ping-email.test.ts` | the template's omissions, as assertions |
+| `src/lib/varsler/drain.test.ts` | claim → send → outcome, backoff, the attempts ceiling |
+| `tests/api/notifications.test.ts` | wall-3: the fan-out through the real app path |
+
+**Application code:**
+
+| File | Responsibility |
+|---|---|
+| `src/lib/varsler/ping-email.ts` | subject + body, pure, no provider |
+| `src/lib/varsler/resend.ts` | the `SendPing` type and the real Resend caller |
+| `src/lib/varsler/drain.ts` | the drain loop — pure over an injected client and an injected sender |
+| `src/lib/varsler/queries.ts` | DAL: unread count + the bell list |
+| `src/app/api/varsler/drain/route.ts` | the repo's first route handler; secret gate only |
+| `src/app/(portal)/varsler/actions.ts` | mark-read |
+| `src/app/(portal)/profil/page.tsx` + `actions.ts` | «Min profil» + the opt-out toggle |
+| `src/app/(portal)/admin/varsler/page.tsx` | failed pings + the drain-health number |
+| `src/components/portal/VarselBell.tsx` | the shell bell |
+| `src/lib/env.server.ts` | extend — `getCronSecret()`, `getResendApiKey()` |
+| `src/proxy.ts` | extend — the one-path exclusion, **before the `!user` branch** |
+| `vercel.json` | extend — the repo's first `crons` entry |
+
+---
+
+## Task 0: Baseline, and prove the stack is not contaminated
+
+**Files:** none — this task commits nothing.
+
+⚠ A second Claude Code session has shared this checkout and the one Supabase docker stack since 2026-08-04. A `supabase db reset` mid-measurement gives plausible-looking wrong numbers. Establish the baseline before touching anything.
+
+- [ ] **Step 1: Confirm the branch and that nothing is dirty**
+
+```bash
+cd ~/dev/iqra-portal && git status --short && git log --oneline -1
+```
+
+Expected: HEAD `8ba293e`, and the only untracked file is `scripts/fiken-probe.mjs` (the user's economy probe — **never stage it**; it is also why `knip` fails locally but passes in CI).
+
+- [ ] **Step 2: Confirm no foreign vitest is running against the stack**
+
+```bash
+ps aux | grep "[v]itest" | grep -v grep || echo "clear"
+```
+
+Expected: `clear`. If not, wait — do not reset the database.
+
+- [ ] **Step 3: Record the baseline**
+
+```bash
+cd ~/dev/iqra-portal && npm run test:db 2>&1 | tail -5
+```
+
+Expected: `Files=38, Tests=842, PASS`. Any other number means the tree is not what this plan was written against — stop and reconcile.
+
+- [ ] **Step 4: Record the unit and typecheck baseline**
+
+```bash
+cd ~/dev/iqra-portal && npm run test:unit 2>&1 | tail -4 && npx tsc --noEmit && echo "TSC OK"
+```
+
+Expected: 54 files / 600 tests passing, then `TSC OK`.
+
+---
+
+## Task 1: `public.notifications` — the table, the firewall, the walls
+
+**Files:**
+- Create: `supabase/migrations/20260807120000_notifications.sql`
+- Create: `supabase/tests/38_notifications_rls.sql`
+
+The tests and the migration land in **one commit** — the table does not exist beforehand, so a red commit would break "each commit compiles and passes tests". Red-first happens in the working tree and is evidenced by the mutation pass, not by a committed red build.
+
+- [ ] **Step 1: Write the migration**
+
+Create `supabase/migrations/20260807120000_notifications.sql`:
+
+```sql
+-- Varsler — the in-app notification substrate (D11, spec §5.1).
+--
+-- ★ THIS TABLE IS STATE, NOT AN EVENT LOG (D25). One row per
+-- (user_id, entity, entity_id), enforced by a unique index, and the fan-out is
+-- an UPSERT. A thread that receives ten messages is ONE bell entry whose
+-- created_at moves and whose read_at clears. Three things fall out of that and
+-- all three are wanted:
+--   · the bell counts CONVERSATIONS WITH SOMETHING NEW, which is the number a
+--     parent can act on; "17 varsler" from one chatty teacher is noise.
+--   · the table is bounded by (users × entities), not by message volume.
+--   · the announcement fan-out becomes IDEMPOTENT for free, which is what
+--     lets public.claim_due_announcements() be retried after a crash.
+--
+-- ★ entity_id IS DELIBERATELY NOT A FOREIGN KEY (D11 / spec Q13(a)). A real FK
+-- invites a join that skips the read predicate, and the polymorphism is the
+-- point: one badge count, one list, two entity kinds. ⛔ THE COST IS REAL AND
+-- PHASE 7 OWNS IT: these rows SURVIVE their entity. Deleting a students row
+-- cascades to threads and thence to messages, but nothing reaches a
+-- notification whose entity_id names the deleted thread. The retention job
+-- must sweep them explicitly — this is the one orphan shape this plan creates
+-- and it is the analogue of Phase 4's private.storage_orphans.
+--
+-- ★ SCHEMA-AS-CONTROL: `authenticated` gets NO INSERT GRANT AT ALL. A forged
+-- notification is refused at the privilege layer (42501) before RLS is even
+-- consulted, so there is no policy to get wrong. The only writers are the two
+-- SECURITY DEFINER fan-outs.
+
+create table public.notifications (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references public.profiles (id) on delete cascade,
+  entity     text not null check (entity in ('thread', 'announcement')),
+  -- NOT a foreign key. See the header.
+  entity_id  uuid not null,
+  created_at timestamptz not null default now(),
+  read_at    timestamptz
+);
+
+-- The upsert target for both fan-outs. D25 is enforced HERE — drop this index
+-- and the fan-outs silently start appending duplicates.
+create unique index notifications_one_per_entity_idx
+  on public.notifications (user_id, entity, entity_id);
+
+-- What makes the badge count cheap. Partial, because the only question the
+-- shell asks on every render is "how many unread".
+create index notifications_unread_idx
+  on public.notifications (user_id, created_at desc) where read_at is null;
+
+comment on table public.notifications is
+  'Varsler. ONE row per (user_id, entity, entity_id) — state, not events (D25); the fan-outs upsert. entity_id is deliberately NOT a foreign key, so rows SURVIVE their entity and Phase 7''s retention job must sweep them explicitly.';
+comment on column public.notifications.entity_id is
+  'The thread or announcement this points at. No FK by design (D11/Q13) — a real FK invites a join that skips the read predicate. Resolve it THROUGH RLS: an unreachable entity is simply absent from the result, which is a stronger guarantee than a per-row check because it cannot be forgotten for one row.';
+
+-- ── grants: revoke the TABLE, then grant the columns ────────────────
+-- ⚠ Order is load-bearing: a column-level revoke subtracts NOTHING from a
+-- table-level grant (measured 2026-08-03, 31_column_locks.sql).
+revoke all on table public.notifications from anon, authenticated, service_role;
+grant select on public.notifications to authenticated;
+grant update (read_at) on public.notifications to authenticated;
+--   ⛔ NO INSERT GRANT for authenticated, and no DELETE either. Rows exist
+--   only because a definer trigger made them, and a user who could delete a
+--   notification could hide the school's message to them from themselves.
+grant select, delete on public.notifications to service_role;  -- erasure + orphan sweep
+
+alter table public.notifications enable row level security;
+alter table public.notifications force row level security;
+
+-- service_role carries BYPASSRLS (20260716170230:115), so it needs grants but
+-- no policy. Everything below is the authenticated surface.
+create policy "notifications_select_own"
+  on public.notifications for select to authenticated
+  using (user_id = (select auth.uid()));
+
+-- ⚠ BOTH using AND with check name the owner. `using` alone would let a user
+-- move their own row to another user_id — the authorship-laundering shape
+-- Phase 4 shipped. The column grant already limits the write to read_at, but
+-- pinning it in the policy too costs nothing and survives a grant widening.
+create policy "notifications_update_own_read"
+  on public.notifications for update to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+```
+
+- [ ] **Step 2: Write the failing pgTAP file**
+
+Create `supabase/tests/38_notifications_rls.sql`. Start with only the section below; later tasks extend it and bump `plan()`.
+
+```sql
+begin;
+create extension if not exists pgtap with schema extensions;
+select plan(15);
+
+-- Varsler: the read wall, the write wall, and the two grant shapes that make
+-- the write wall unnecessary.
+--
+-- ⚠ 15, counted by hand. NEVER count plan() by grep — it undercounts
+-- multi-line calls, measured at 17 against a correct plan(20).
+--
+-- ★ Every → 0 rows negative carries an ENTITLED-READER control over the
+-- IDENTICAL row. Pairing a refusal with a second read by the SAME actor proves
+-- only that the actor has a session — the shape that let four Phase-4
+-- assertions survive replacing a guarded body with `select true`.
+--
+-- Fixture prefix c0 (be and bf are taken by files 35–37).
+
+delete from public.notifications;
+
+insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated',
+       u.email, '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
+from (values
+  ('c0000000-0000-0000-0000-000000000001'::uuid, 'c0-eier@test.no'),
+  ('c0000000-0000-0000-0000-000000000002'::uuid, 'c0-annen@test.no')
+) as u(id, email)
+on conflict (id) do nothing;
+
+insert into public.profiles (id, full_name)
+values ('c0000000-0000-0000-0000-000000000001', 'C0 Eier'),
+       ('c0000000-0000-0000-0000-000000000002', 'C0 Annen')
+on conflict (id) do nothing;
+
+-- Written as the table owner, because no client role may insert here at all —
+-- which is itself assertion 5.
+insert into public.notifications (id, user_id, entity, entity_id)
+values ('c0000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-000000000001',
+        'thread', 'c0000000-0000-0000-0000-0000000000f1');
+
+-- ── 1. the owner reads their own varsel ─────────────────────────────
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select is(
+  (select count(*)::int from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  1, 'eieren leser sitt eget varsel');
+
+-- ── 2. another user does not — with the owner as the control ────────
+set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000002","role":"authenticated"}';
+
+select is(
+  (select count(*)::int from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  0, 'en annen bruker ser ikke varselet');
+
+select is(
+  (select count(*)::int from public.notifications),
+  0, 'og ser ingen varsler i det hele tatt');
+
+-- The entitled-reader control over the IDENTICAL row: assertion 2 is only
+-- meaningful if the row is actually there for someone.
+set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}';
+select is(
+  (select user_id from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  'c0000000-0000-0000-0000-000000000001'::uuid,
+  'kontroll: raden finnes for den berettigede leseren');
+
+-- ── 3. nobody may forge a varsel — 42501, not a policy refusal ──────
+select throws_ok(
+  $$insert into public.notifications (user_id, entity, entity_id)
+    values ('c0000000-0000-0000-0000-000000000001', 'thread', gen_random_uuid())$$,
+  '42501',
+  'permission denied for table notifications',
+  'authenticated har ingen INSERT-rett — avvist i rettighetslaget, før RLS');
+
+-- ── 4. nor delete one ───────────────────────────────────────────────
+select throws_ok(
+  $$delete from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'$$,
+  '42501',
+  'permission denied for table notifications',
+  'ingen DELETE-rett — et varsel kan ikke skjules for seg selv');
+
+-- ── 5. the owner may mark it read ───────────────────────────────────
+update public.notifications set read_at = now()
+ where id = 'c0000000-0000-0000-0000-0000000000a1';
+select is(
+  (select (read_at is not null) from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a1'),
+  true, 'eieren kan markere som lest');
+
+-- ── 6. but may not move it to someone else ──────────────────────────
+-- ⚠ This is the column grant refusing, not the policy: user_id has no UPDATE
+-- grant. Assertion 8 pins the policy half separately, so widening the grant
+-- later cannot silently take both.
+select throws_ok(
+  $$update public.notifications set user_id = 'c0000000-0000-0000-0000-000000000002'
+     where id = 'c0000000-0000-0000-0000-0000000000a1'$$,
+  '42501',
+  'permission denied for table notifications',
+  'user_id har ingen UPDATE-rett — et varsel kan ikke overdras');
+
+-- ── 7. and may not mark ANOTHER user's varsel read ──────────────────
+insert into public.notifications (id, user_id, entity, entity_id)
+select 'c0000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-000000000002',
+       'announcement', 'c0000000-0000-0000-0000-0000000000f2';
+
+set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000001","role":"authenticated"}';
+update public.notifications set read_at = now()
+ where id = 'c0000000-0000-0000-0000-0000000000a2';
+
+-- ⚠ THE CHECK MUST RUN AS SOMEONE WHO CAN SEE THE ROW. Read back as user 001
+-- and the select returns NO ROWS — the policy hides it — so `is(null, true)`
+-- fails and the assertion looks like a policy bug when it is a test bug. Drop
+-- to the owner to observe the row's actual state.
+reset role;
+select is(
+  (select (read_at is null) from public.notifications where id = 'c0000000-0000-0000-0000-0000000000a2'),
+  true, 'en annens varsel er urørt — UPDATE traff null rader, ikke en feil');
+
+-- ── 8. the grant SHAPE, which is what assertions 3-7 stand on ───────
+-- ★ These are the load-bearing ones. A future `grant insert on
+-- public.notifications to authenticated` would turn 3 green→red silently and
+-- take the whole forging story with it.
+reset role;
+
+select is(
+  (select count(*)::int from information_schema.role_table_grants
+    where table_schema = 'public' and table_name = 'notifications'
+      and grantee = 'authenticated' and privilege_type = 'INSERT'),
+  0, 'authenticated har ingen INSERT-rett på notifications, verken tabell eller kolonne');
+
+select is(
+  (select count(*)::int from information_schema.role_table_grants
+    where table_schema = 'public' and table_name = 'notifications'
+      and grantee = 'authenticated' and privilege_type = 'DELETE'),
+  0, 'authenticated har ingen DELETE-rett på notifications');
+
+select is(
+  (select count(*)::int from information_schema.role_table_grants
+    where table_schema = 'public' and table_name = 'notifications'
+      and grantee = 'authenticated' and privilege_type = 'UPDATE'),
+  0, 'authenticated har ingen TABELL-vid UPDATE-rett (bare kolonnen read_at)');
+
+select is(
+  (select array_agg(column_name::text order by column_name)
+     from information_schema.column_privileges
+    where table_schema = 'public' and table_name = 'notifications'
+      and grantee = 'authenticated' and privilege_type = 'UPDATE'),
+  array['read_at'],
+  'og nøyaktig én kolonne er skrivbar: read_at');
+
+-- ── 9. RLS is on AND forced ─────────────────────────────────────────
+select is(
+  (select relrowsecurity and relforcerowsecurity from pg_class
+    where oid = 'public.notifications'::regclass),
+  true, 'RLS er både enable og force på notifications');
+
+-- ── 10. D25's uniqueness, which the fan-outs depend on ──────────────
+select throws_ok(
+  $$insert into public.notifications (user_id, entity, entity_id)
+    values ('c0000000-0000-0000-0000-000000000001', 'thread',
+            'c0000000-0000-0000-0000-0000000000f1')$$,
+  '23505',
+  null,
+  'ett varsel per (bruker, entitet) — det er denne indeksen fan-out-ene upserter mot');
+
+select finish();
+rollback;
+```
+
+- [ ] **Step 3: Run it and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+```
+
+Expected: FAIL — `relation "public.notifications" does not exist`.
+
+- [ ] **Step 4: Apply the migration and run again**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+```
+
+Expected: `Files=39, Tests=857, PASS` (842 + 15).
+
+⚠ `supabase db reset` **wipes MFA enrolment**. Re-enrol at `/mfa/registrer` before any browser click.
+
+- [ ] **Step 5: Watch assertion 3 fail under a named mutation**
+
+Temporarily add `grant insert on public.notifications to authenticated;` at the end of the migration, `npx supabase db reset`, and re-run file 38.
+
+Expected: assertions 3 and 9 both **FAIL**. Then remove the line, reset, and confirm green again. This is the evidence that the schema-as-control claim is tested rather than asserted.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260807120000_notifications.sql supabase/tests/38_notifications_rls.sql && git commit -m "feat(varsler): notifications as state, with no way to forge one
+
+One row per (user_id, entity, entity_id), upserted — a ten-message thread is
+one bell entry. authenticated gets no INSERT and no DELETE grant at all, so a
+forged notification is refused in the privilege layer before RLS is consulted;
+the four grant-shape assertions are what that story stands on.
+
+pgTAP 842 -> 857."
+```
+
+---
+
+## Task 2: `profiles.email_pings_enabled` — and the grant that makes it savable
+
+**Files:**
+- Create: `supabase/migrations/20260807121000_email_ping_opt_out.sql`
+- Modify: `supabase/tests/31_column_locks.sql` (`plan(31)` → `plan(33)`)
+
+⚠ **This must land before Task 4** — the message fan-out filters on this column.
+
+- [ ] **Step 1: Write the migration**
+
+Create `supabase/migrations/20260807121000_email_ping_opt_out.sql`:
+
+```sql
+-- The e-mail-ping opt-out (spec §5.4). ONE boolean, not a per-kind matrix —
+-- two notification kinds do not justify a preferences screen, and only one of
+-- them ever sends mail at all.
+--
+-- ⛔ THE GRANT IS THE WHOLE POINT OF THIS MIGRATION. public.profiles does NOT
+-- hold a table-level UPDATE grant for authenticated — it already uses the
+-- column-grant idiom, `grant update (full_name, phone, locale)`
+-- (20260716170230:122). So a new column is NOT writable by default, and
+-- without the grant below the toggle in «Min profil» fails with a 42501 that
+-- the user experiences as a form that silently does nothing.
+--
+-- authenticated DOES hold a table-wide SELECT on profiles, which is why the
+-- counterpart name in a thread comes from the D14 projection and not from a
+-- profiles read.
+
+alter table public.profiles
+  add column email_pings_enabled boolean not null default true;
+
+comment on column public.profiles.email_pings_enabled is
+  'Spec §5.4. Owner-editable opt-out for the content-free e-mail ping. Read by private.fan_out_thread_message BEFORE writing private.email_pings — opting out stops the MAIL, never the in-app varsel, which is the source of truth.';
+
+grant update (email_pings_enabled) on public.profiles to authenticated;
+```
+
+- [ ] **Step 2: Extend the column-lock test**
+
+In `supabase/tests/31_column_locks.sql`, change `select plan(31);` to `select plan(33);` and append before `select finish();`:
+
+```sql
+-- ── profiles: the opt-out column is writable, and nothing else moved ──
+-- ★ The first assertion would pass with no grant at all if it only counted
+-- rows; it names the exact column set, so BOTH failure directions are covered:
+-- a missing grant (the toggle never saves) and a widened one (a user renames
+-- themselves into another family's thread header).
+select is(
+  (select array_agg(column_name::text order by column_name)
+     from information_schema.column_privileges
+    where table_schema = 'public' and table_name = 'profiles'
+      and grantee = 'authenticated' and privilege_type = 'UPDATE'),
+  array['email_pings_enabled', 'full_name', 'locale', 'phone'],
+  'profiles: nøyaktig fire kolonner er skrivbare for eieren');
+
+select is(
+  (select count(*)::int from information_schema.role_table_grants
+    where table_schema = 'public' and table_name = 'profiles'
+      and grantee = 'authenticated' and privilege_type = 'UPDATE'),
+  0, 'profiles har fortsatt ingen TABELL-vid UPDATE-rett — kolonneidiomet holder');
+```
+
+- [ ] **Step 3: Run and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/31_column_locks.sql 2>&1 | tail -15
+```
+
+Expected: FAIL — the array is `{full_name,locale,phone}`, missing `email_pings_enabled`.
+
+- [ ] **Step 4: Apply and re-run**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+```
+
+Expected: `Files=39, Tests=859, PASS`.
+
+- [ ] **Step 5: Watch it fail under the mutation that matters**
+
+Comment out the `grant update (email_pings_enabled) …` line, `npx supabase db reset`, re-run file 31. Expected: the first new assertion **FAILS**. Restore, reset, green. This is the exact defect the spec warned about — a form that saves nothing — and it is now impossible to ship it silently.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260807121000_email_ping_opt_out.sql supabase/tests/31_column_locks.sql && git commit -m "feat(varsler): the ping opt-out, and the column grant it dies without
+
+profiles uses the column-grant idiom and holds no table-level UPDATE, so a new
+column is not writable by default. Without the grant the toggle is a form that
+silently does nothing — asserted by naming the exact writable column set, which
+fails in both directions.
+
+pgTAP 857 -> 859."
+```
+
+---
+
+## Task 3: `private.email_pings` + the three RPCs
+
+**Files:**
+- Create: `supabase/migrations/20260807122000_email_pings.sql`
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(15)` → `plan(27)`)
+
+- [ ] **Step 1: Write the migration**
+
+Create `supabase/migrations/20260807122000_email_pings.sql`:
+
+```sql
+-- The e-mail ping queue (D22, spec §5.2).
+--
+-- ★ ONE PERMANENT ROW PER USER. Created once by the fan-out's upsert, never
+-- deleted. A burst of ten messages produces ONE e-mail because there is ONE
+-- ROW — not because a partial unique index forbade a second.
+--
+-- ⛔ WHY THE OLD SHAPE IS GONE, BECAUSE IT WILL LOOK LIKE AN OMISSION.
+-- The design this replaces was one row per event with
+-- `unique (user_id) where status = 'pending'`. That index was doing the
+-- coalescing AND it was what made retry unrepresentable: a failed row that
+-- wanted to try again had nothing to transition to without colliding with the
+-- row that superseded it — a 23505 in BOTH directions. This is the third
+-- attempt at this mechanism. With one permanent row there is nothing to
+-- collide with, so "failed → try again" is CLEARING A CLAIM rather than a
+-- state change the schema forbids. There is no status column, no
+-- `on conflict do nothing`, and no `sending` state; all three belonged to the
+-- shape D22 replaced.
+--
+-- ★ THE WATERMARK IS WHAT STOPS A MID-SEND MESSAGE BEING SWALLOWED.
+-- queued_seq is bumped by every fan-out. The claim copies it into claimed_seq.
+-- On success, pending is cleared ONLY IF queued_seq = claimed_seq — if a
+-- message arrived while the send was in flight, queued_seq has moved, pending
+-- stays true, and the next drain picks it up.
+--
+-- ⚠ private is not a PostgREST-exposed schema and service_role has no USAGE on
+-- it (config.toml:16, 20260716170230:11). Everything the drain touches is
+-- therefore a `public` SECURITY DEFINER function granted to service_role ONLY.
+
+create table private.email_pings (
+  user_id         uuid primary key references public.profiles (id) on delete cascade,
+  pending         boolean     not null default false,
+  queued_seq      bigint      not null default 0,
+  claimed_seq     bigint      not null default 0,
+  claimed_at      timestamptz,
+  sent_at         timestamptz,
+  attempts        integer     not null default 0,
+  next_attempt_at timestamptz not null default now(),
+  failed          boolean     not null default false,
+  last_error_code text,
+  constraint email_pings_attempts_bound check (attempts between 0 and 5),
+  -- A failed row must carry a reason, and a live one must not.
+  constraint email_pings_failure_has_code
+    check ((failed and last_error_code is not null) or (not failed))
+);
+
+comment on table private.email_pings is
+  'D22: ONE permanent row per user. Coalescing comes from the row being singular, not from an index. No status column — "nothing to send" is pending = false. The queued_seq/claimed_seq watermark is what stops a message that arrives mid-send from being swallowed.';
+
+-- The drain's queue. Partial: the rows that matter are the handful actually due.
+create index email_pings_due_idx
+  on private.email_pings (next_attempt_at)
+  where pending and not failed and claimed_at is null;
+
+-- The admin health screen's queue (task 13).
+create index email_pings_failed_idx
+  on private.email_pings (user_id) where failed;
+
+-- ── RPC 1: claim ────────────────────────────────────────────────────
+-- ★ CLAIM AND STAMP IN ONE STATEMENT. `for update skip locked` inside the
+-- subquery means two concurrent drains never claim the same row, and the
+-- claimed_seq copy happens in the same statement as the claimed_at stamp, so
+-- there is no window in which a row is claimed without a watermark.
+--
+-- ⛔ attempts IS NOT INCREMENTED HERE. The 2026-08-04-b review found the
+-- ceiling was really 2–3 sends because the counter rose at claim time AND at
+-- outcome time. It rises at EXACTLY ONE POINT: record_email_ping_outcome.
+create or replace function public.claim_email_pings(batch_size integer default 100)
+returns table (user_id uuid, unread_count integer)
+language sql volatile security definer set search_path = ''
+as $$
+  with claimed as (
+    update private.email_pings p
+       set claimed_at = now(), claimed_seq = p.queued_seq
+     where p.user_id in (
+             select q.user_id
+               from private.email_pings q
+              where q.pending
+                and not q.failed
+                and q.claimed_at is null
+                and q.next_attempt_at <= now()
+              order by q.next_attempt_at
+              limit batch_size
+                for update skip locked
+           )
+    returning p.user_id
+  )
+  select c.user_id,
+         (select count(*)::int from public.notifications n
+           where n.user_id = c.user_id and n.read_at is null)
+  from claimed c;
+$$;
+
+revoke execute on function public.claim_email_pings(integer) from public;
+revoke execute on function public.claim_email_pings(integer) from anon;
+revoke execute on function public.claim_email_pings(integer) from authenticated;
+grant execute on function public.claim_email_pings(integer) to service_role;
+
+comment on function public.claim_email_pings(integer) is
+  'Claims due pings and returns each user''s CURRENT unread count. A count of 0 means the user already read everything in the portal — the drain clears pending with no send. attempts is NOT incremented here; it rises at exactly one point, in record_email_ping_outcome.';
+
+-- ── RPC 2: record the outcome ───────────────────────────────────────
+-- ⚠ Name every role on the revoke. `revoke execute … from public` does NOT
+-- strip the explicit anon/authenticated EXECUTE grants pg_default_acl hands to
+-- functions created by supabase_admin — which is the CLOUD path, so an
+-- omission here leaves this callable by every logged-in parent in PRODUCTION
+-- ONLY (20260728200000:229).
+create or replace function public.record_email_ping_outcome(
+  target uuid, succeeded boolean, error_code text default null)
+returns void
+language plpgsql volatile security definer set search_path = ''
+as $$
+begin
+  if succeeded then
+    update private.email_pings p
+       set sent_at    = now(),
+           claimed_at = null,
+           attempts   = 0,
+           -- ★ THE WATERMARK TEST. If a message arrived while the send was in
+           -- flight, queued_seq has moved past the claim and pending STAYS
+           -- TRUE. Clearing it unconditionally is how the mid-send message
+           -- gets swallowed.
+           pending    = (p.queued_seq <> p.claimed_seq),
+           last_error_code = null
+     where p.user_id = target;
+  else
+    update private.email_pings p
+       set claimed_at      = null,
+           attempts        = p.attempts + 1,
+           -- Exponential backoff: 2, 4, 8, 16, 32 minutes.
+           next_attempt_at = now() + (interval '1 minute' * power(2, p.attempts + 1)),
+           failed          = (p.attempts + 1 >= 5),
+           last_error_code = error_code
+     where p.user_id = target;
+  end if;
+end;
+$$;
+
+revoke execute on function public.record_email_ping_outcome(uuid, boolean, text) from public;
+revoke execute on function public.record_email_ping_outcome(uuid, boolean, text) from anon;
+revoke execute on function public.record_email_ping_outcome(uuid, boolean, text) from authenticated;
+grant execute on function public.record_email_ping_outcome(uuid, boolean, text) to service_role;
+
+comment on function public.record_email_ping_outcome(uuid, boolean, text) is
+  'The ONLY place attempts is incremented. On success, pending is cleared only if the watermark has not moved. On the 5th failure the row goes failed and stops — nothing retries forever and nothing is swallowed (D13). ⚠ Never set failed on a hard bounce: the webhook that would detect one is out of scope.';
+
+-- ── RPC 3: resolve the address ──────────────────────────────────────
+-- ★ THE ADDRESS IS NEVER COPIED INTO A public TABLE. It is read here, under
+-- service_role, from auth.users, at send time, and discarded. A public mirror
+-- would be a second source of truth for the one datum that decides where a
+-- school's message about a child goes.
+create or replace function public.resolve_ping_address(target uuid)
+returns text
+language sql stable security definer set search_path = ''
+as $$
+  select u.email::text
+    from auth.users u
+    join public.profiles pr on pr.id = u.id
+   where u.id = target
+     and pr.email_pings_enabled
+     and u.deleted_at is null
+     and u.banned_until is null;
+$$;
+
+revoke execute on function public.resolve_ping_address(uuid) from public;
+revoke execute on function public.resolve_ping_address(uuid) from anon;
+revoke execute on function public.resolve_ping_address(uuid) from authenticated;
+grant execute on function public.resolve_ping_address(uuid) to service_role;
+
+comment on function public.resolve_ping_address(uuid) is
+  'Resolves a recipient address at SEND TIME from auth.users, never from a public mirror. Re-checks email_pings_enabled so a user who opts out between fan-out and drain is not sent to, and refuses deleted or banned accounts.';
+```
+
+- [ ] **Step 2: Extend file 38 with the queue's assertions**
+
+In `supabase/tests/38_notifications_rls.sql` change `select plan(15);` to `select plan(27);` (12 new assertions, counted by hand) and append before `select finish();`:
+
+```sql
+-- ── 11. the three RPCs are reachable by service_role and NOBODY else ─
+-- ★ Naming each role individually is not belt-and-braces. In CLOUD,
+-- pg_default_acl grants EXECUTE on supabase_admin-created public functions to
+-- anon and authenticated explicitly, and `revoke … from public` does not strip
+-- an explicit grant. A local-only test of `from public` would pass while
+-- production shipped a parent-callable claim.
+reset role;
+
+select is(
+  (select count(*)::int
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('claim_email_pings', 'record_email_ping_outcome', 'resolve_ping_address')
+      and (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+        or has_function_privilege('anon', p.oid, 'EXECUTE'))),
+  0, 'ingen av de tre RPC-ene er kallbare for anon eller authenticated');
+
+select is(
+  (select count(*)::int
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('claim_email_pings', 'record_email_ping_outcome', 'resolve_ping_address')
+      and has_function_privilege('service_role', p.oid, 'EXECUTE')),
+  3, 'og alle tre er kallbare for service_role');
+
+-- ── 12. the claim skips a row that is not due ───────────────────────
+insert into private.email_pings (user_id, pending, queued_seq, next_attempt_at)
+values ('c0000000-0000-0000-0000-000000000001', true, 1, now() + interval '1 hour');
+
+select is(
+  (select count(*)::int from public.claim_email_pings()),
+  0, 'en ping med next_attempt_at i framtida blir ikke plukket');
+
+-- ── 13. a due row is claimed, stamped, and carries its unread count ──
+update private.email_pings set next_attempt_at = now() - interval '1 minute'
+ where user_id = 'c0000000-0000-0000-0000-000000000001';
+
+-- ⚠ Assertion 7 marked this user's only notification READ, so without the line
+-- below the count here is 0 and the assertion fails for a reason that has
+-- nothing to do with the claim. Make the fixture say what the assertion means.
+update public.notifications set read_at = null
+ where user_id = 'c0000000-0000-0000-0000-000000000001';
+
+select is(
+  (select unread_count from public.claim_email_pings()
+    where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  1, 'claim returnerer brukerens faktiske antall uleste');
+
+select is(
+  (select (claimed_at is not null and claimed_seq = queued_seq)
+     from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  true, 'claimed_at og vannmerket settes i samme setning');
+
+-- ── 14. a claimed row is invisible to the next drain ────────────────
+select is(
+  (select count(*)::int from public.claim_email_pings()),
+  0, 'en allerede claimet rad plukkes ikke to ganger');
+
+-- ── 15. ★ attempts does NOT rise at claim time ──────────────────────
+-- The 2026-08-04-b defect: the counter rose in both places, so the real
+-- ceiling was 2-3 sends rather than 5.
+select is(
+  (select attempts from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  0, 'claim øker ikke attempts — den stiger på nøyaktig ett punkt');
+
+-- ── 16. ★ the watermark: a message mid-send is not swallowed ────────
+update private.email_pings set queued_seq = queued_seq + 1
+ where user_id = 'c0000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome('c0000000-0000-0000-0000-000000000001', true);
+
+select is(
+  (select pending from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  true, 'meldingen som kom mens sendingen pågikk holder pending = true');
+
+-- And the ordinary case: nothing arrived, so pending clears.
+update private.email_pings set claimed_seq = queued_seq, claimed_at = now()
+ where user_id = 'c0000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome('c0000000-0000-0000-0000-000000000001', true);
+select is(
+  (select pending from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  false, 'uten nye meldinger klareres pending');
+
+-- ── 17. failure backs off, and the fifth stops for good ─────────────
+update private.email_pings set pending = true, attempts = 4, failed = false
+ where user_id = 'c0000000-0000-0000-0000-000000000001';
+select public.record_email_ping_outcome('c0000000-0000-0000-0000-000000000001', false, '535');
+
+select is(
+  (select (failed and attempts = 5 and last_error_code = '535')
+     from private.email_pings where user_id = 'c0000000-0000-0000-0000-000000000001'),
+  true, 'femte forsøk gir failed med en feilkode — ingenting prøver i det uendelige');
+
+select is(
+  (select count(*)::int from public.claim_email_pings()),
+  0, 'og en failed rad plukkes aldri igjen');
+
+-- ── 18. opting out makes the address unresolvable ───────────────────
+update public.profiles set email_pings_enabled = false
+ where id = 'c0000000-0000-0000-0000-000000000001';
+select is(
+  public.resolve_ping_address('c0000000-0000-0000-0000-000000000001'),
+  null, 'en bruker som har slått av e-postvarsel har ingen adresse å sende til');
+```
+
+- [ ] **Step 3: Run and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+```
+
+Expected: FAIL — `relation "private.email_pings" does not exist`.
+
+- [ ] **Step 4: Apply and re-run**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+```
+
+Expected: `Files=39, Tests=871, PASS`.
+
+- [ ] **Step 5: Watch the two assertions that carry the real defects fail**
+
+Two named mutations, run one at a time — reset and restore between them:
+
+1. In `claim_email_pings`, add `attempts = p.attempts + 1,` to the update. Expected: assertion 15 **FAILS**.
+2. In `record_email_ping_outcome`, change `pending = (p.queued_seq <> p.claimed_seq)` to `pending = false`. Expected: assertion 16's first half **FAILS**.
+
+Both are the exact defects the review found in earlier drafts of this mechanism. Restore and confirm green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260807122000_email_pings.sql supabase/tests/38_notifications_rls.sql && git commit -m "feat(varsler): one permanent ping row per user, and three RPCs behind it
+
+D22's shape: coalescing comes from the row being singular, not from a partial
+index — which is also what makes retry representable, since a failed row has
+nothing to collide with. attempts rises at exactly one point. The watermark
+keeps a message that arrives mid-send from being swallowed, and that is
+asserted rather than argued.
+
+pgTAP 859 -> 871."
+```
+
+---
+
+## Task 4: The message fan-out — calling the predicate, never restating it
+
+**Files:**
+- Create: `supabase/migrations/20260807123000_thread_fanout.sql`
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(27)` → `plan(41)`)
+
+⛔ **D21 is the whole content of this task.** The spec's earlier draft hand-copied the recipient rule as «`teaches_student` ∪ guardians ∪ pupil-login, minus the sender» — and **it had already drifted from the wall in two places**: it pinged teachers a `kontor` thread excludes (telling them an office conversation about their pupil exists), and it pinged no admin ever. A restatement here is the defect, not the style. This function builds a **candidate set** and then filters every candidate through `private.reads_thread`.
+
+- [ ] **Step 1: Write the migration**
+
+Create `supabase/migrations/20260807123000_thread_fanout.sql`:
+
+```sql
+-- The message fan-out (D21, spec §5.1).
+--
+-- ⛔ THE RULE: BUILD A CANDIDATE SET, THEN CALL private.reads_thread ON EACH.
+-- Never restate the wall. The spec's first draft restated it and had already
+-- drifted in two directions — it pinged teachers that a 'kontor' thread
+-- excludes (disclosing that an office conversation about their pupil exists)
+-- and it pinged no admin ever. The candidate set below is allowed to be too
+-- WIDE, because the predicate narrows it; it must never be too NARROW, because
+-- nothing widens it back.
+--
+-- ★ WHY ADMINS ARE NOT SIMPLY CANDIDATES. reads_thread admits every admin, to
+-- every thread, by disclosed oversight (§4.1). Fanning that out would mail the
+-- whole admin roster on every message in the school. So admins are added only
+-- for the two reasons D21 names:
+--   · the admin who IS the thread's staff_id — they are the counterpart, and
+--     a 'kontor' thread has no other staff reader;
+--   · EVERY admin when the thread has no staff reader other than bare
+--     oversight — the rollover case, where the teacher has left and a family's
+--     message would otherwise reach nobody.
+-- ⚠ «no staff reader OTHER THAN bare oversight», never «no staff reader at
+-- all». The literal form is never true, because oversight makes every admin a
+-- reader of every thread, so the clause would silently never fire. I wrote it
+-- the wrong way round first (D21's own ledger records it).
+
+create or replace function private.thread_recipients(tid uuid)
+returns table (recipient uuid)
+language sql stable security definer set search_path = ''
+as $$
+  with t as (
+    select th.id, th.student_id, th.kind, th.staff_id
+      from public.threads th where th.id = tid
+  ),
+  -- Candidates, deliberately wide. Each is filtered by reads_thread below.
+  family as (
+    select gs.guardian_id as uid from public.guardian_student gs join t on true
+     where gs.student_id = t.student_id
+    union
+    select s.student_user_id from public.students s join t on true
+     where s.id = t.student_id and s.student_user_id is not null
+  ),
+  teachers as (
+    -- The LIVE teaching relationship (D4). Note `cs.left_on is null`: this is
+    -- the house's live spelling, matching private.teaches_student. It is NOT
+    -- the as-of interval — a thread is a conversation happening now, not a
+    -- record resolved against a publication instant.
+    select ct.teacher_id as uid
+      from public.class_teachers ct
+      join public.class_students cs on cs.class_id = ct.class_id
+      join t on t.student_id = cs.student_id
+     where cs.left_on is null
+  ),
+  named_staff as (select t.staff_id as uid from t),
+  -- Everyone who reads for a SUBSTANTIVE reason — i.e. not by bare oversight.
+  substantive as (
+    select c.uid
+      from (select uid from family
+            union select uid from teachers
+            union select uid from named_staff) c
+     where private.reads_thread(c.uid, tid)
+  ),
+  -- The staff half of that set. If it is EMPTY, nobody on the school's side
+  -- can see the family's message, and the fallback below fires.
+  staff_substantive as (
+    select s.uid from substantive s
+     where s.uid in (select uid from teachers)
+        or s.uid in (select uid from named_staff)
+  )
+  select uid from substantive
+  union
+  select ur.user_id
+    from public.user_roles ur
+   where ur.role = 'admin'
+     and not exists (select 1 from staff_substantive)
+     and private.reads_thread(ur.user_id, tid);
+$$;
+
+revoke execute on function private.thread_recipients(uuid) from public;
+
+comment on function private.thread_recipients(uuid) is
+  'D21. A WIDE candidate set narrowed by CALLING private.reads_thread on each member — never a restatement of the wall. Admins are excluded by default (bare oversight would mail the whole roster on every message) and re-admitted only as the thread''s own staff_id, or wholesale when no staff reader other than bare oversight remains.';
+
+-- ── the trigger ─────────────────────────────────────────────────────
+-- ★ The upsert is what makes a ten-message thread ONE bell entry (D25):
+-- created_at moves forward and read_at clears, so an already-read conversation
+-- becomes unread again when something new arrives.
+--
+-- ★ AND THE PING ROW IS UPSERTED IN THE SAME TRANSACTION. queued_seq bumps on
+-- every message; the drain's watermark compares against it. Filtering on
+-- email_pings_enabled HERE as well as in resolve_ping_address is deliberate
+-- belt-and-braces: this one stops the row being marked pending at all, the
+-- other stops a send for someone who opted out in between.
+create or replace function private.fan_out_thread_message()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  insert into public.notifications (user_id, entity, entity_id)
+  select r.recipient, 'thread', new.thread_id
+    from private.thread_recipients(new.thread_id) r
+   where r.recipient <> new.sender_id
+  on conflict (user_id, entity, entity_id)
+    do update set created_at = now(), read_at = null;
+
+  insert into private.email_pings (user_id, pending, queued_seq)
+  select r.recipient, true, 1
+    from private.thread_recipients(new.thread_id) r
+    join public.profiles p on p.id = r.recipient
+   where r.recipient <> new.sender_id
+     and p.email_pings_enabled
+  on conflict (user_id)
+    do update set pending    = true,
+                  queued_seq = private.email_pings.queued_seq + 1;
+
+  return null;
+end;
+$$;
+
+revoke execute on function private.fan_out_thread_message() from public;
+
+-- AFTER, because the message must exist before anyone is told about it, and
+-- FOR EACH ROW because the recipient set depends on the thread.
+create trigger messages_fan_out
+  after insert on public.messages
+  for each row execute function private.fan_out_thread_message();
+```
+
+- [ ] **Step 2: Extend file 38**
+
+Change `select plan(27);` to `select plan(41);` (14 new assertions, counted by hand). Append before `select finish();`:
+
+```sql
+-- ── 19-25. the fan-out, over a real thread with a real family ───────
+-- ★ THE INVARIANT THIS SECTION EXISTS FOR (spec §8 T-12): no notifications row
+-- may exist whose (user_id, entity_id) pair fails the corresponding read
+-- predicate. A ping to someone who cannot open the thing is both a leak signal
+-- and a dead end.
+reset role;
+
+delete from public.notifications;
+delete from private.email_pings;
+delete from public.messages;
+delete from public.threads;
+delete from public.class_students;
+delete from public.class_teachers;
+delete from public.guardian_student;
+delete from public.students;
+delete from public.classes;
+delete from public.terms;
+
+insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+select '00000000-0000-0000-0000-000000000000', u.id, 'authenticated', 'authenticated',
+       u.email, '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now()
+from (values
+  ('c0000000-0000-0000-0000-000000000011'::uuid, 'c0-laerer@test.no'),
+  ('c0000000-0000-0000-0000-000000000012'::uuid, 'c0-forelder@test.no'),
+  ('c0000000-0000-0000-0000-000000000013'::uuid, 'c0-admin@test.no'),
+  ('c0000000-0000-0000-0000-000000000014'::uuid, 'c0-fremmed@test.no')
+) as u(id, email)
+on conflict (id) do nothing;
+
+insert into public.profiles (id, full_name) values
+  ('c0000000-0000-0000-0000-000000000011', 'C0 Lærer'),
+  ('c0000000-0000-0000-0000-000000000012', 'C0 Forelder'),
+  ('c0000000-0000-0000-0000-000000000013', 'C0 Admin'),
+  ('c0000000-0000-0000-0000-000000000014', 'C0 Fremmed')
+on conflict (id) do nothing;
+
+insert into public.user_roles (user_id, role) values
+  ('c0000000-0000-0000-0000-000000000011', 'teacher'),
+  ('c0000000-0000-0000-0000-000000000012', 'parent'),
+  ('c0000000-0000-0000-0000-000000000013', 'admin'),
+  ('c0000000-0000-0000-0000-000000000014', 'teacher')
+on conflict do nothing;
+
+insert into public.terms (id, name, starts_on, ends_on, is_current)
+values ('c0000000-0000-0000-0000-0000000000e1', 'C0-termin',
+        current_date - 30, current_date + 60, false);
+insert into public.classes (id, term_id, name)
+values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-0000000000e1', 'C0-klasse');
+insert into public.students (id, first_name, last_name, status)
+values ('c0000000-0000-0000-0000-0000000000d1', 'C0', 'Elev', 'active');
+insert into public.class_students (class_id, student_id, enrolled_on)
+values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-0000000000d1', current_date - 20);
+insert into public.class_teachers (class_id, teacher_id)
+values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-000000000011');
+insert into public.guardian_student (guardian_id, student_id)
+values ('c0000000-0000-0000-0000-000000000012', 'c0000000-0000-0000-0000-0000000000d1');
+
+insert into public.threads (id, student_id, staff_id, kind, subject, created_by)
+values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-0000000000d1',
+        'c0000000-0000-0000-0000-000000000011', 'laerer', 'C0-tråd',
+        'c0000000-0000-0000-0000-000000000011');
+
+-- The teacher writes. The parent should be told; the teacher should not.
+insert into public.messages (thread_id, sender_id, body)
+values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000011', 'Hei');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'),
+  1, 'læreren skriver: nøyaktig én mottaker varsles');
+
+select is(
+  (select user_id from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'),
+  'c0000000-0000-0000-0000-000000000012'::uuid, 'og det er forelderen');
+
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = 'c0000000-0000-0000-0000-000000000011'),
+  0, 'avsenderen varsles aldri om sin egen melding');
+
+-- ★ The admin is a reader of this thread by oversight, and is NOT pinged.
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = 'c0000000-0000-0000-0000-000000000013'),
+  0, 'bar oversikt utløser ikke varsel — ellers får hele admin-rosteret post om hver melding');
+
+-- Control over the IDENTICAL thread: the admin really can read it, so
+-- assertion 22 is about the fan-out and not about a missing relationship.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000013","role":"authenticated"}';
+select is(
+  (select count(*)::int from public.threads where id = 'c0000000-0000-0000-0000-0000000000b1'),
+  1, 'kontroll: admin leser tråden — varselet mangler ved regel, ikke ved manglende tilgang');
+reset role;
+
+-- ── 24. ★ D25: ten messages, one bell entry ─────────────────────────
+insert into public.messages (thread_id, sender_id, body)
+select 'c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000011',
+       'Melding ' || g
+  from generate_series(1, 9) g;
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'),
+  1, 'ti meldinger gir ett varsel — det er raden som koalescerer, ikke en indeks');
+
+select is(
+  (select queued_seq from private.email_pings
+    where user_id = 'c0000000-0000-0000-0000-000000000012'),
+  10, 'men vannmerket har talt alle ti');
+
+-- ── 25. an unrelated teacher is never a recipient ───────────────────
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = 'c0000000-0000-0000-0000-000000000014'),
+  0, 'en lærer uten undervisningsforhold til eleven varsles ikke');
+
+-- ── 26. ★ the 'kontor' wall: the pupil's teachers are NOT told ──────
+-- This is one of the two drifts the spec's hand-written recipient list had.
+insert into public.threads (id, student_id, staff_id, kind, subject, created_by)
+values ('c0000000-0000-0000-0000-0000000000b2', 'c0000000-0000-0000-0000-0000000000d1',
+        'c0000000-0000-0000-0000-000000000013', 'kontor', 'C0-kontor',
+        'c0000000-0000-0000-0000-000000000012');
+insert into public.messages (thread_id, sender_id, body)
+values ('c0000000-0000-0000-0000-0000000000b2', 'c0000000-0000-0000-0000-000000000012', 'Klage');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000b2'
+      and user_id = 'c0000000-0000-0000-0000-000000000011'),
+  0, 'kontortråd: elevens lærer får ikke vite at samtalen finnes');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000b2'
+      and user_id = 'c0000000-0000-0000-0000-000000000013'),
+  1, 'men admin som er trådens staff_id varsles — hen er motparten');
+
+-- ── 27. ★ the rollover fallback ─────────────────────────────────────
+-- The teacher leaves. The family writes. With no staff reader other than bare
+-- oversight, EVERY admin is admitted — otherwise the message reaches nobody.
+delete from public.class_teachers
+ where class_id = 'c0000000-0000-0000-0000-0000000000c1';
+delete from public.notifications;
+
+insert into public.messages (thread_id, sender_id, body)
+values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000012', 'Er du der?');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000b1'
+      and user_id = 'c0000000-0000-0000-0000-000000000013'),
+  1, 'uten gjenværende ansatt-leser varsles admin likevel — meldingen når noen');
+
+-- ── 28. ★ THE INVARIANT (T-12), stated as a query ───────────────────
+-- Not an example: a scan over EVERY notification row this file produced.
+select is(
+  (select count(*)::int from public.notifications n
+    where n.entity = 'thread'
+      and not private.reads_thread(n.user_id, n.entity_id)),
+  0, 'invariant: ingen varsler om en tråd mottakeren ikke kan åpne');
+
+-- ── 29. opting out stops the MAIL and not the varsel ────────────────
+update public.profiles set email_pings_enabled = false
+ where id = 'c0000000-0000-0000-0000-000000000012';
+delete from public.notifications;
+delete from private.email_pings;
+
+insert into public.messages (thread_id, sender_id, body)
+values ('c0000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-000000000013', 'Fra admin');
+
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = 'c0000000-0000-0000-0000-000000000012'),
+  1, 'avmelding stopper ikke varselet i appen — det er sannhetskilden');
+
+select is(
+  (select count(*)::int from private.email_pings
+    where user_id = 'c0000000-0000-0000-0000-000000000012'),
+  0, 'men ingen e-postping køes');
+```
+
+- [ ] **Step 3: Run and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+```
+
+Expected: FAIL — `function private.thread_recipients(uuid) does not exist`.
+
+- [ ] **Step 4: Apply and re-run the whole suite**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+```
+
+Expected: `Files=39, Tests=885, PASS`.
+
+- [ ] **Step 5: Three named mutations — run one at a time, reset between**
+
+1. Delete the `and private.reads_thread(c.uid, tid)` filter from `substantive`. Expected: assertion 26 (`kontor`: the teacher is not told) **FAILS** — this is the drift the spec's hand-written list actually had.
+2. Change the admin fallback's `not exists (select 1 from staff_substantive)` to `not exists (select 1 from substantive)`. Expected: assertion 27 **FAILS** — the «no staff reader at all» wording that can never fire.
+3. Remove the `where r.recipient <> new.sender_id` clause from the notifications insert. Expected: assertion 21 **FAILS**.
+
+Restore after each and confirm green. Record the three results in the commit body.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260807123000_thread_fanout.sql supabase/tests/38_notifications_rls.sql && git commit -m "feat(varsler): fan out a message by calling the wall, not by copying it
+
+thread_recipients builds a deliberately wide candidate set and filters every
+member through private.reads_thread. The spec's hand-written version had
+already drifted twice — it pinged teachers a kontor thread excludes, and it
+pinged no admin ever. Both drifts now have an assertion that goes red under the
+mutation that reintroduces them.
+
+Admins are excluded by default (bare oversight would mail the whole roster on
+every message) and re-admitted only as the thread's staff_id or, wholesale,
+when no staff reader other than oversight remains.
+
+pgTAP 871 -> 885."
+```
+
+---
+
+## Task 5: The announcement fan-out — one routine, two trigger points
+
+**Files:**
+- Create: `supabase/migrations/20260807124000_announcement_fanout.sql`
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(41)` → `plan(53)`)
+
+⛔ `supabase/migrations/20260806122000_announcement_fanout_claim.sql` is **applied** — never edit it. `claim_due_announcements` is replaced here with `create or replace`, and its own header says exactly what must happen: *«Plan 3 must add its notification INSERT INSIDE THIS FUNCTION BODY … If the fan-out is a separate round trip, a crash between the two leaves an announcement marked as announced with no notifications, and the partial index will never serve it again.»*
+
+- [ ] **Step 1: Write the migration**
+
+Create `supabase/migrations/20260807124000_announcement_fanout.sql`:
+
+```sql
+-- The announcement fan-out (D26, spec §5.1).
+--
+-- ★ ONE ROUTINE, TWO TRIGGER POINTS.
+--   · published immediately  → an AFTER INSERT trigger, in the same transaction
+--   · scheduled              → public.claim_due_announcements(), from the drain
+-- Both call private.fan_out_announcement. There is no third copy of the rule.
+--
+-- ⛔ WHY A TRIGGER AND NOT A CALL FROM THE PUBLISH ACTION (D26). There are TWO
+-- publish actions — laerer/oppslag/actions.ts and admin/oppslag/actions.ts — so
+-- an action-level call must be added twice and can drift. A trigger cannot be
+-- forgotten by a third publish path written later. It also runs INSIDE the
+-- insert's transaction, so an announcement can never be committed without its
+-- notifications; and claim_due_announcements is granted to service_role only,
+-- so calling it from a teacher's action would need a grant to authenticated —
+-- which would let any logged-in parent burn every pending fan-out in the
+-- school with a single call.
+--
+-- private.stamp_announcement_fanout already sets fanned_out_at at INSERT when
+-- published_at <= now(), so `new.fanned_out_at is not null` IS "published
+-- immediately". Nothing new decides that question here.
+--
+-- ★ THE CANDIDATE SET IS THE WHOLE ROLE-HOLDING POPULATION, narrowed by
+-- private.reads_announcement. One predicate call per account per announcement —
+-- a few hundred, in a background statement, on the phase's rarest write.
+--
+-- ⛔ AND IT SUBTRACTS BARE OVERSIGHT, EXACTLY AS THE THREAD FAN-OUT DOES.
+-- ⚠ VERIFIED 2026-08-05, and it is the opposite of what the spec assumed:
+-- private.reads_announcement_row's SECOND clause is
+-- `or private.has_role(uid, 'admin')` (20260806120000:~400), so an admin reads
+-- EVERY announcement in the school. Filtering on the predicate alone would
+-- therefore bell every admin on every class notice — at ten classes that is
+-- ~ten a week nobody asked for, diluting the one surface D12 made
+-- load-bearing. The spec said announcements had "no analogue of bare oversight
+-- to subtract"; the tree says they do.
+--
+-- ★ THE CARVE-OUT KEYS ON THE RELATIONSHIP, NEVER ON THE ROLE — D24's lesson.
+-- Asking "are you an admin?" would silence an admin who is ALSO a guardian in
+-- that class, about their own child. So the clause below asks whether this
+-- person has a relationship to THIS announcement: school-wide (addressed to
+-- every adult at the school), or a live teaching relationship, or a family
+-- bound as of publication.
+--
+-- ⚠ AND YES, THAT LIST RESTATES reads_announcement_row's non-admin arms. It is
+-- a restatement in the NARROWING direction only: it is ANDed with the
+-- predicate, which still decides admission, so drift here can only ever notify
+-- FEWER people — never someone who cannot open the thing. That is a different
+-- and much safer class of restatement than the thread case, where the spec's
+-- hand-written copy drifted WIDER. Assertion 34's invariant still holds by
+-- construction.
+
+create or replace function private.fan_out_announcement(aid uuid, author uuid)
+returns integer
+language plpgsql volatile security definer set search_path = ''
+as $$
+declare
+  fanned integer;
+begin
+  insert into public.notifications (user_id, entity, entity_id)
+  select distinct ur.user_id, 'announcement', aid
+    from public.user_roles ur
+    cross join lateral (
+      select a.class_id, a.published_at from public.announcements a where a.id = aid
+    ) ann
+   where ur.user_id <> author
+     and private.reads_announcement(ur.user_id, aid)
+     and (
+       ann.class_id is null
+       or private.teaches_class(ur.user_id, ann.class_id)
+       or private.guardian_in_class_asof(ur.user_id, ann.class_id, ann.published_at)
+       or private.student_in_class_asof(ur.user_id, ann.class_id, ann.published_at)
+     )
+  on conflict (user_id, entity, entity_id)
+    do update set created_at = now(), read_at = null;
+  get diagnostics fanned = row_count;
+  return fanned;
+end;
+$$;
+
+revoke execute on function private.fan_out_announcement(uuid, uuid) from public;
+
+comment on function private.fan_out_announcement(uuid, uuid) is
+  'D21/D26. The candidate set is every role-holding account, narrowed by CALLING private.reads_announcement. ⛔ It writes public.notifications ONLY — never private.email_pings. That is the decision that keeps this phase inside a free sending tier: one school-wide notice to ~300 guardians is three days of Resend''s 100/day in a single statement, and it would take the economy module''s invoice reminders down with it.';
+
+-- ── trigger point 1: published immediately ──────────────────────────
+create or replace function private.fan_out_new_announcement()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  -- Scheduled rows leave fanned_out_at NULL and belong to the drain.
+  if new.fanned_out_at is not null then
+    perform private.fan_out_announcement(new.id, new.created_by);
+  end if;
+  return null;
+end;
+$$;
+
+revoke execute on function private.fan_out_new_announcement() from public;
+
+create trigger announcements_fan_out
+  after insert on public.announcements
+  for each row execute function private.fan_out_new_announcement();
+
+-- ── trigger point 2: the scheduled claim ────────────────────────────
+-- ★ THE INSERT IS INSIDE THIS FUNCTION BODY, in the same statement as the
+-- fanned_out_at stamp. A separate round trip would let a crash between the two
+-- leave an announcement marked as announced with no notifications, and the
+-- partial index would never serve it again.
+--
+-- ⚠ The OUT parameter names stay misnamed on purpose: a `returns table`
+-- function's OUT names shadow column names inside its own body AND are
+-- rendered into pg_get_functiondef's header, so an OUT parameter called
+-- published_at would make the fingerprint marker 'b.published_at <= now()'
+-- unfailable and shadow the column it reads.
+create or replace function public.claim_due_announcements()
+returns table (announcement_id uuid, audience_class_id uuid, publish_time timestamptz)
+language plpgsql volatile security definer set search_path = ''
+as $$
+declare
+  claimed_row record;
+begin
+  -- ⛔ AN EXPLICIT LOOP, NOT A SIDE EFFECT IN A WHERE CLAUSE. The obvious
+  -- spelling is `select … from claimed c where fan_out_announcement(…) >= 0`,
+  -- and it is WRONG: a volatile function in a WHERE clause carries no
+  -- guarantee of being evaluated exactly once per row. The planner may skip it
+  -- for rows it can eliminate otherwise, or re-evaluate it — so an
+  -- announcement could be stamped fanned_out_at with nobody notified, and the
+  -- partial index would never serve it again. The stamp and the fan-out must
+  -- both happen, once, per row.
+  for claimed_row in
+    with claimed as (
+      update public.announcements a
+         set fanned_out_at = now()
+       where a.id in (
+               select b.id
+                 from public.announcements b
+                where b.fanned_out_at is null
+                  and b.published_at <= now()
+                order by b.published_at
+                  for update skip locked
+             )
+      returning a.id, a.class_id, a.published_at, a.created_by
+    )
+    select * from claimed
+  loop
+    perform private.fan_out_announcement(claimed_row.id, claimed_row.created_by);
+    announcement_id   := claimed_row.id;
+    audience_class_id := claimed_row.class_id;
+    publish_time      := claimed_row.published_at;
+    return next;
+  end loop;
+end;
+$$;
+
+revoke execute on function public.claim_due_announcements() from public;
+revoke execute on function public.claim_due_announcements() from anon;
+revoke execute on function public.claim_due_announcements() from authenticated;
+grant execute on function public.claim_due_announcements() to service_role;
+```
+
+- [ ] **Step 2: Extend file 38**
+
+Change `select plan(41);` to `select plan(53);` (12 new assertions, counted by hand). Append before `select finish();`:
+
+```sql
+-- ── 30-37. the announcement fan-out, both trigger points ────────────
+reset role;
+delete from public.notifications;
+delete from public.announcement_reads;
+delete from public.announcements;
+
+-- Immediate publish by the teacher, to the class the parent's child is in.
+-- ⚠ class_teachers was emptied by assertion 27, so restore it: the teacher
+-- must be able to author here.
+insert into public.class_teachers (class_id, teacher_id)
+values ('c0000000-0000-0000-0000-0000000000c1', 'c0000000-0000-0000-0000-000000000011')
+on conflict do nothing;
+
+insert into public.announcements (id, class_id, title, body, created_by)
+values ('c0000000-0000-0000-0000-0000000000a5', 'c0000000-0000-0000-0000-0000000000c1',
+        'Gymtøy', 'Husk gymtøy i morgen', 'c0000000-0000-0000-0000-000000000011');
+
+select is(
+  (select (fanned_out_at is not null) from public.announcements
+    where id = 'c0000000-0000-0000-0000-0000000000a5'),
+  true, 'et oppslag publisert nå er stemplet ved INSERT');
+
+-- ★ D26: the bell lights in the same transaction, not 15 minutes later.
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000a5'
+      and user_id = 'c0000000-0000-0000-0000-000000000012'),
+  1, 'forelderen varsles med én gang — utløseren står i samme transaksjon');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000a5'
+      and user_id = 'c0000000-0000-0000-0000-000000000011'),
+  0, 'forfatteren varsles ikke om sitt eget oppslag');
+
+-- ⛔ D12: announcements never touch the mail path, at any scope.
+select is(
+  (select count(*)::int from private.email_pings where pending),
+  0, 'et oppslag køer ingen e-post — det er denne regelen som holder fasen innenfor gratisnivået');
+
+-- ── 31. a scheduled oppslag notifies NOBODY until it is due ─────────
+insert into public.announcements (id, class_id, title, body, published_at, created_by)
+values ('c0000000-0000-0000-0000-0000000000a6', 'c0000000-0000-0000-0000-0000000000c1',
+        'Senere', 'Kommer senere', now() + interval '2 hours',
+        'c0000000-0000-0000-0000-000000000011');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000a6'),
+  0, 'et planlagt oppslag varsler ingen ennå — ellers finnes varselet før raden er lesbar');
+
+select is(
+  (select count(*)::int from public.claim_due_announcements()),
+  0, 'og claimen plukker det ikke');
+
+-- ── 32. when it falls due, the claim fans it out ────────────────────
+-- published_at has no UPDATE grant, so move it as the owner.
+update public.announcements set published_at = now() - interval '1 minute'
+ where id = 'c0000000-0000-0000-0000-0000000000a6';
+
+select is(
+  (select count(*)::int from public.claim_due_announcements()),
+  1, 'når tida er inne plukkes det ett oppslag');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000a6'
+      and user_id = 'c0000000-0000-0000-0000-000000000012'),
+  1, 'og forelderen varsles av claimen, ikke av utløseren');
+
+-- ── 33. ★ idempotence: a second claim does nothing ──────────────────
+select is(
+  (select count(*)::int from public.claim_due_announcements()),
+  0, 'claimen er idempotent — fanned_out_at er brent');
+
+-- ── 34. ★ THE INVARIANT again, over announcements ───────────────────
+select is(
+  (select count(*)::int from public.notifications n
+    where n.entity = 'announcement'
+      and not private.reads_announcement(n.user_id, n.entity_id)),
+  0, 'invariant: ingen varsler om et oppslag mottakeren ikke kan åpne');
+
+-- ── 35. ★ BARE OVERSIGHT IS SUBTRACTED HERE TOO ─────────────────────
+-- reads_announcement_row's second clause is `or private.has_role(uid,'admin')`,
+-- so an admin READS every class notice in the school. Belling them on each one
+-- would dilute the surface D12 made load-bearing. The admin above is not a
+-- guardian and does not teach this class, so they get nothing — while the
+-- school-wide notice below reaches them, because that one IS addressed to them.
+select is(
+  (select count(*)::int from public.notifications
+    where entity = 'announcement'
+      and user_id = 'c0000000-0000-0000-0000-000000000013'),
+  0, 'admin belles ikke på et klasseoppslag — bar oversikt trekkes fra her også');
+
+insert into public.announcements (id, class_id, title, body, created_by)
+values ('c0000000-0000-0000-0000-0000000000a7', null,
+        'Hele skolen', 'Fri på fredag', 'c0000000-0000-0000-0000-000000000013');
+
+select is(
+  (select count(*)::int from public.notifications
+    where entity_id = 'c0000000-0000-0000-0000-0000000000a7'
+      and user_id = 'c0000000-0000-0000-0000-000000000011'),
+  1, 'men et skoleomfattende oppslag når læreren — det er adressert til dem');
+```
+
+- [ ] **Step 3: Run and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+```
+
+Expected: FAIL at assertion 31 — the immediate publish produces no notification, because nothing fans out yet.
+
+- [ ] **Step 4: Apply and run the whole suite**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -5
+```
+
+Expected: `Files=39, Tests=897, PASS`.
+
+- [ ] **Step 5: Two named mutations**
+
+1. In `private.fan_out_new_announcement`, drop the `if new.fanned_out_at is not null` guard so it always fans out. Expected: assertion 31's first half (**a scheduled oppslag varsler ingen**) **FAILS** — a notification would exist for a row the reader's own policy still hides.
+2. In `private.fan_out_announcement`, replace `private.reads_announcement(ur.user_id, aid)` with `true`. Expected: assertion 34's invariant **FAILS**.
+3. In `private.fan_out_announcement`, delete the whole `and ( ann.class_id is null or … )` carve-out. Expected: assertion 35 (**admin belles ikke på et klasseoppslag**) **FAILS** — this is the defect the tree disagreed with the spec about, and it would otherwise have shipped as ten unwanted bells a week.
+
+Restore after each; confirm green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260807124000_announcement_fanout.sql supabase/tests/38_notifications_rls.sql && git commit -m "feat(oppslag): fan out at publish and at the claim, through one routine
+
+Two trigger points, one rule: an after-insert trigger for an announcement
+published now, and claim_due_announcements for a scheduled one. The insert
+lives inside the claim's own statement, so a crash cannot leave a row marked
+announced with nobody notified.
+
+A trigger rather than a call from the publish action, because there are two
+publish actions and a third could be written; because the trigger shares the
+insert's transaction; and because the claim is service_role-only, so an
+action-level call would need a grant that lets any parent burn every pending
+fan-out.
+
+pgTAP 885 -> 897."
+```
+
+---
+
+## Task 6: Definer fingerprints — 83 → 88
+
+**Files:**
+- Modify: `supabase/tests/29_definer_fingerprints.sql`
+
+Five new `security definer` functions exist. Each is a function whose stubbing to `select true` (or to a no-op) is an **escalation, not a refactor**:
+
+| Function | What stubbing it does |
+|---|---|
+| `private.thread_recipients` | mails the whole school about one family's message |
+| `private.fan_out_thread_message` | silently notifies nobody, forever |
+| `private.fan_out_announcement` | school-wide name-and-notice disclosure |
+| `public.claim_email_pings` | claims every row with no watermark |
+| `public.resolve_ping_address` | resolves an address for someone who opted out |
+
+⚠ `record_email_ping_outcome` is deliberately **not** fingerprinted for a predicate — its markers are covered behaviourally by assertions 15–17 in file 38, and a fingerprint over a plpgsql body this branchy would pin formatting rather than meaning.
+
+- [ ] **Step 1: Add the five rows to the fingerprint table**
+
+⚠ **The table's shape is NOT `(function, predicate)` pairs** — verified 2026-08-05. It is `('schema.function(argtypes)', array[…markers…])`, the function name carries its **signature**, and the counter counts **markers** (`count(*) from definer_markers d, lateral unnest(d.markers)`), not rows. `plan(2)` stays `plan(2)`; only the literal moves.
+
+In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `definer_markers` values list, matching the file's existing formatting:
+
+```sql
+    -- D21's whole content: a wide candidate set narrowed by CALLING the wall.
+    -- Stubbing this mails the whole school about one family's message; deleting
+    -- the staff_substantive reference re-opens the «no staff reader at all»
+    -- wording that can never fire.
+    (
+      'private.thread_recipients(uuid)',
+      array[
+        'private.reads_thread',
+        'staff_substantive'
+      ]
+    ),
+    -- The sender exclusion, and the upsert that makes ten messages one bell.
+    (
+      'private.fan_out_thread_message()',
+      array[
+        'new.sender_id',
+        'email_pings_enabled'
+      ]
+    ),
+    -- Stubbed, this is a school-wide notice-and-name disclosure. The three
+    -- relationship markers are the bare-oversight carve-out — drop them and
+    -- every admin is belled on every class notice.
+    (
+      'private.fan_out_announcement(uuid,uuid)',
+      array[
+        'private.reads_announcement',
+        'private.teaches_class',
+        'private.guardian_in_class_asof'
+      ]
+    ),
+    -- Without skip locked, two drains claim the same row and send twice.
+    (
+      'public.claim_email_pings(integer)',
+      array[
+        'for update skip locked'
+      ]
+    ),
+    -- Stubbed, this resolves an address for someone who opted out.
+    (
+      'public.resolve_ping_address(uuid)',
+      array[
+        'email_pings_enabled',
+        'deleted_at'
+      ]
+    ),
+```
+
+- [ ] **Step 2: Bump the counter**
+
+That is **10 new markers**, so change the literal from `83` to `93`:
+
+```sql
+  93,
+  'the fingerprint table still covers 93 (function, predicate) pairs'
+```
+
+⚠ **Count the markers, do not reconcile the two numbers by adjusting either one** — the file's own comment records that this mistake has been made twice already, once by reading "five new functions" and writing 31. Confirm the arithmetic against the actual arrays you paste: 2 + 2 + 3 + 1 + 2 = 10.
+
+⚠ `plan(2)` is **unchanged** — this file asserts a count and an `is_empty`, not one assertion per pair. The suite total does not move.
+
+- [ ] **Step 3: Run**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/29_definer_fingerprints.sql 2>&1 | tail -10
+```
+
+Expected: PASS, and the plan count reflects 88 pairs.
+
+- [ ] **Step 4: Verify a fingerprint can actually fail**
+
+Delete the `and private.reads_thread(c.uid, tid)` line from `private.thread_recipients` in its migration, `npx supabase db reset`, re-run file 29. Expected: **FAIL** naming that pair. Restore, reset, green.
+
+★ A fingerprint that has never been watched fail is a claim, not a test — and file 29 has shipped pairs whose marker was a word that appeared in a comment.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/tests/29_definer_fingerprints.sql && git commit -m "test(varsler): fingerprint the five definers whose stubbing is an escalation
+
+83 -> 88 pairs. thread_recipients stubbed mails the whole school about one
+family's message; fan_out_announcement stubbed is a school-wide disclosure;
+resolve_ping_address stubbed sends to someone who opted out. Each pair was
+watched fail under deletion of the line it names."
+```
+
+---
+
+## Task 7: The e-mail template — assertions over its omissions
+
+**Files:**
+- Create: `src/lib/varsler/ping-email.ts`
+- Create: `src/lib/varsler/ping-email.test.ts`
+
+Pure, provider-free, and landed **with** its consumer's type so `knip` stays green. ⚠ `knip` fails unused exports at error level, so no export in this plan may sit more than one task away from its importer.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `src/lib/varsler/ping-email.test.ts`:
+
+```typescript
+import { describe, expect, it } from 'vitest';
+import { buildPingEmail } from './ping-email';
+
+describe('the content-free ping', () => {
+  it('names the count and nothing else that varies', () => {
+    const mail = buildPingEmail({ unreadCount: 3, portalUrl: 'https://portal.iqrasenter.no' });
+    expect(mail.subject).toBe('Nytt varsel i IQRA-portalen');
+    expect(mail.text).toContain('3 nye varsler');
+  });
+
+  // ★ THE SUBJECT IS A FIXED STRING, NEVER TEMPLATED. A subject line is the one
+  // part of an e-mail that shows on a lock screen, unopened, to whoever is
+  // holding the phone.
+  it('uses the same subject regardless of count', () => {
+    const one = buildPingEmail({ unreadCount: 1, portalUrl: 'https://x.no' });
+    const many = buildPingEmail({ unreadCount: 40, portalUrl: 'https://x.no' });
+    expect(one.subject).toBe(many.subject);
+  });
+
+  it('links the root, never a deep link', () => {
+    const mail = buildPingEmail({ unreadCount: 1, portalUrl: 'https://portal.iqrasenter.no' });
+    expect(mail.text).toContain('https://portal.iqrasenter.no');
+    // A URL is not private: it travels through Resend, the recipient's mail
+    // provider, their client's history and any forward. A thread id in a link
+    // is content about who is talking to whom.
+    expect(mail.text).not.toMatch(/portal\.iqrasenter\.no\/[a-z]/);
+  });
+
+  // ★ THE OMISSION TEST, PARAMETERISED. Each of these is a deliberate
+  // omission from spec §5.3, and each would be a plausible "improvement".
+  it.each([
+    ['a pupil name', 'Yusuf'],
+    ['a teacher name', 'Leila'],
+    ['a class name', '3A'],
+    ['a thread subject', 'Om leksene'],
+    ['message text', 'Han var ikke på skolen'],
+    ['the recipient own name', 'Fatima'],
+  ])('never carries %s even when it is available to the caller', (_label, secret) => {
+    const mail = buildPingEmail({
+      unreadCount: 2,
+      portalUrl: 'https://portal.iqrasenter.no',
+      // The builder takes no such field; the test proves the TYPE cannot carry
+      // it by proving the OUTPUT never does, whatever is passed.
+      ...({ [_label]: secret } as Record<string, unknown>),
+    });
+    expect(mail.text).not.toContain(secret);
+    expect(mail.subject).not.toContain(secret);
+  });
+
+  it('refuses to build a ping for nothing', () => {
+    expect(() => buildPingEmail({ unreadCount: 0, portalUrl: 'https://x.no' })).toThrow(
+      /aldri sendes/,
+    );
+  });
+});
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/ping-email.test.ts 2>&1 | tail -10
+```
+
+Expected: FAIL — `Failed to resolve import "./ping-email"`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `src/lib/varsler/ping-email.ts`:
+
+```typescript
+import 'server-only';
+
+/**
+ * The content-free e-mail ping (spec §5.3, D27).
+ *
+ * ★ THE COUNT IS THE ONLY VARIABLE, and it is not about a child. Everything
+ * else is a fixed string. The subject in particular is never templated: it is
+ * the one part of an e-mail that appears on a lock screen, unopened, to
+ * whoever is holding the phone.
+ *
+ * ⚠ THIS FILE CANNOT PROTECT THE WHOLE PROMISE. Any provider that rewrites
+ * links through a per-recipient tracking domain, or injects an open pixel,
+ * reintroduces exactly the identifier we refuse to put in the URL — and it
+ * does so AFTER this function has returned. ping-email.test.ts structurally
+ * cannot catch that. Confirm link-rewriting and open-tracking are OFF against
+ * a real delivered message before the pilot (carried to plan 4, D28).
+ */
+export type PingEmail = { subject: string; text: string };
+
+const SUBJECT = 'Nytt varsel i IQRA-portalen';
+
+export function buildPingEmail(input: { unreadCount: number; portalUrl: string }): PingEmail {
+  if (input.unreadCount < 1) {
+    // A ping for nothing is a bug upstream — the drain clears `pending` with no
+    // send when the count is 0. Throwing here means that bug can never be
+    // delivered to a parent as "Du har 0 nye varsler".
+    throw new Error('En ping uten uleste varsler skal aldri sendes.');
+  }
+  const plural = input.unreadCount === 1 ? 'nytt varsel' : 'nye varsler';
+  return {
+    subject: SUBJECT,
+    text: [
+      'Hei,',
+      '',
+      `Du har ${input.unreadCount} ${plural} i IQRA skoleportal.`,
+      `Logg inn for å lese dem: ${input.portalUrl}`,
+      '',
+      'Denne e-posten sendes automatisk og inneholder aldri opplysninger om barnet ditt.',
+      'Du kan slå av varsel-e-post under «Min profil» i portalen.',
+    ].join('\n'),
+  };
+}
+```
+
+- [ ] **Step 4: Run and confirm**
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/ping-email.test.ts 2>&1 | tail -6
+```
+
+Expected: PASS, 10 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add src/lib/varsler/ping-email.ts src/lib/varsler/ping-email.test.ts && git commit -m "feat(varsler): the ping, and assertions over what it must never carry
+
+The count is the only variable and the subject is a fixed string — it is the
+part that shows on a lock screen unopened. The omission test is parameterised
+over the six things spec 5.3 deliberately leaves out, and building a ping for
+zero unread throws rather than delivering 'Du har 0 nye varsler'."
+```
+
+---
+
+## Task 8: The drain — the repo's first route handler
+
+**Files:**
+- Create: `src/lib/varsler/resend.ts`
+- Create: `src/lib/varsler/drain.ts`
+- Create: `src/lib/varsler/drain.test.ts`
+- Create: `src/app/api/varsler/drain/route.ts`
+- Modify: `src/lib/env.server.ts`
+- Modify: `src/proxy.ts`
+
+⚠ **Four repo-specific traps, each verified against the tree:**
+1. `src/proxy.ts`'s matcher covers everything but Next internals and static extensions — the drain **is** gated, and its exclusion must sit **before the `!user` branch** (line 81) or an unauthenticated cron GET is redirected to `/logg-inn` and the drain silently never runs.
+2. `timingSafeEqual` **throws** on a length mismatch. Compare SHA-256 digests of both sides, which are always 32 bytes.
+3. Neither secret may appear in `NEXT_PUBLIC_*`.
+4. The address is read under `service_role` from `auth.users` and never copied into a `public` table.
+
+- [ ] **Step 1: Extend `src/lib/env.server.ts`**
+
+Append to `src/lib/env.server.ts`:
+
+```typescript
+/**
+ * The cron shared secret. Validated and throwing, like every other server
+ * secret in this file. ⛔ Never NEXT_PUBLIC_ — a public var is inlined into
+ * the client bundle, and this one is the ONLY thing standing in front of the
+ * app's first unauthenticated endpoint.
+ */
+export function getCronSecret(): string {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      'CRON_SECRET mangler eller er for kort (minst 32 tegn). Sett den i .env.local og i Vercel.',
+    );
+  }
+  return secret;
+}
+
+/**
+ * Resend's API key. Returns null when unset, and that is DELIBERATE (D28):
+ * no account exists yet. The drain treats a missing key as a RETRYABLE
+ * FAILURE, never as a success — so the ledger shows pings that never went out
+ * instead of a queue that looks drained.
+ */
+export function getResendApiKey(): string | null {
+  return process.env.RESEND_API_KEY ?? null;
+}
+```
+
+- [ ] **Step 2: Write the sender seam**
+
+Create `src/lib/varsler/resend.ts`:
+
+```typescript
+import 'server-only';
+import { getResendApiKey } from '@/lib/env.server';
+import type { PingEmail } from './ping-email';
+
+/**
+ * The seam the drain is tested through (D28). The real caller is the default;
+ * drain.test.ts passes a fake. There is no Resend SDK dependency — the
+ * transactional endpoint is one POST, and a dependency here would be a
+ * sub-processor's code running in our server bundle for no benefit.
+ */
+export type SendResult = { ok: true } | { ok: false; errorCode: string };
+export type SendPing = (to: string, mail: PingEmail) => Promise<SendResult>;
+
+const ENDPOINT = 'https://api.resend.com/emails';
+const FROM = 'IQRA skoleportal <varsler@varsler.iqrasenter.no>';
+
+export const sendViaResend: SendPing = async (to, mail) => {
+  const key = getResendApiKey();
+  // ⛔ Not a success. A missing key must leave the ping in the ledger as
+  // unsent, so the admin health screen shows it and a human notices.
+  if (!key) return { ok: false, errorCode: 'NO_API_KEY' };
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: FROM, to: [to], subject: mail.subject, text: mail.text }),
+    });
+    if (!response.ok) return { ok: false, errorCode: String(response.status) };
+    return { ok: true };
+  } catch {
+    return { ok: false, errorCode: 'NETWORK' };
+  }
+};
+```
+
+- [ ] **Step 3: Write the failing drain test**
+
+Create `src/lib/varsler/drain.test.ts`:
+
+```typescript
+import { describe, expect, it, vi } from 'vitest';
+import { drainPings, type DrainDeps } from './drain';
+
+function deps(overrides: Partial<DrainDeps> = {}): DrainDeps {
+  return {
+    claim: vi.fn(async () => [{ user_id: 'u1', unread_count: 2 }]),
+    resolveAddress: vi.fn(async () => 'forelder@test.no'),
+    recordOutcome: vi.fn(async () => {}),
+    send: vi.fn(async () => ({ ok: true as const })),
+    portalUrl: 'https://portal.iqrasenter.no',
+    ...overrides,
+  };
+}
+
+describe('the ping drain', () => {
+  it('sends one mail per claimed user and records success', async () => {
+    const d = deps();
+    const result = await drainPings(d);
+    expect(d.send).toHaveBeenCalledTimes(1);
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', true, null);
+    expect(result).toEqual({ claimed: 1, sent: 1, skipped: 0, failed: 0 });
+  });
+
+  // ★ A notification you have already seen should not follow you into your
+  // inbox. This is the old `superseded` status, which no longer exists as a
+  // value: "nothing to send" is simply pending = false.
+  it('clears a claim with no send when the user has already read everything', async () => {
+    const d = deps({ claim: vi.fn(async () => [{ user_id: 'u1', unread_count: 0 }]) });
+    const result = await drainPings(d);
+    expect(d.send).not.toHaveBeenCalled();
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', true, null);
+    expect(result).toEqual({ claimed: 1, sent: 0, skipped: 1, failed: 0 });
+  });
+
+  // ★ An unresolvable address is a FAILURE, not a skip. Skipping it would
+  // clear pending and swallow the message; failing it puts the row in the
+  // ledger the admin screen reads.
+  it('records a failure when the address will not resolve', async () => {
+    const d = deps({ resolveAddress: vi.fn(async () => null) });
+    const result = await drainPings(d);
+    expect(d.send).not.toHaveBeenCalled();
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, 'NO_ADDRESS');
+    expect(result.failed).toBe(1);
+  });
+
+  it('passes the provider error code through to the ledger', async () => {
+    const d = deps({ send: vi.fn(async () => ({ ok: false as const, errorCode: '422' })) });
+    await drainPings(d);
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, '422');
+  });
+
+  // ★ One user's failure must not abandon the rest of the batch. The first
+  // draft of this loop used Promise.all and a single throw lost every
+  // outcome that had not yet been recorded.
+  it('keeps draining after one recipient throws', async () => {
+    const d = deps({
+      claim: vi.fn(async () => [
+        { user_id: 'u1', unread_count: 1 },
+        { user_id: 'u2', unread_count: 1 },
+      ]),
+      send: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce({ ok: true as const }),
+    });
+    const result = await drainPings(d);
+    expect(result).toEqual({ claimed: 2, sent: 1, skipped: 0, failed: 1 });
+    expect(d.recordOutcome).toHaveBeenCalledWith('u1', false, 'THREW');
+    expect(d.recordOutcome).toHaveBeenCalledWith('u2', true, null);
+  });
+
+  it('does nothing at all when nothing is due', async () => {
+    const d = deps({ claim: vi.fn(async () => []) });
+    const result = await drainPings(d);
+    expect(d.send).not.toHaveBeenCalled();
+    expect(result).toEqual({ claimed: 0, sent: 0, skipped: 0, failed: 0 });
+  });
+});
+```
+
+- [ ] **Step 4: Run and watch it fail**
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/drain.test.ts 2>&1 | tail -8
+```
+
+Expected: FAIL — `Failed to resolve import "./drain"`.
+
+- [ ] **Step 5: Write the drain**
+
+Create `src/lib/varsler/drain.ts`:
+
+```typescript
+import 'server-only';
+import { buildPingEmail } from './ping-email';
+import type { SendPing } from './resend';
+
+export type ClaimedPing = { user_id: string; unread_count: number };
+
+export type DrainDeps = {
+  claim: () => Promise<ClaimedPing[]>;
+  resolveAddress: (userId: string) => Promise<string | null>;
+  recordOutcome: (userId: string, succeeded: boolean, errorCode: string | null) => Promise<void>;
+  send: SendPing;
+  portalUrl: string;
+};
+
+export type DrainResult = { claimed: number; sent: number; skipped: number; failed: number };
+
+/**
+ * One drain pass. Pure over its dependencies so every branch is testable
+ * without a database or a provider (D28).
+ *
+ * ★ SEQUENTIAL, AND ON PURPOSE. Promise.all would let one rejection abandon
+ * outcomes that had not yet been recorded, leaving those rows claimed forever
+ * — claimed_at is set and nothing clears it, so the next drain skips them and
+ * the ping is lost silently. The batch is capped at 100 by the claim RPC, and
+ * the drain runs on a schedule; serial is fast enough and cannot strand a row.
+ */
+export async function drainPings(deps: DrainDeps): Promise<DrainResult> {
+  const claimed = await deps.claim();
+  const result: DrainResult = { claimed: claimed.length, sent: 0, skipped: 0, failed: 0 };
+
+  for (const ping of claimed) {
+    try {
+      // Already read in the portal — clear the claim with no send.
+      if (ping.unread_count < 1) {
+        await deps.recordOutcome(ping.user_id, true, null);
+        result.skipped += 1;
+        continue;
+      }
+
+      const address = await deps.resolveAddress(ping.user_id);
+      if (!address) {
+        // A failure, not a skip: clearing pending here would swallow the ping.
+        await deps.recordOutcome(ping.user_id, false, 'NO_ADDRESS');
+        result.failed += 1;
+        continue;
+      }
+
+      const outcome = await deps.send(
+        address,
+        buildPingEmail({ unreadCount: ping.unread_count, portalUrl: deps.portalUrl }),
+      );
+      if (outcome.ok) {
+        await deps.recordOutcome(ping.user_id, true, null);
+        result.sent += 1;
+      } else {
+        await deps.recordOutcome(ping.user_id, false, outcome.errorCode);
+        result.failed += 1;
+      }
+    } catch {
+      // ⚠ Never let one recipient strand the rest. The row must have an
+      // outcome recorded or it stays claimed forever.
+      await deps.recordOutcome(ping.user_id, false, 'THREW');
+      result.failed += 1;
+    }
+  }
+
+  return result;
+}
+```
+
+- [ ] **Step 6: Run and confirm**
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/drain.test.ts 2>&1 | tail -6
+```
+
+Expected: PASS, 6 tests.
+
+- [ ] **Step 7: Write the route handler**
+
+Create `src/app/api/varsler/drain/route.ts`:
+
+```typescript
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { NextResponse } from 'next/server';
+import { getCronSecret } from '@/lib/env.server';
+// ⚠ The service-role client lives in the QUARANTINED module, and that quarantine
+// is the point: `src/lib/admin/quarantine.ts` imports 'server-only', so any
+// client-reachable import of it is a build-time error. This route is the first
+// non-admin consumer — keep the import path exactly this, and never re-export
+// the client from somewhere more convenient.
+import { createServiceRoleClient } from '@/lib/admin/quarantine';
+import { drainPings } from '@/lib/varsler/drain';
+import { sendViaResend } from '@/lib/varsler/resend';
+
+export const dynamic = 'force-dynamic';
+
+/**
+ * The app's FIRST route handler, and its first unauthenticated endpoint.
+ *
+ * ★ THE SECRET GATE IS THE ONLY WALL HERE, so it is asserted statically by
+ * src/app/route-guards.test.ts as well as behaviourally below. It is named
+ * `assertCronSecret` and that name is what the static wall looks for.
+ *
+ * ⚠ timingSafeEqual THROWS on a length mismatch, so a naive call is itself a
+ * length oracle AND a 500. Both sides are hashed to a fixed 32 bytes first.
+ */
+function assertCronSecret(request: Request): boolean {
+  const header = request.headers.get('authorization') ?? '';
+  const presented = createHash('sha256').update(header).digest();
+  const expected = createHash('sha256').update(`Bearer ${getCronSecret()}`).digest();
+  return timingSafeEqual(presented, expected);
+}
+
+export async function GET(request: Request) {
+  if (!assertCronSecret(request)) {
+    // No body, no hint about which half was wrong.
+    return new NextResponse(null, { status: 401 });
+  }
+
+  const admin = createServiceRoleClient();
+
+  // Scheduled announcements first: their notifications must exist before the
+  // ping counts them, or a parent is mailed a count that the portal does not
+  // yet show.
+  const { error: announceError } = await admin.rpc('claim_due_announcements');
+  if (announceError) {
+    console.error('[drain] claim_due_announcements feilet:', announceError.message);
+  }
+
+  const result = await drainPings({
+    claim: async () => {
+      const { data, error } = await admin.rpc('claim_email_pings', { batch_size: 100 });
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    },
+    resolveAddress: async (userId) => {
+      const { data, error } = await admin.rpc('resolve_ping_address', { target: userId });
+      if (error) throw new Error(error.message);
+      return data ?? null;
+    },
+    recordOutcome: async (userId, succeeded, errorCode) => {
+      const { error } = await admin.rpc('record_email_ping_outcome', {
+        target: userId,
+        succeeded,
+        error_code: errorCode,
+      });
+      if (error) throw new Error(error.message);
+    },
+    send: sendViaResend,
+    portalUrl: 'https://portal.iqrasenter.no',
+  });
+
+  return NextResponse.json(result);
+}
+```
+
+✅ Verified 2026-08-05: `createServiceRoleClient` is exported from `src/lib/admin/quarantine.ts:45`. There is no `src/lib/admin/client.ts`.
+
+- [ ] **Step 8: Exclude the route in `src/proxy.ts`**
+
+In `src/proxy.ts`, insert **immediately after** the `DENIED_PATH` early return and **before** `if (!user) {`:
+
+```typescript
+  // ⛔ MUST SIT BEFORE THE !user BRANCH. The matcher covers every path but
+  // Next internals, so an unauthenticated cron GET would otherwise be 307'd to
+  // /logg-inn and the drain would silently never run — a queue that looks
+  // drained because nothing ever claimed it.
+  //
+  // ⚠ ONE EXACT PATH, never a prefix. `startsWith('/api')` would exempt every
+  // future route handler from the session gate by default.
+  if (path === '/api/varsler/drain') return respond();
+```
+
+- [ ] **Step 9: Verify the gate behaves**
+
+```bash
+cd ~/dev/iqra-portal && (npm run dev > /tmp/iqra-dev.log 2>&1 &) && sleep 12 && \
+  echo "--- no secret ---" && curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/varsler/drain && \
+  echo "--- wrong secret ---" && curl -s -o /dev/null -w "%{http_code}\n" -H "authorization: Bearer wrong" http://localhost:3000/api/varsler/drain && \
+  echo "--- right secret ---" && curl -s -w "\n%{http_code}\n" -H "authorization: Bearer $(grep '^CRON_SECRET=' .env.local | cut -d= -f2-)" http://localhost:3000/api/varsler/drain
+```
+
+Expected: `401`, `401`, then a JSON body and `200`.
+
+⛔ **`401` and not `307` is the assertion that matters.** A `307` means the proxy exclusion is in the wrong place — the request never reached the handler, and the drain would never have run in production either. Set `CRON_SECRET` in `.env.local` first (any 32+ char string).
+
+- [ ] **Step 10: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add src/lib/varsler/resend.ts src/lib/varsler/drain.ts src/lib/varsler/drain.test.ts src/app/api/varsler/drain/route.ts src/lib/env.server.ts src/proxy.ts && git commit -m "feat(varsler): the drain, behind the repo's first route handler
+
+The proxy matcher covers every path, so the exclusion sits before the !user
+branch — otherwise an unauthenticated cron GET is 307'd to /logg-inn and the
+queue looks drained because nothing ever claimed it. One exact path, never a
+prefix.
+
+timingSafeEqual throws on a length mismatch, so both sides are hashed to 32
+bytes first. A missing RESEND_API_KEY is a retryable failure and never a
+success: with no account yet, the ledger must show pings that did not go out.
+
+The loop is sequential because Promise.all lets one rejection strand rows as
+claimed forever, and claimed_at is what the next drain skips on."
+```
+
+---
+
+## Task 9: The static wall for route handlers
+
+**Files:**
+- Create: `src/app/route-guards.test.ts`
+- Create: `src/app/__fixtures__/evasion-routes.ts.txt`
+
+⚠ **`src/app/action-guards.test.ts` collects only files literally named `actions.ts`** (`:169`). A `route.ts` is invisible to it — so the allowlist entry the spec budgeted for protects nothing, and the app's first unauthenticated public endpoint would ship with **no static assertion at all**. This task closes that.
+
+- [ ] **Step 1: Write the evasion fixture**
+
+Create `src/app/__fixtures__/evasion-routes.ts.txt` (stored as `.txt` so it is never compiled, linted, or collected):
+
+```text
+export async function GET(request: Request) {}
+
+export async function POST(request: Request) {
+  if (!assertCronSecret(request)) return new Response(null, { status: 401 });
+  return Response.json({});
+}
+
+export async function PUT(request: Request) {
+  // assertCronSecret(request) — removed for now
+  return Response.json({});
+}
+
+export const DELETE = async (request: Request) => {
+  return Response.json({});
+};
+```
+
+- [ ] **Step 2: Write the failing test**
+
+Create `src/app/route-guards.test.ts`:
+
+```typescript
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * The static wall for route handlers.
+ *
+ * ⚠ WHY THIS FILE EXISTS SEPARATELY. action-guards.test.ts collects only files
+ * literally named `actions.ts` (:169), so a route.ts is invisible to it. The
+ * app's first unauthenticated endpoint would otherwise ship with no static
+ * assertion at all.
+ *
+ * Every exported HTTP method under src/app/api must call the named secret
+ * gate. Route handlers have no session, so the action-guards allowlist is not
+ * the right shape here: there is exactly one permitted wall, by name.
+ */
+const ROUTE_DIR = 'src/app/api';
+const REQUIRED_GATE = 'assertCronSecret';
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
+function stripComments(body: string): string {
+  return body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
+/** Both declaration forms Next accepts. */
+function parseHandlers(file: string, source: string): { key: string; body: string }[] {
+  const found: { key: string; body: string }[] = [];
+  for (const method of HTTP_METHODS) {
+    const patterns = [
+      new RegExp(`export\\s+async\\s+function\\s+${method}\\s*\\(`),
+      new RegExp(`export\\s+const\\s+${method}\\s*=`),
+    ];
+    for (const pattern of patterns) {
+      const match = pattern.exec(source);
+      if (!match) continue;
+      // Brace-match from the first { after the declaration.
+      const start = source.indexOf('{', match.index + match[0].length - 1);
+      if (start === -1) continue;
+      let depth = 0;
+      let end = start;
+      for (let i = start; i < source.length; i += 1) {
+        if (source[i] === '{') depth += 1;
+        if (source[i] === '}') depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      found.push({ key: `${file}:${method}`, body: source.slice(start, end + 1) });
+    }
+  }
+  return found;
+}
+
+function routeFiles(dir: string): string[] {
+  let found: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) found = found.concat(routeFiles(full));
+    else if (entry === 'route.ts') found.push(full);
+  }
+  return found;
+}
+
+const allHandlers = routeFiles(ROUTE_DIR).flatMap((file) =>
+  parseHandlers(file, readFileSync(file, 'utf8')),
+);
+
+describe('the parser itself', () => {
+  const fixture = readFileSync('src/app/__fixtures__/evasion-routes.ts.txt', 'utf8');
+  const parsed = parseHandlers('fixture.ts', fixture);
+  const byKey = new Map(parsed.map((h) => [h.key.split(':')[1], h]));
+
+  it.each(['GET', 'POST', 'PUT', 'DELETE'])('detects %s', (method) => {
+    expect(byKey.has(method)).toBe(true);
+  });
+
+  it('does not let an empty body swallow its neighbour', () => {
+    expect(byKey.get('GET')!.body).toBe('{}');
+    expect(stripComments(byKey.get('GET')!.body).includes(REQUIRED_GATE)).toBe(false);
+  });
+
+  it('recognises a genuinely gated handler', () => {
+    expect(stripComments(byKey.get('POST')!.body).includes(REQUIRED_GATE)).toBe(true);
+  });
+
+  // The comment someone writes while removing a guard.
+  it('is not satisfied by the gate name inside a comment', () => {
+    expect(stripComments(byKey.get('PUT')!.body).includes(REQUIRED_GATE)).toBe(false);
+  });
+
+  it('detects the arrow form too', () => {
+    expect(stripComments(byKey.get('DELETE')!.body).includes(REQUIRED_GATE)).toBe(false);
+  });
+});
+
+describe('route handler authorization', () => {
+  // An exact count, not a floor — a parser regression that silently found
+  // nothing would otherwise read as full coverage.
+  it('finds every route handler', () => {
+    expect(allHandlers.length).toBe(1);
+  });
+
+  it.each(allHandlers.map((h) => [h.key, h] as const))('%s calls the secret gate', (_key, handler) => {
+    expect(stripComments(handler.body)).toContain(`${REQUIRED_GATE}(`);
+  });
+});
+```
+
+- [ ] **Step 2b: Run and confirm it passes against the real route**
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/app/route-guards.test.ts 2>&1 | tail -8
+```
+
+Expected: PASS, 9 tests.
+
+- [ ] **Step 3: ★ Watch the wall actually fail**
+
+Temporarily comment out the `if (!assertCronSecret(request))` block in `src/app/api/varsler/drain/route.ts`.
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/app/route-guards.test.ts 2>&1 | tail -8
+```
+
+Expected: **FAIL** — `src/app/api/varsler/drain/route.ts:GET calls the secret gate`. Restore, re-run, green.
+
+⛔ A wall that has never been watched fail is decoration. This project has shipped one whose test could not fail.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add src/app/route-guards.test.ts src/app/__fixtures__/evasion-routes.ts.txt && git commit -m "test(varsler): a static wall for route handlers, which nothing had
+
+action-guards.test.ts collects only files named actions.ts, so the app's first
+unauthenticated endpoint was invisible to it. Every exported HTTP method under
+src/app/api must call assertCronSecret by name; the parser is proved against an
+evasion fixture (empty body, arrow form, gate name in a comment) and the wall
+was watched fail with the gate commented out."
+```
+
+---
+
+## Task 10: The cron entry — the repo's first
+
+**Files:**
+- Modify: `vercel.json`
+
+- [ ] **Step 1: Verify the minimum interval before writing it**
+
+⚠ The spec settled that Vercel Pro is required by Vercel's own terms for this project, so a sub-daily schedule carries no plan risk — but **verify the current minimum cron interval against Vercel's documentation** before committing a value. Use `/firecrawl` per the repo's tooling rules; if it is out of credits, record that the value is unverified rather than asserting it.
+
+- [ ] **Step 2: Write the cron entry**
+
+Replace `vercel.json` with:
+
+```json
+{
+  "regions": ["arn1"],
+  "crons": [
+    {
+      "path": "/api/varsler/drain",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
+```
+
+- [ ] **Step 3: Confirm the build still passes**
+
+```bash
+cd ~/dev/iqra-portal && npm run build 2>&1 | tail -20
+```
+
+Expected: clean build, and `/api/varsler/drain` listed among the routes as a Dynamic (server) function.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add vercel.json && git commit -m "feat(varsler): the repo's first cron entry
+
+Every 15 minutes against /api/varsler/drain. Vercel injects its own
+authorization header from CRON_SECRET, which is the same secret the handler
+gates on — so the schedule and the wall share one value and there is no second
+place for it to drift.
+
+⚠ CRON_SECRET and RESEND_API_KEY must be set in Vercel's project environment
+before the first deploy; the drain 401s without the first and ledgers every
+ping as NO_API_KEY without the second."
+```
+
+---
+
+## Task 11: The DAL and the mark-read action
+
+**Files:**
+- Create: `src/lib/varsler/queries.ts`
+- Create: `src/app/(portal)/varsler/actions.ts`
+- Modify: `src/app/action-guards.test.ts` (counter **79 → 81**)
+
+⚠ **Land the DAL WITH its consumer.** `knip` fails unused exports at error level, so an export whose importer is a task away turns the gate red for reasons unrelated to correctness. Task 12 imports both files below, so tasks 11 and 12 may be committed together if the gate complains.
+
+⛔ **D11's «resolve through RLS», read correctly.** A notification's `entity_id` has no foreign key, so the label must be resolved by reading the entity — and **an unreachable entity is simply absent from the result**. That is a stronger guarantee than a per-row permission check, because it cannot be forgotten for one row. Read the labels in **two batched `.in()` queries**, never per row: the literal reading of "resolve through RLS" is an N+1.
+
+- [ ] **Step 1: Write the DAL**
+
+Create `src/lib/varsler/queries.ts`:
+
+```typescript
+import 'server-only';
+import { createClient } from '@/lib/supabase/server';
+
+export type VarselRow = {
+  id: string;
+  entity: 'thread' | 'announcement';
+  entityId: string;
+  label: string;
+  href: string;
+  createdAt: string;
+  unread: boolean;
+};
+
+/**
+ * The badge number. One count, served by notifications_unread_idx.
+ */
+export async function unreadCount(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .is('read_at', null);
+  if (error) throw new Error(`Kunne ikke telle uleste varsler: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * The bell list.
+ *
+ * ⛔ TWO BATCHED READS, NEVER PER ROW. Both run under the caller's own RLS, so
+ * an entity the reader cannot open is ABSENT from the label map and its
+ * notification is dropped below. That absence IS the permission check — there
+ * is no per-row test to forget.
+ */
+export async function listVarsler(roleHome: string, limit = 20): Promise<VarselRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, entity, entity_id, created_at, read_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Kunne ikke hente varsler: ${error.message}`);
+  const rows = data ?? [];
+
+  const threadIds = rows.filter((r) => r.entity === 'thread').map((r) => r.entity_id);
+  const announcementIds = rows.filter((r) => r.entity === 'announcement').map((r) => r.entity_id);
+
+  const labels = new Map<string, string>();
+  if (threadIds.length > 0) {
+    const { data: threads } = await supabase
+      .from('threads')
+      .select('id, subject')
+      .in('id', threadIds);
+    for (const t of threads ?? []) labels.set(t.id, t.subject);
+  }
+  if (announcementIds.length > 0) {
+    const { data: announcements } = await supabase
+      .from('announcements')
+      .select('id, title')
+      .in('id', announcementIds);
+    for (const a of announcements ?? []) labels.set(a.id, a.title);
+  }
+
+  return rows
+    // An entity the reader cannot reach never entered the map. Dropping it here
+    // is the whole access check for this surface.
+    .filter((r) => labels.has(r.entity_id))
+    .map((r) => ({
+      id: r.id,
+      entity: r.entity as 'thread' | 'announcement',
+      entityId: r.entity_id,
+      label: labels.get(r.entity_id)!,
+      href:
+        r.entity === 'thread'
+          ? `${roleHome}/meldinger/${r.entity_id}`
+          : `${roleHome}/oppslag`,
+      createdAt: r.created_at,
+      unread: r.read_at === null,
+    }));
+}
+```
+
+⚠ Confirm the server-client factory's name and path against an existing DAL file (e.g. `src/lib/announcement-audience.ts` or any `src/lib/dal/*`); use whatever those import rather than the name written here.
+
+- [ ] **Step 2: Write the action**
+
+Create `src/app/(portal)/varsler/actions.ts`:
+
+```typescript
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { requireRole } from '@/lib/auth/guards';
+import { createClient } from '@/lib/supabase/server';
+
+/**
+ * Mark one varsel read.
+ *
+ * The guard is requireRole over every role that has a bell — economy included,
+ * because economy receives school-wide announcements (D17 withholds messaging
+ * from them, not notices). The row wall is the policy: an UPDATE naming
+ * someone else's id touches zero rows and reports success, which is correct —
+ * there is nothing to tell the caller about a row they cannot see.
+ */
+export async function markVarselReadAction(notificationId: string): Promise<void> {
+  await requireRole(['admin', 'teacher', 'parent', 'student', 'economy']);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('id', notificationId);
+  if (error) throw new Error(`Kunne ikke markere varselet som lest: ${error.message}`);
+  revalidatePath('/', 'layout');
+}
+
+/**
+ * «Marker alle som lest». One statement, bounded by the policy to the caller's
+ * own rows.
+ */
+export async function markAllVarslerReadAction(): Promise<void> {
+  await requireRole(['admin', 'teacher', 'parent', 'student', 'economy']);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .is('read_at', null);
+  if (error) throw new Error(`Kunne ikke markere varslene som lest: ${error.message}`);
+  revalidatePath('/', 'layout');
+}
+```
+
+⚠ Confirm `requireRole`'s import path and signature against an existing `actions.ts` (e.g. `src/app/(portal)/forelder/oppslag/actions.ts`) and match it exactly — including whether it takes an array or varargs.
+
+- [ ] **Step 3: Bump the action counter**
+
+In `src/app/action-guards.test.ts`, change `expect(allActions.length).toBe(79);` to `expect(allActions.length).toBe(81);`.
+
+★ Bump it **once**, here, with the number in the commit message. Two more land in Task 12 and one in Task 13 — each bumps it again, deliberately, in its own task.
+
+- [ ] **Step 4: Run the guards and typecheck**
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -6 && npx tsc --noEmit && echo "TSC OK"
+```
+
+Expected: PASS with 81 actions, then `TSC OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add src/lib/varsler/queries.ts "src/app/(portal)/varsler/actions.ts" src/app/action-guards.test.ts && git commit -m "feat(varsler): the bell's DAL and its two actions
+
+Labels resolve in two batched .in() reads under the caller's own RLS, never per
+row — the literal reading of 'resolve through RLS' is an N+1. An entity the
+reader cannot open is absent from the label map and its notification is
+dropped, and that absence IS the access check: there is no per-row test to
+forget for one row.
+
+action-guards 79 -> 81."
+```
+
+---
+
+## Task 12: The shell — the bell, the badge, and «Min profil»
+
+**Files:**
+- Create: `src/components/portal/VarselBell.tsx`
+- Create: `src/app/(portal)/profil/page.tsx`
+- Create: `src/app/(portal)/profil/actions.ts`
+- Modify: `src/app/(portal)/{admin,laerer,elev,forelder}/*Nav.tsx` (four files)
+- Modify: `src/app/action-guards.test.ts` (counter **81 → 82**)
+
+⛔ **«Ingen alarmstrøm til barn»** — locked in the demo-UI design spec and binding here: the **pupil** surface shows a quiet count, **never a red badge, never an interstitial**. This is a product rule, not a styling preference; a child opening a school app must not be met with an alarm.
+
+Design law is unchanged: the locked "C · Familie" system (`src/app/globals.css`, `src/components/ui/`, `DESIGN.md` is the fasit). Reuse `PillLink` and the existing unread-dot anatomy (`size-2 rounded-full bg-primary`) rather than inventing a badge.
+
+- [ ] **Step 1: Write the bell**
+
+Create `src/components/portal/VarselBell.tsx` as a **server** component reading `unreadCount()` and `listVarsler()`, rendering a link to the role's home with the count. Follow the existing list-row anatomy: truncated label, `tabular-nums` timestamp, chevron on every clickable row.
+
+```tsx
+import Link from 'next/link';
+import { listVarsler, unreadCount } from '@/lib/varsler/queries';
+import { formatDateNb } from '@/lib/dates';
+
+/**
+ * ⛔ `quiet` is the pupil variant and it is a PRODUCT RULE, not a style knob:
+ * «ingen alarmstrøm til barn». No red, no count-as-alarm, no interstitial —
+ * a child opening a school app is not met with a warning colour.
+ */
+export async function VarselBell({ roleHome, quiet = false }: { roleHome: string; quiet?: boolean }) {
+  const [count, varsler] = await Promise.all([unreadCount(), listVarsler(roleHome, 5)]);
+
+  return (
+    <section aria-label="Varsler" className="print:hidden">
+      <h2 className="text-sm font-medium text-muted-foreground">
+        Varsler{count > 0 ? ` (${count})` : ''}
+      </h2>
+      {varsler.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Ingen varsler nå.</p>
+      ) : (
+        <ul className="mt-2 divide-y">
+          {varsler.map((v) => (
+            <li key={v.id}>
+              <Link href={v.href} className="flex items-center gap-3 py-2">
+                {v.unread && !quiet ? (
+                  <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">{v.label}</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {formatDateNb(v.createdAt)}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+```
+
+⚠ **`formatDateNb` throws on a timestamptz** — plan 1 measured this. `created_at` is a timestamptz, so either pass `v.createdAt.slice(0, 10)` or use whichever helper in `src/lib/dates.ts` accepts an instant. Check `src/lib/dates.test.ts` for which is which **before** wiring it, and confirm under `TZ=UTC`.
+
+- [ ] **Step 2: Write «Min profil»**
+
+Create `src/app/(portal)/profil/actions.ts`:
+
+```typescript
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { requireRole } from '@/lib/auth/guards';
+import { createClient } from '@/lib/supabase/server';
+
+/**
+ * The e-mail-ping opt-out (spec §5.4).
+ *
+ * ⚠ This save is the reason 20260807121000 exists: profiles holds no
+ * table-level UPDATE grant, so without `grant update (email_pings_enabled)`
+ * this returns a 42501 that the user experiences as a form that does nothing.
+ * 31_column_locks.sql asserts the grant, and it was watched fail without it.
+ */
+export async function setEmailPingsAction(enabled: boolean): Promise<void> {
+  const user = await requireRole(['admin', 'teacher', 'parent', 'student', 'economy']);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ email_pings_enabled: enabled })
+    .eq('id', user.id);
+  if (error) throw new Error(`Kunne ikke lagre varselinnstillingen: ${error.message}`);
+  revalidatePath('/profil');
+}
+```
+
+⚠ Match `requireRole`'s real return shape — if it does not return the user, read the id from whatever the sibling actions use.
+
+Create `src/app/(portal)/profil/page.tsx` — a server component reading the caller's own `email_pings_enabled` and rendering a form that posts `setEmailPingsAction`. Copy, verbatim:
+
+> **Varsel på e-post**
+> Vi sender en kort e-post når du har nye varsler i portalen. E-posten inneholder aldri opplysninger om barnet ditt — bare hvor mange varsler du har.
+> Varsler i portalen slås ikke av. Denne innstillingen gjelder bare e-post.
+
+- [ ] **Step 3: Add the nav entries**
+
+In each of the four `*Nav.tsx` files, add to `ITEMS`:
+
+```typescript
+  { href: '/profil', label: 'Min profil', exact: false },
+```
+
+⚠ `okonomi` gets **no messaging nav** (D17) but **does** get «Min profil» and the bell, since economy receives school-wide announcements. If `src/app/(portal)/okonomi/` has its own Nav file, add the entry there too — check before assuming there are only four.
+
+- [ ] **Step 4: Bump the counter and run the gate**
+
+Change `expect(allActions.length).toBe(81);` to `82`.
+
+```bash
+cd ~/dev/iqra-portal && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -5 && npx tsc --noEmit && npm run lint 2>&1 | tail -5
+```
+
+Expected: PASS with 82 actions, `TSC OK`, and lint clean (5 pre-existing warnings are the baseline).
+
+- [ ] **Step 5: Verify it in the browser**
+
+⚠ **Re-enrol MFA at `/mfa/registrer` first** — every `db reset` and `test:api` wipes it.
+⚠ **Open the enrolment window or family lists are empty for the wrong reason (A14):**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset >/dev/null 2>&1 && psql "$(npx supabase status -o env | grep DB_URL | cut -d= -f2- | tr -d '"')" -c "update public.class_students set enrolled_on = current_date - 7 where class_id = 'fc000000-0000-0000-0000-000000000001';"
+```
+
+⛔ **Put it back to `'2026-08-20'` before the next `npm run test:api`.**
+
+Then, with `npm run dev` running: log in as the teacher, publish an announcement, log in as the parent, and confirm the bell shows it **immediately** (D26 — not after 15 minutes). Check 1280 and 375 widths, and confirm the pupil surface shows no red dot.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add src/components/portal/VarselBell.tsx "src/app/(portal)/profil" src/app/\(portal\)/*/[A-Z]*Nav.tsx src/app/action-guards.test.ts && git commit -m "feat(varsler): the bell, the opt-out, and a nav entry in every role
+
+The pupil variant is quiet by product rule — «ingen alarmstrøm til barn» — so
+no red dot and no interstitial, which is a decision and not a style knob.
+
+«Min profil» is the surface the ping opt-out lives on, and the copy says the
+part that matters: turning it off stops the e-mail, never the varsel in the
+portal, which is the source of truth.
+
+action-guards 81 -> 82."
+```
+
+---
+
+## Task 13: The admin health screen — «varsler som ikke kom fram»
+
+**Files:**
+- Create: `src/app/(portal)/admin/varsler/page.tsx`
+- Create: `src/app/(portal)/admin/varsler/actions.ts`
+- Create: `supabase/migrations/20260807125000_ping_health.sql`
+- Modify: `src/app/(portal)/admin/AdminNav.tsx`
+- Modify: `src/app/action-guards.test.ts` (counter **82 → 83**)
+
+⛔ **Nothing currently observes whether the drain ran at all.** A cron that silently stops is indistinguishable from a quiet week — so this screen carries **two** numbers, not one: the failed ledger, and the **age of the oldest pending ping**. The second is the one that catches a dead cron.
+
+- [ ] **Step 1: Write the health RPC**
+
+Create `supabase/migrations/20260807125000_ping_health.sql`:
+
+```sql
+-- The admin health surface (D13, spec §11 task 12).
+--
+-- ★ TWO NUMBERS, BECAUSE ONE OF THEM CANNOT CATCH A DEAD CRON. A failed
+-- ledger tells you which sends went wrong; it says NOTHING when the drain
+-- stopped running, because a drain that never claims anything never fails
+-- anything. oldest_pending_minutes is the number that goes up on its own when
+-- nothing is draining, and it is the only observation in this phase that can
+-- distinguish "a quiet week" from "the cron is dead".
+--
+-- private is not PostgREST-exposed, so this is a public definer projection.
+-- It returns COUNTS AND AN AGE — never an address, never a name.
+create or replace function public.email_ping_health()
+returns table (failed_count integer, pending_count integer, oldest_pending_minutes integer)
+language sql stable security definer set search_path = ''
+as $$
+  select
+    (select count(*)::int from private.email_pings where failed),
+    (select count(*)::int from private.email_pings where pending and not failed),
+    (select coalesce(
+       max(extract(epoch from (now() - p.next_attempt_at)) / 60)::int, 0)
+       from private.email_pings p
+      where p.pending and not p.failed and p.next_attempt_at <= now());
+$$;
+
+revoke execute on function public.email_ping_health() from public;
+revoke execute on function public.email_ping_health() from anon;
+revoke execute on function public.email_ping_health() from authenticated;
+grant execute on function public.email_ping_health() to service_role;
+
+comment on function public.email_ping_health() is
+  'Counts and an age for the admin health screen — never an address, never a name. oldest_pending_minutes is the number that catches a DEAD CRON: a drain that never runs never fails anything, so the failed ledger alone cannot distinguish a quiet week from a stopped schedule.';
+
+-- Clearing a failed ping so a corrected address gets one more chance.
+-- ⚠ attempts resets to 0 and failed to false — this is the ONLY path back from
+-- the ceiling, and it is a deliberate human act, never automatic.
+create or replace function public.reset_failed_ping(target uuid)
+returns void
+language sql volatile security definer set search_path = ''
+as $$
+  update private.email_pings
+     set failed = false, attempts = 0, last_error_code = null,
+         next_attempt_at = now(), claimed_at = null, pending = true
+   where user_id = target and failed;
+$$;
+
+revoke execute on function public.reset_failed_ping(uuid) from public;
+revoke execute on function public.reset_failed_ping(uuid) from anon;
+revoke execute on function public.reset_failed_ping(uuid) from authenticated;
+grant execute on function public.reset_failed_ping(uuid) to service_role;
+```
+
+- [ ] **Step 2: Write the action and the page**
+
+Create `src/app/(portal)/admin/varsler/actions.ts`:
+
+```typescript
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { requireAdminActor } from '@/lib/auth/guards';
+import { createServiceRoleClient } from '@/lib/admin/quarantine';
+
+/**
+ * «Prøv igjen» for a ping that hit the attempts ceiling.
+ *
+ * requireAdminActor, not requireRole('admin') — the RPCs below are
+ * service_role-only, so this action steps outside the caller's RLS and needs
+ * the stronger guard the repo reserves for exactly that.
+ */
+export async function resetFailedPingAction(userId: string): Promise<void> {
+  await requireAdminActor();
+  const admin = createServiceRoleClient();
+  const { error } = await admin.rpc('reset_failed_ping', { target: userId });
+  if (error) throw new Error(`Kunne ikke nullstille varselet: ${error.message}`);
+  revalidatePath('/admin/varsler');
+}
+```
+
+Create `src/app/(portal)/admin/varsler/page.tsx` — a server component that calls `email_ping_health()` through the service-role client, renders the three numbers, and lists failed rows with a «Prøv igjen» button per row. Include this sentence on the page, because it is what makes the second number actionable:
+
+> Hvis «eldste ventende» vokser forbi et kvarter, kjører ikke jobben som sender varsler. Sjekk cron-loggen i Vercel.
+
+- [ ] **Step 3: Bump the counter, run the gate**
+
+Change `expect(allActions.length).toBe(82);` to `83`, and add the nav entry `{ href: '/admin/varsler', label: 'Varsler', exact: false }` to `AdminNav.tsx`.
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -4 && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -4 && npx tsc --noEmit && echo OK
+```
+
+Expected: pgTAP `Files=39, Tests=897, PASS`, action-guards PASS with 83, `OK`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260807125000_ping_health.sql "src/app/(portal)/admin/varsler" "src/app/(portal)/admin/AdminNav.tsx" src/app/action-guards.test.ts && git commit -m "feat(varsler): the failed ledger, and the number that catches a dead cron
+
+Two numbers, because the failed ledger alone cannot tell a quiet week from a
+stopped schedule — a drain that never runs never fails anything. The age of the
+oldest pending ping is the one that rises on its own, and the page says what to
+do when it passes a quarter of an hour.
+
+reset_failed_ping is the only path back from the attempts ceiling and it is a
+deliberate human act, never automatic.
+
+action-guards 82 -> 83."
+```
+
+---
+
+## Task 14: Wall-3 — the fan-out through the real app path
+
+**Files:**
+- Create: `tests/api/notifications.test.ts`
+
+⛔ **This is the task that exists because of plan 1's defect.** pgTAP inserts with bare `insert … values`; the app inserts through PostgREST, which emits `RETURNING "tbl"."col"` whenever the client calls `.select(...)` — and **PostgreSQL applies a table's SELECT policies as an extra `WITH CHECK` when a statement returns a column expression.** In plan 1 that made thread creation fail for *every* actor while **737 pgTAP assertions were green over it**, because the app's real statement shape was untested anywhere.
+
+★ **The positive control is not optional.** In plan 2's api suite, under a total creation outage, seven of nine tests failed — including *«refuses a class the teacher does not teach»*, which would have stayed green without an in-test positive control. A negative assertion that passes because **nothing works at all** is the failure mode this file must be immune to.
+
+- [ ] **Step 1: Write the suite**
+
+Create `tests/api/notifications.test.ts` following `tests/api/threads.test.ts`'s structure exactly (`signInAsAAL2`, the seed emails, the cleanup discipline).
+
+Cover, at minimum:
+
+1. **Positive control, first in the file:** a teacher sends a message through the real path and the insert **succeeds**. If this fails, every negative below is meaningless — say so in the test name.
+2. The parent's `notifications` row exists after that message, read **as the parent**, through PostgREST.
+3. The sender has **no** row.
+4. The parent marks it read through `markVarselReadAction`'s shape (`.update({read_at}).eq('id', …)`) and the row updates.
+5. The parent's attempt to mark **another user's** notification read touches **0 rows** — paired with an entitled-reader control proving that row exists.
+6. A forged `insert` into `notifications` from an authenticated client fails with **42501**.
+7. An announcement published by a teacher produces the parent's notification **in the same request** (D26) — this is the assertion that proves the trigger fires through PostgREST, where the `RETURNING` shape is what plan 1 tripped on.
+8. `GET /api/varsler/drain` with no `authorization` header returns **401 and not 307** — the proxy-exclusion assertion, which no pgTAP file can make.
+
+- [ ] **Step 2: Restore the enrolment window before running**
+
+⛔ If Task 12's browser pass moved `enrolled_on`, put it back first or this suite fails for the wrong reason:
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:api 2>&1 | tail -12
+```
+
+Expected: the full api suite green, ~21 minutes, **silent until it finishes**. Baseline was 14 files / 369 tests; expect 15 files and 369 + your count.
+
+⚠ The api suite is **not flaky — it is GoTrue session churn** (measured 2.2×), and it resets between runs. A single re-run is legitimate; a third is a real failure.
+
+- [ ] **Step 3: ★ The positive control's own mutation**
+
+Break creation deliberately — in `20260807123000_thread_fanout.sql`, change the notifications insert's `on conflict … do update` to `on conflict … do nothing` **and** drop the `where r.recipient <> new.sender_id` clause. Re-run.
+
+Expected: test 2 fails, test 3 fails, and **test 1 still passes** — which is what proves test 1 is a control over creation and not a duplicate of the others. Restore and confirm green.
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add tests/api/notifications.test.ts && git commit -m "test(varsler): the fan-out through PostgREST, with a positive control first
+
+pgTAP inserts bare; the app inserts through PostgREST, which emits RETURNING
+with a column expression — and Postgres then applies the SELECT policy as an
+extra WITH CHECK. That is what made every thread creation fail in plan 1 under
+737 green assertions, because no test used the app's real statement shape.
+
+The positive control leads the file because in plan 2 a total creation outage
+left 'refuses a class the teacher does not teach' green. A negative that passes
+because nothing works at all is the failure this file is built against."
+```
+
+---
+
+## Exit gate for plan 3
+
+- [ ] **Step 1: Full suite from a clean database**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run test:db 2>&1 | tail -4 && npm run test:unit 2>&1 | tail -4 && npx tsc --noEmit && npm run lint 2>&1 | tail -4 && npm run build 2>&1 | tail -8
+```
+
+Expected: pgTAP `Files=39, Tests=897` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
+
+- [ ] **Step 2: ★ Run the timezone-sensitive tests under `TZ=UTC`**
+
+```bash
+cd ~/dev/iqra-portal && TZ=UTC npx vitest run src/lib/varsler src/lib/dates.test.ts 2>&1 | tail -6
+```
+
+⛔ **This machine is Europe/Oslo and production is UTC.** Plan 2 measured a mutation that was **green here and red under `TZ=UTC`** — a defect that ships invisibly on exactly the machine where the feature gets clicked. Anything touching `created_at` rendering must pass here.
+
+- [ ] **Step 3: `knip`**
+
+```bash
+cd ~/dev/iqra-portal && npx knip 2>&1 | tail -10
+```
+
+Expected: at baseline. ⚠ `scripts/fiken-probe.mjs` is untracked and is why knip fails locally but passes in CI — ignore only that entry.
+
+- [ ] **Step 4: The mutation ledger**
+
+Every mutation named in tasks 1–14 must have been **watched fail and watched restore**. Record the table in the final commit message, and **state explicitly which were skipped and why** — a silent omission reads as coverage.
+
+- [ ] **Step 5: `web-design-guidelines` audit**
+
+Run the audit skill over `VarselBell.tsx`, `profil/page.tsx` and `admin/varsler/page.tsx` before declaring the visual work done.
+
+- [ ] **Step 6: Human walkthrough**
+
+⚠ **MFA enrolment is wiped by every `db reset` and every `test:api` run.** Re-enrol at `/mfa/registrer` first. Then, per role:
+
+| Check | Why it is on this list |
+|---|---|
+| Teacher publishes an announcement; parent's bell shows it **immediately** | D26 — the whole point of the trigger over the drain |
+| Teacher sends a message; parent's bell shows the thread, **teacher's own does not** | the sender-exclusion, the most obvious thing to get wrong |
+| Ten messages in one thread → **one** bell entry | D25's coalescing, visible only here |
+| Pupil surface has **no red dot** | «ingen alarmstrøm til barn» is a product rule |
+| «Min profil» toggle **saves and survives a reload** | the 42501-that-looks-like-nothing the column grant exists to prevent |
+| Admin health screen at 1280 **and** 375 | the two widths the design system is checked at |
+| `curl` the drain with no header → **401, not 307** | the proxy exclusion, again, in the deployed shape |
+
+---
+
+## ⛔ Carried to plan 4 — do not lose these
+
+1. **The real-delivery check (D28).** Confirm against a genuine delivered message that Resend's link-rewriting and open-tracking are **off**. `ping-email.test.ts` asserts over the template *before* the provider touches it and **structurally cannot** catch this. Needs IQRA's account and `varsler.iqrasenter.no`.
+2. **`CRON_SECRET` and `RESEND_API_KEY` in Vercel** before the first deploy. Without the first the drain 401s forever; without the second every ping ledgers as `NO_API_KEY`.
+3. **The `notifications` orphan sweep.** `entity_id` has no FK, so rows survive their entity. Phase 7's retention job must sweep them explicitly — the analogue of `private.storage_orphans`.
+4. **`private.email_pings` has no retention rule at all.** One permanent row per user, forever, including for users who leave.
+5. **The Phase-2/3/4 emitters still do not exist** (absence → teacher, grade → family, assignment → family). Both phases deferred their pings to «Phase 5 owns pings»; plan 3 built the substrate and the two emitters this phase owns. That is a **partial delivery of what two earlier phases promised** — say it out loud rather than let it be discovered.
+6. **`.delete().select(…)` fails SILENTLY** (0 rows, no error) and is live at four sites — still unfixed, still its own task.
+7. **Rate limiting.** Nothing stops a parent sending 500 messages, and each one now bumps a watermark. `private.login_attempts` is the precedent if it becomes real.
+
+---
+
+## Review ledger — 2026-08-05, author's own pass
+
+CLAUDE.md requires a review of the plan itself before a line is executed, on the reasoning that a design bug in a plan is copied faithfully into every task that follows it. This pass ran cold against the tree, not against the plan's internal consistency. **Six defects, all fixed above.**
+
+| # | Defect | Why it mattered |
+|---|---|---|
+| **R1** | `plan(14)` in Task 1 against **15** hand-counted assertions, and every downstream `plan()` and running total wrong in cascade | pgTAP fails the file on a plan mismatch, so Task 1 would not have committed. The spec's own rule — *never count `plan()` by grep* — was written for exactly this. |
+| **R2** | Task 1's «en annens varsel er urørt» read the row back **as the user the policy hides it from** | `select` returns no rows → `is(null, true)` fails. It would have read as an RLS bug in code that was correct, and the likely "fix" is loosening the policy. |
+| **R3** | Task 3 asserted `unread_count = 1` for a user whose only notification **assertion 7 had already marked read** | The count is 0. A fixture that does not say what the assertion means. |
+| **R4** | `claim_due_announcements` called the side-effecting fan-out **from a `WHERE` clause** | A volatile function in `WHERE` carries no guarantee of one evaluation per row. An announcement could be stamped `fanned_out_at` with nobody notified — and the partial index would never serve it again. Now an explicit `for … loop`. |
+| **R5** | Task 6's fingerprint entries used a `(function, predicate)` **pair** shape | The real table is `('schema.fn(argtypes)', array[…markers…])`, the name carries its signature, and the counter counts **markers**, not rows. The five entries as written would not have compiled; the counter arithmetic (83 → 88) was also wrong — it is **93**. |
+| **R6** | ★ **The announcement fan-out belled every admin on every class notice** | `private.reads_announcement_row`'s second clause is `or private.has_role(uid, 'admin')`, so an admin reads *everything*. The spec asserted announcements had «no analogue of bare oversight to subtract»; **the tree says the opposite**. At ten classes that is ~ten unwanted bells a week, diluting the one surface D12 made load-bearing. Fixed with a carve-out that keys on the **relationship, not the role** (D24's lesson), so an admin who is also a guardian still hears about their own child. |
+
+★ **Five of the six are the same species: a claim about the repo that was true of the spec and false of the tree.** R6 is the one that would have shipped — it is behaviour, not a test error, and no assertion existed that could have caught it because the plan had not thought to write one. Assertion 35 now exists and has a named mutation.
+
+★ **R4 is the one worth generalising.** It reads correctly, it would pass every test in this plan on most runs, and it fails only under a planner decision nobody controls. The class — *a side effect placed where SQL only promises a value* — is invisible to both review-by-reading and test-by-running.
+
+**Not fixed, recorded instead:** D29 (the fan-outs depend on `postgres` holding `BYPASSRLS`, which a contemplated hardening step would remove) and the announcement-invariant restatement, which drifts only in the narrowing direction and is stated as such.
