@@ -3292,3 +3292,65 @@ over HTTP, confirmed independently by two request shapes. **Zero** functions and
 coverage is complete — the cost is function-call overhead, not missing indexes.
 The fix itself works: `insert … returning id` as `laerer@test.local` succeeds
 after a clean replay.
+
+## The last three coverage gaps — closed, `78032d1`
+
+⚠ **This landed twice.** A concurrent agent in the same checkout committed the
+working tree as `3f67907`, with a message saying the authoring agent had been
+"killed mid-run". It had not. The content was byte-identical
+(`git diff 3f67907 78032d1 --stat` is empty), so it was kept and the **message
+amended** to carry the per-assertion redden ledger the original had no way to
+know. **If anything recorded `3f67907`, the commit is now `78032d1`.**
+
+Recorded as a coordination hazard: several agents shared one checkout tonight,
+and the failure mode is not a corrupted tree — it is a *plausible* commit made
+on a false premise about another agent's liveness.
+
+pgTAP now **`Files=37, Tests=748, PASS`** (741 → 748: +6 in file 35, +1 in file
+36). Unmutated: file 35 41/41, file 36 14/14. Every restore verified by diffing
+`pg_get_expr(polqual, polrelid)` / `pg_get_functiondef` against a pre-mutation
+capture, never assumed.
+
+### ★ My own instruction would have produced a hollow witness
+
+I sketched the delete assertions using an **unentitled** guardian (`…006`). That
+would have passed against the widened policy and closed nothing.
+
+**Measured:** an UPDATE or DELETE whose `WHERE` names a column pulls the table's
+**SELECT** policies in alongside the update/delete policy. So with *both* delete
+policies at `using (true)`, `…006` still removes nothing — 2 messages and 1
+thread survive, because she cannot see the rows to delete them. The refusal I
+would have been asserting was the read wall, not the delete wall.
+
+The implementer used `…005` instead (guardian of the pupil — **reads** the
+thread, holds no admin role) and `…003` for the update case (reads the thread and
+passes `writes_thread`, but is not the author, isolating `created_by` alone).
+
+This is the same lesson as the `→ 0 rows` control, one layer down: a negative is
+only evidence if the actor could have succeeded for every reason *except* the one
+under test. It also means the two delete policies were doubly unguarded — the
+suite had no witness, and the obvious witness would not have worked.
+
+### It confirmed the picker finding rather than trusting it
+
+Both picker mutants were replayed against file 36 **as it stood at HEAD**:
+13/13 green under each. So the outright deletion of the exclusion was caught only
+by file 29's marker, and the one-token rewrite (`= c.staff_id` → `= c.student_id`)
+by **nothing in either file**. A fingerprint catches a deletion; only a witness
+catches a rewrite. `29_definer_fingerprints.sql` carried a comment claiming its
+marker was the only guard *because* file 36 had no witness — now false, and
+corrected in place.
+
+### ⚠ `test:api` is NOT confirmed green
+
+4 failed / 356 passed (13 files), all `Test timed out in 15000ms` in
+`tests/api/school-core.test.ts`. A first run on a churned stack gave **11**
+failures; after a reset it dropped to 4, and that run overlapped another
+session's `DROP POLICY`/`CREATE POLICY` on `public.threads` — which takes ACCESS
+EXCLUSIVE and stalls exactly this way.
+
+The diff is `supabase/tests/*.sql` only, and nothing under `tests/` or
+`vitest.config.api.ts` references those files, so it is very unlikely to be the
+change. **But "unlikely" is not "verified"** — a clean re-run with no second
+session active is running now, and the result belongs in this ledger before
+anyone calls the gate green.
