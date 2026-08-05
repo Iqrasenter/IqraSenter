@@ -125,3 +125,72 @@ This lens ran experiments in rolled-back transactions. The measured ones are mar
 | E-9 | The quarantine boundary is **convention only** — no eslint rule, no knip rule, no test asserts the importer set | ✅ merges with D-6/D-7. Fix: amend the header with a contract C for unauthenticated scheduled infrastructure, **and** add the import-boundary assertion |
 
 **Cleared:** secrets cannot reach the client (`server-only` first in every new module; neither var is `NEXT_PUBLIC_`) · the gate's cryptography · the proxy exclusion's mechanics and position · knip's `types: warn` means the type-only exports will not fail the gate.
+
+---
+
+## Lens F — pgTAP correctness (~20 findings)
+
+★ **First, the good news it verified independently:** the `plan()` arithmetic is **correct**. It hand-counted off the raw file — 15 · +12 = 27 · +14 = 41 · +12 = 53, file 31 at 33 — and summed all 38 live `plan()` literals to confirm the 842 baseline and the 857→859→871→885→897 progression. Task 6's markers-not-rows analysis (`2+2+3+1+2 = 10`, `83 → 93`, `plan(2)` unchanged) also checks out.
+
+### F-A · Transaction-killers — the file never reaches `finish()`
+
+| # | Finding | Settled |
+|---|---|---|
+| F-A1 | Section 7's fixture INSERT runs as `authenticated` — duplicate of A8, but the lens names the real cost: it is **not one red assertion, it is all 53**, because 42501 aborts and every later statement is 25P02. ★ And perversely, under Task 1 Step 5's mutation the insert *succeeds*, so the **mutated** run gets further than the clean one | ✅ REAL |
+| F-A2 | `birth_year` — duplicate of A6/C-F5 | ✅ |
+| F-A3 | Missing `delete from public.assignments` — duplicate of A5. Adds: 37 also deletes `announcement_reads` + `announcements` here, because `announcements.class_id` is a **second** RESTRICT edge; latent today only because the seed creates none | ✅ |
+| F-A4 | `published_at` back-date → 23514 — duplicate of A7. Adds the house fix: insert `a6` with `created_at = now() - interval '1 day'`, since 37's own precedent is *«created_at is a WHOLE TEN DAYS earlier than published_at»* | ✅ |
+| F-A5 | ★★ **Task 4's mutation 3 aborts the file instead of reddening its assertion.** `og det er forelderen` is a **scalar subquery**; remove the sender-exclusion and it returns two rows → `21000: more than one row returned by a subquery used as an expression` → transaction aborted, and the declared victim (assertion 21) is never reached | ✅ REAL. `37_announcements_rls.sql` documents this exact trap: *«array_agg, NOT a scalar subquery … That error is not a red assertion: it ABORTS»*. Fix: `array_agg(user_id order by user_id)` |
+
+### F-B · Declared mutations that redden nothing — ★ the most valuable finding set
+
+| # | Finding | Settled |
+|---|---|---|
+| F-B1 | **Task 5 mutation 1 is dead.** Drop the `fanned_out_at is not null` guard and `fan_out_announcement(a6)` runs — but returns **zero rows**: the author is excluded, admins are cut by the new carve-out, and every third-arm reader needs `pub <= now()` which `now() + 2h` fails. The count stays 0 and the assertion stays green | ✅ REAL. It was testing `published_at` gating, which file 37:380 already covers |
+| F-B2 | **Task 5 mutation 2 is dead.** Replace `reads_announcement` with `true` and the surviving carve-out **alone** still yields exactly `{012}` — byte-identical recipient set. The one announcement that would expose it (school-wide `a7`, where `class_id is null` opens the carve-out to every role-holder) is inserted **two assertions later** | ✅ REAL. Fix: move the invariant to the end of the section, after `a7` |
+| F-B3 | **Task 6's fingerprint mutation is dead.** `private.reads_thread` appears **twice** in `thread_recipients` — in `substantive` and in the admin fallback — and file 29 tests `position(m in pg_get_functiondef(…)) = 0`, so deleting one leaves the other and the marker still matches. My own warning applied to my own step | ✅ REAL. Fix: make the marker unique to the filter, `'private.reads_thread(c.uid, tid)'`. Same for the `staff_substantive` marker — Task 4's mutation 2 rewrites the `not exists` body but leaves the CTE **definition** intact |
+| F-B4 | Task 1 Step 5 names *"assertions 3 and 9"*; under that mutation the insert is refused by **RLS** instead, so `throws_ok`'s message mismatch reddens, plus section 8's first grant-shape assertion. There is no red "9" under either numbering | ✅ REAL |
+
+### F-C · Vacuous and over-determined assertions
+
+| # | Finding | Settled |
+|---|---|---|
+| F-C1 | `en failed rad plukkes aldri igjen` is passed by the **backoff**, not by `failed` — the preceding outcome set `next_attempt_at = now() + 32 min`, so deleting `and not q.failed` from the claim leaves it green | ✅ REAL |
+| F-C2 | `resolve_ping_address` negative has **no positive control**. `null` is equally what a wholly broken body returns — absent row, wrong join, mis-spelled `deleted_at` | ✅ REAL. Assert the real address for an opted-in user first, over the same user |
+| F-C3 | `admin belles ikke på et klasseoppslag` has **no entitled-reader control** — the whole claim is *"admin **can read** it and is still not belled"*, and nothing establishes the first half. Task 4 does this correctly two sections earlier | ✅ REAL — my own file violates its own header rule |
+| F-C4 | ★ The T-12 invariant **scans one row**, and its comment claims otherwise (*"a scan over EVERY notification row this file produced"*). Section 27's `delete from public.notifications` five statements earlier wiped everything from assertions 19–26 | ✅ REAL. Merges with D-3 |
+| F-C5 | The announcement invariant never covers the **school-wide arm** — same shape as F-C4/F-B2 | ✅ REAL |
+
+### F-D · Minor but real
+
+- ★ **House convention is `select * from finish();`** — 38 of 38 files use it; the plan uses `select finish();`, which also means the "append before `select finish();`" instructions **will not match the target line** in files 31 and 38.
+- Task 6's paste block ends **every** entry with a trailing comma, including the last; the existing final entry has none and the block closes `) as f(sig, markers);` → syntax error on verbatim paste.
+- File-structure table line 98 still says `83 → 88` (stale "five new functions" arithmetic).
+- Task 5 Step 5 is headed *"Two named mutations"* and lists three.
+- ★ The `insert into public.profiles … on conflict do nothing` blocks are **dead code**: `private.handle_new_user` already created each profile when the `auth.users` row landed, with `full_name = ''` because the fixture passes `'{}'::jsonb`. Files 35/37 pass `jsonb_build_object('full_name', …)` on the `auth.users` insert instead. Harmless today; it will silently defeat the first assertion that reads a name.
+
+### Cleared
+
+Fixture prefix `c1` free · no cross-file UUID hazard (pg_prove is serial, every file rolls back) · `26_rls_force.sql` and `00_grant_firewall.sql` satisfied by the notifications migration as written · the seed creates no threads/messages/announcements, so nothing perturbs Task 3's `→ 0` claims · `claim_due_announcements`'s `create or replace` is signature-compatible and both existing fingerprint markers survive the rewrite, so files 29 and 37 stay green · **the other four Task 3/4 mutations do redden what they name**, and Task 5's mutation 3 correctly reddens the admin carve-out.
+
+---
+
+# Adjudicated totals
+
+| Source | Findings | Blockers |
+|---|---|---|
+| My own pass (R1–R7) | 7 | 1 |
+| A — claims vs tree | 14 | 3 |
+| B — concurrency | 12 | 2 |
+| C — RLS | 6 | 1 |
+| D — privacy | 10 | 1 |
+| E — route/secret | 9 | 2 |
+| F — pgTAP | ~20 | 5 |
+
+**~78 findings, essentially all real, with very little overlap between lenses.** The three that matter most, none of which my own pass found:
+
+1. **D-1** — the content-free-e-mail test is vacuous, *measured* 6/6 green against a deliberately leaking builder. The one privacy promise of the whole design, and the one task with no mutation step.
+2. **C-F1** — `reads_thread_row`'s first arm is a bare admin check, so a teaching rektor is belled and **mailed** that a `kontor` thread about their own pupil exists, while simultaneously suppressing the rollover fallback.
+3. **F-B1/B2/B3** — three declared mutations redden nothing. A mutation table is the evidence this project's whole test discipline rests on; three of its entries were predictions, not measurements.
+
+★ **The generalisation worth keeping:** my own review pass found seven defects and thought it had been thorough. It found **none** of the three above. The lenses that caught them are the ones that *ran things* — the privacy lens copied my test and executed it, the RLS lens built fixtures on the live stack, the pgTAP lens traced each mutation's actual recipient set. Reading a plan carefully is not the same activity as running it, and on this project the gap between the two is where every serious defect has lived.
