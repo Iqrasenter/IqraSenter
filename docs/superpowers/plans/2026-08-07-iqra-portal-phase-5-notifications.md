@@ -903,24 +903,53 @@ In `supabase/tests/38_notifications_rls.sql` change `select plan(15);` to `selec
 -- production shipped a parent-callable claim.
 reset role;
 
+-- ⛔ THE LIST IS EXHAUSTIVE AND MUST STAY THAT WAY. There is no global "no
+-- public function is authenticated-callable" wall in this suite — every such
+-- assertion is per-function (27_login_rate_limit.sql:38-48,
+-- 10_admin_lookup.sql:15-18). An earlier draft named three names while the
+-- plan went on to add three more in Task 13, so email_ping_health,
+-- reset_failed_ping and failed_email_pings had NO grant assertion anywhere.
+-- A later migration re-creating any of them without repeating the revokes
+-- brings it back authenticated-callable IN CLOUD ONLY, and reset_failed_ping
+-- MUTATES STATE — any parent could re-queue arbitrary families' mail.
 select is(
   (select count(*)::int
      from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('claim_email_pings', 'record_email_ping_outcome', 'resolve_ping_address')
+      and p.proname in ('claim_email_pings', 'record_email_ping_outcome',
+                        'resolve_ping_address', 'email_ping_health',
+                        'reset_failed_ping', 'failed_email_pings')
       and (has_function_privilege('authenticated', p.oid, 'EXECUTE')
         or has_function_privilege('anon', p.oid, 'EXECUTE'))),
-  0, 'ingen av de tre RPC-ene er kallbare for anon eller authenticated');
+  0, 'ingen av de seks drift-RPC-ene er kallbare for anon eller authenticated');
 
 select is(
   (select count(*)::int
      from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('claim_email_pings', 'record_email_ping_outcome', 'resolve_ping_address')
+      and p.proname in ('claim_email_pings', 'record_email_ping_outcome',
+                        'resolve_ping_address', 'email_ping_health',
+                        'reset_failed_ping', 'failed_email_pings')
       and has_function_privilege('service_role', p.oid, 'EXECUTE')),
-  3, 'og alle tre er kallbare for service_role');
+  6, 'og alle seks er kallbare for service_role');
+
+-- ★ The ONE deliberate exception, asserted so it reads as a decision rather
+-- than an oversight. sync_email_ping_preference is caller-scoped — it keys on
+-- auth.uid() and takes no user parameter — so it cannot be pointed at anyone
+-- else, which is why it is the only authenticated-callable function here.
+select is(
+  (select has_function_privilege('authenticated',
+            'public.sync_email_ping_preference(boolean)', 'EXECUTE')),
+  true, 'sync_email_ping_preference ER kallbar for authenticated — den er caller-scoped');
+
+select is(
+  (select count(*)::int from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'sync_email_ping_preference'
+      and p.prosrc like '%auth.uid()%'),
+  1, 'og den henter brukeren fra auth.uid(), ikke fra en parameter');
 
 -- ── 12. the claim skips a row that is not due ───────────────────────
 insert into private.email_pings (user_id, pending, queued_seq, next_attempt_at)
@@ -1662,19 +1691,40 @@ as $$
 declare
   fanned integer;
 begin
+  -- ⛔ THE CANDIDATE SET IS THE ROLE HOLDERS **UNION THE ROSTER**, and the
+  -- union is not belt-and-braces. Panel finding C-F3, measured: user_roles is
+  -- NARROWER than the read predicate, because reads_announcement_row's family
+  -- and pupil arms key on class_students/guardian_student and never consult
+  -- user_roles at all. A guardian with a live enrolment and no user_roles row
+  -- CAN READ both a class notice and a school-wide one — and was notified of
+  -- neither. That is the forbidden direction: a candidate set may be too wide,
+  -- never too narrow, because nothing widens it back. It is latent today only
+  -- because the admin path grants `parent` before creating the link; roles are
+  -- the one thing nothing currently revokes, and plan 4's offboarding starts
+  -- revoking them. The failure is silent in the worst way — the notice is
+  -- visible, so nobody reports a bug.
   insert into public.notifications (user_id, entity, entity_id)
-  select distinct ur.user_id, 'announcement', aid
-    from public.user_roles ur
+  select distinct cand.user_id, 'announcement', aid
+    from (
+      select ur.user_id from public.user_roles ur
+      union
+      select gs.guardian_id from public.guardian_student gs
+        join public.class_students cs on cs.student_id = gs.student_id
+      union
+      select s.student_user_id from public.students s
+        join public.class_students cs on cs.student_id = s.id
+       where s.student_user_id is not null
+    ) cand
     cross join lateral (
       select a.class_id, a.published_at from public.announcements a where a.id = aid
     ) ann
-   where ur.user_id <> author
-     and private.reads_announcement(ur.user_id, aid)
+   where cand.user_id <> author
+     and private.reads_announcement(cand.user_id, aid)
      and (
        ann.class_id is null
-       or private.teaches_class(ur.user_id, ann.class_id)
-       or private.guardian_in_class_asof(ur.user_id, ann.class_id, ann.published_at)
-       or private.student_in_class_asof(ur.user_id, ann.class_id, ann.published_at)
+       or private.teaches_class(cand.user_id, ann.class_id)
+       or private.guardian_in_class_asof(cand.user_id, ann.class_id, ann.published_at)
+       or private.student_in_class_asof(cand.user_id, ann.class_id, ann.published_at)
      )
   on conflict (user_id, entity, entity_id)
     do update set created_at = now(), read_at = null;
@@ -2858,7 +2908,50 @@ claimed forever, and claimed_at is what the next drain skips on."
 
 ⚠ **`src/app/action-guards.test.ts` collects only files literally named `actions.ts`** (`:169`). A `route.ts` is invisible to it — so the allowlist entry the spec budgeted for protects nothing, and the app's first unauthenticated public endpoint would ship with **no static assertion at all**. This task closes that.
 
-- [ ] **Step 1: Write the evasion fixture**
+- [ ] **Step 1: Extract the existing parser instead of writing a second, weaker one**
+
+⛔ **An earlier draft wrote its own parser, and the panel defeated it six ways** by executing it: a handler declared without `async` was invisible; a **block-commented** gated handler sitting above a live ungated one *passed*; calling the gate and **ignoring its return value** passed; a gate inside a never-called closure passed; the gate name inside a **string literal** passed; and `export const GET = withCron(drain)` was invisible. Four of those are regressions against `src/app/action-guards.test.ts` sitting in the same directory, which already handles them: `(?:async\s+)?`, `^…` with the `m` flag, a global `while` loop over **all** matches rather than a single `exec`, and a brace scanner that skips strings and comments.
+
+Do not copy it — **extract it**, so there is one parser and it cannot drift.
+
+Create `src/app/__testlib__/export-parser.ts` by moving `parseActions`, `takeBalancedBody` and `stripComments` out of `src/app/action-guards.test.ts` verbatim, generalising only the name filter:
+
+```typescript
+/**
+ * Shared static-analysis helpers for the two export walls
+ * (action-guards.test.ts and route-guards.test.ts).
+ *
+ * ⚠ This file is TEST INFRASTRUCTURE, not app code. It lives under src/app so
+ * both suites can import it, and it is imported by exactly those two.
+ *
+ * Every regex quirk here was earned. `(?:async\s+)?` — Next accepts a
+ * non-async handler. `^` with `m` — an unanchored match fires inside comments.
+ * The global `while` loop — a single `exec` returns the FIRST match, so a
+ * commented-out gated handler above a live ungated one wins. And
+ * takeBalancedBody skips strings and comments, so a brace inside either does
+ * not end the body early.
+ */
+export function stripComments(body: string): string {
+  return body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
+export type ParsedExport = { key: string; name: string; body: string };
+
+/**
+ * @param names when given, only exports whose name is in this set are returned
+ *              (route handlers: GET/POST/…). Omitted, every exported async
+ *              function is returned (server actions).
+ */
+export function parseExports(
+  file: string,
+  source: string,
+  names?: readonly string[],
+): ParsedExport[] { /* moved verbatim from action-guards.test.ts */ }
+```
+
+Then update `src/app/action-guards.test.ts` to import from it. That file's `expect(allActions.length).toBe(81)` must not move — this step is a pure refactor, and if the number changes the extraction was not faithful.
+
+- [ ] **Step 2: Write the evasion fixture, including all six defeats**
 
 Create `src/app/__fixtures__/evasion-routes.ts.txt` (stored as `.txt` so it is never compiled, linted, or collected):
 
@@ -2866,21 +2959,35 @@ Create `src/app/__fixtures__/evasion-routes.ts.txt` (stored as `.txt` so it is n
 export async function GET(request: Request) {}
 
 export async function POST(request: Request) {
-  if (!assertCronSecret(request)) return new Response(null, { status: 401 });
+  assertCronSecret(request);
   return Response.json({});
 }
 
-export async function PUT(request: Request) {
-  // assertCronSecret(request) — removed for now
+export function PUT(request: Request) {
+  return Response.json({});
+}
+
+/*
+export async function PATCH(request: Request) {
+  assertCronSecret(request);
+}
+*/
+export async function PATCH(request: Request) {
   return Response.json({});
 }
 
 export const DELETE = async (request: Request) => {
+  const check = () => assertCronSecret(request);
   return Response.json({});
 };
+
+export async function HEAD(request: Request) {
+  const todo = "assertCronSecret(request)";
+  return Response.json({});
+}
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [ ] **Step 3: Write the wall**
 
 Create `src/app/route-guards.test.ts`:
 
@@ -2888,152 +2995,134 @@ Create `src/app/route-guards.test.ts`:
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parseExports, stripComments } from './__testlib__/export-parser';
 
 /**
  * The static wall for route handlers.
  *
- * ⚠ WHY THIS FILE EXISTS SEPARATELY. action-guards.test.ts collects only files
- * literally named `actions.ts` (:169), so a route.ts is invisible to it. The
- * app's first unauthenticated endpoint would otherwise ship with no static
- * assertion at all.
+ * ⚠ WHY IT EXISTS SEPARATELY. action-guards.test.ts collects only files
+ * literally named `actions.ts` (:169), so a route.ts is invisible to it and the
+ * app's first unauthenticated endpoint would ship with no static assertion.
  *
- * Every exported HTTP method under src/app/api must call the named secret
- * gate. Route handlers have no session, so the action-guards allowlist is not
- * the right shape here: there is exactly one permitted wall, by name.
+ * ⛔ IT SCANS src/app, NOT src/app/api. Next allows a route handler ANYWHERE in
+ * the app directory, so scoping to /api would let src/app/rapport/route.ts open
+ * a second public endpoint that this wall never sees.
  */
-const ROUTE_DIR = 'src/app/api';
+const APP_DIR = 'src/app';
 const REQUIRED_GATE = 'assertCronSecret';
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-
-function stripComments(body: string): string {
-  return body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-}
-
-/** Both declaration forms Next accepts. */
-function parseHandlers(file: string, source: string): { key: string; body: string }[] {
-  const found: { key: string; body: string }[] = [];
-  for (const method of HTTP_METHODS) {
-    const patterns = [
-      new RegExp(`export\\s+async\\s+function\\s+${method}\\s*\\(`),
-      new RegExp(`export\\s+const\\s+${method}\\s*=`),
-    ];
-    for (const pattern of patterns) {
-      const match = pattern.exec(source);
-      if (!match) continue;
-      // Brace-match from the first { after the declaration.
-      const start = source.indexOf('{', match.index + match[0].length - 1);
-      if (start === -1) continue;
-      let depth = 0;
-      let end = start;
-      for (let i = start; i < source.length; i += 1) {
-        if (source[i] === '{') depth += 1;
-        if (source[i] === '}') depth -= 1;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
-      found.push({ key: `${file}:${method}`, body: source.slice(start, end + 1) });
-    }
-  }
-  return found;
-}
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+const ROUTE_FILE = /^route\.(ts|tsx|js|jsx)$/;
 
 function routeFiles(dir: string): string[] {
   let found: string[] = [];
-  let entries: string[];
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return [];
-  }
-  for (const entry of entries) {
+  for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) found = found.concat(routeFiles(full));
-    else if (entry === 'route.ts') found.push(full);
+    else if (ROUTE_FILE.test(entry)) found.push(full);
   }
   return found;
 }
 
-const allHandlers = routeFiles(ROUTE_DIR).flatMap((file) =>
-  parseHandlers(file, readFileSync(file, 'utf8')),
+const files = routeFiles(APP_DIR);
+const allHandlers = files.flatMap((file) =>
+  parseExports(file, readFileSync(file, 'utf8'), HTTP_METHODS),
 );
 
-describe('the parser itself', () => {
+describe('the parser, against every evasion that defeated the first version', () => {
   const fixture = readFileSync('src/app/__fixtures__/evasion-routes.ts.txt', 'utf8');
-  const parsed = parseHandlers('fixture.ts', fixture);
-  const byKey = new Map(parsed.map((h) => [h.key.split(':')[1], h]));
+  const parsed = parseExports('fixture.ts', fixture, HTTP_METHODS);
+  const byName = new Map(parsed.map((h) => [h.name, h]));
 
-  it.each(['GET', 'POST', 'PUT', 'DELETE'])('detects %s', (method) => {
-    expect(byKey.has(method)).toBe(true);
+  it('finds every method form, including non-async and arrow', () => {
+    expect([...byName.keys()].sort()).toEqual(
+      ['DELETE', 'GET', 'HEAD', 'PATCH', 'POST', 'PUT'],
+    );
   });
 
-  it('does not let an empty body swallow its neighbour', () => {
-    expect(byKey.get('GET')!.body).toBe('{}');
-    expect(stripComments(byKey.get('GET')!.body).includes(REQUIRED_GATE)).toBe(false);
+  it.each([
+    ['an empty body does not swallow its neighbour', 'GET'],
+    ['a non-async handler is not invisible', 'PUT'],
+    ['a block-commented handler does not shadow the live one below it', 'PATCH'],
+    ['a gate inside a never-called closure does not count', 'DELETE'],
+    ['the gate name inside a string literal does not count', 'HEAD'],
+  ])('%s', (_label, method) => {
+    expect(stripComments(byName.get(method)!.body)).not.toContain(`${REQUIRED_GATE}(`);
   });
 
-  it('recognises a genuinely gated handler', () => {
-    expect(stripComments(byKey.get('POST')!.body).includes(REQUIRED_GATE)).toBe(true);
-  });
-
-  // The comment someone writes while removing a guard.
-  it('is not satisfied by the gate name inside a comment', () => {
-    expect(stripComments(byKey.get('PUT')!.body).includes(REQUIRED_GATE)).toBe(false);
-  });
-
-  it('detects the arrow form too', () => {
-    expect(stripComments(byKey.get('DELETE')!.body).includes(REQUIRED_GATE)).toBe(false);
+  it('still recognises a genuinely gated handler', () => {
+    expect(stripComments(byName.get('POST')!.body)).toContain(`${REQUIRED_GATE}(`);
   });
 });
 
 describe('route handler authorization', () => {
-  // An exact count, not a floor — a parser regression that silently found
-  // nothing would otherwise read as full coverage.
-  it('finds every route handler', () => {
-    expect(allHandlers.length).toBe(1);
+  // ⛔ A CROSS-CHECK WITH TEETH, not a hard-coded total. `toBe(1)` counted
+  // PARSED handlers, so a parser regression that made a real endpoint
+  // invisible left the count at 1 and read as green. This counts method
+  // exports by an INDEPENDENT means and requires the two to agree, so an
+  // unparsed handler fails loudly instead of vanishing.
+  it.each(files)('%s: every exported method is parsed', (file) => {
+    const source = readFileSync(file, 'utf8');
+    const declared = HTTP_METHODS.filter((m) =>
+      new RegExp(`^export\\s+(?:async\\s+)?(?:function\\s+${m}\\b|const\\s+${m}\\b)`, 'm')
+        .test(stripComments(source)),
+    );
+    const parsed = parseExports(file, source, HTTP_METHODS).map((h) => h.name);
+    expect(parsed.sort()).toEqual([...declared].sort());
   });
 
-  it.each(allHandlers.map((h) => [h.key, h] as const))('%s calls the secret gate', (_key, handler) => {
-    expect(stripComments(handler.body)).toContain(`${REQUIRED_GATE}(`);
-  });
+  it.each(allHandlers.map((h) => [h.key, h] as const))(
+    '%s calls the secret gate',
+    (_key, handler) => {
+      expect(stripComments(handler.body)).toContain(`${REQUIRED_GATE}(`);
+    },
+  );
 });
 ```
 
-- [ ] **Step 2b: Run and confirm it passes against the real route**
+⚠ `assertCronSecret` **throws** (Task 8), so the ignore-the-result evasion is unrepresentable in the real route as well as caught here. Both halves matter: the wall catches a handler that never calls it, the throw catches one that calls it and discards the answer.
+
+- [ ] **Step 4: Run — the refactor and the wall together**
 
 ```bash
-cd ~/dev/iqra-portal && npx vitest run src/app/route-guards.test.ts 2>&1 | tail -8
+cd ~/dev/iqra-portal && npx vitest run src/app/route-guards.test.ts src/app/action-guards.test.ts 2>&1 | tail -10
 ```
 
-Expected: PASS, 9 tests.
+Expected: both PASS, and **action-guards still reports 81 actions**. If that number moved, the parser extraction in Step 1 was not faithful — fix the extraction, never the number.
 
-- [ ] **Step 3: ★ Watch the wall actually fail**
+- [ ] **Step 5: ★ Watch the wall fail, three ways**
 
-Temporarily comment out the `if (!assertCronSecret(request))` block in `src/app/api/varsler/drain/route.ts`.
+Each is a distinct evasion class, and the first version of this wall survived all three.
+
+1. Delete the `assertCronSecret(request);` call from `GET` in `src/app/api/varsler/drain/route.ts`. Expected: **FAIL** — `…/route.ts:GET calls the secret gate`.
+2. Restore it, then wrap it so the result is discarded but the call remains — replace the `try { assertCronSecret(request); } catch …` block with a bare `assertCronSecret(request);` on its own line and no try/catch. Expected: the wall **PASSES** — and that is correct, because `assertCronSecret` **throws**, so discarding the result still gates. This is the step that proves the throw-not-boolean decision is what closes the class; a boolean-returning gate here would be a live hole with a green wall.
+3. Add a second, ungated handler at `src/app/rapport/route.ts` containing `export async function GET() { return Response.json({}); }`. Expected: **FAIL**. ⚠ Under the earlier `src/app/api`-scoped version this file was outside the scan entirely and the wall stayed green. Delete the file afterwards.
+
+Restore after each and confirm green.
+
+⛔ A wall that has never been watched fail is decoration. This project has shipped one whose test could not fail, and the first draft of *this* wall was defeated six ways by a reviewer who simply ran it.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-cd ~/dev/iqra-portal && npx vitest run src/app/route-guards.test.ts 2>&1 | tail -8
-```
-
-Expected: **FAIL** — `src/app/api/varsler/drain/route.ts:GET calls the secret gate`. Restore, re-run, green.
-
-⛔ A wall that has never been watched fail is decoration. This project has shipped one whose test could not fail.
-
-- [ ] **Step 4: Commit**
-
-```bash
-cd ~/dev/iqra-portal && git add src/app/route-guards.test.ts src/app/__fixtures__/evasion-routes.ts.txt && git commit -m "test(varsler): a static wall for route handlers, which nothing had
+cd ~/dev/iqra-portal && git add src/app/route-guards.test.ts src/app/__fixtures__/evasion-routes.ts.txt src/app/__testlib__/export-parser.ts src/app/action-guards.test.ts && git commit -m "test(varsler): a static wall for route handlers, built on the parser that already works
 
 action-guards.test.ts collects only files named actions.ts, so the app's first
-unauthenticated endpoint was invisible to it. Every exported HTTP method under
-src/app/api must call assertCronSecret by name; the parser is proved against an
-evasion fixture (empty body, arrow form, gate name in a comment) and the wall
-was watched fail with the gate commented out."
+unauthenticated endpoint was invisible to it.
+
+The first draft of this wall wrote a second parser and a reviewer defeated it
+six ways by executing it: a non-async handler was invisible, a block-commented
+gated handler shadowed a live ungated one, calling the gate and ignoring the
+result passed, so did a gate in a dead closure and one inside a string literal,
+and an arrow-with-wrapper form was invisible. Four were regressions against the
+parser sitting in the same directory. So that parser is now extracted and
+shared rather than copied.
+
+It scans src/app, not src/app/api — Next allows a route handler anywhere — and
+the count assertion is a per-file cross-check against an independent scan, so
+an unparsed handler fails instead of leaving the total unchanged."
 ```
 
 ---
-
 ## Task 10: The cron entry — the repo's first
 
 **Files:**
@@ -3320,12 +3409,14 @@ action-guards 79 -> 81."
 - Create: `src/components/portal/VarselBell.tsx`
 - Create: `src/app/(portal)/profil/page.tsx`
 - Create: `src/app/(portal)/profil/actions.ts`
-- Modify: `src/app/(portal)/{admin,laerer,elev,forelder}/*Nav.tsx` (four files)
+- Modify: `src/components/shell/PortalShell.tsx` (the ONE place all five roles pass through — not the four `*Nav.tsx` files; økonomi has none)
 - Modify: `src/app/action-guards.test.ts` (counter **81 → 82**)
 
 ⛔ **«Ingen alarmstrøm til barn»** — locked in the demo-UI design spec and binding here: the **pupil** surface shows a quiet count, **never a red badge, never an interstitial**. This is a product rule, not a styling preference; a child opening a school app must not be met with an alarm.
 
-Design law is unchanged: the locked "C · Familie" system (`src/app/globals.css`, `src/components/ui/`, `DESIGN.md` is the fasit). Reuse `PillLink` and the existing unread-dot anatomy (`size-2 rounded-full bg-primary`) rather than inventing a badge.
+Design law is unchanged: the locked "C · Familie" system (`src/app/globals.css`, `src/components/ui/`, `DESIGN.md` is the fasit).
+
+⚠ **There is no existing unread-dot to reuse — measured 2026-08-05: zero matches for `size-2`, `h-2 w-2` or `rounded-full bg-` anywhere under `src/`.** An earlier draft said «reuse the existing unread-dot anatomy rather than inventing a badge», which resolved to «invent a badge» — the thing the same sentence forbade. The demo-UI elevation spec *specifies* that anatomy but nothing in the real build has needed it yet, so this is the first implementation: `size-2 rounded-full bg-primary`, defined here and reused later. Do use `PillLink` for nav entries — that one does exist (`src/components/ui/PillLink.tsx:77`).
 
 - [ ] **Step 1: Write the bell**
 
@@ -3373,7 +3464,7 @@ export async function VarselBell({ roleHome, quiet = false }: { roleHome: string
 }
 ```
 
-⚠ **`formatDateNb` throws on a timestamptz** — plan 1 measured this. `created_at` is a timestamptz, so either pass `v.createdAt.slice(0, 10)` or use whichever helper in `src/lib/dates.ts` accepts an instant. Check `src/lib/dates.test.ts` for which is which **before** wiring it, and confirm under `TZ=UTC`.
+✅ **Resolved, not left to the executor.** `src/lib/dates.ts:8` — `formatDateNb(isoDate)` builds `` `${isoDate}T12:00:00Z` ``, so a timestamptz yields an **Invalid Date and `Intl` throws**; the file says so itself at `:19-23`. `notifications.created_at` is a timestamptz, so the helper is **`formatDateTimeNb`** (`dates.ts:30`), which takes an instant. The earlier draft called `formatDateNb` and pointed at `dates.test.ts` to work out which was which — but that file asserts only the happy path for a bare date and says nothing about either question. ⚠ Still confirm the rendering under `TZ=UTC` (exit gate step 2).
 
 - [ ] **Step 2: Write «Min profil»**
 
@@ -3433,15 +3524,17 @@ Create `src/app/(portal)/profil/page.tsx` — a server component reading the cal
 > Vi sender en kort e-post når du har nye varsler i portalen. E-posten inneholder aldri opplysninger om barnet ditt — bare hvor mange varsler du har.
 > Varsler i portalen slås ikke av. Denne innstillingen gjelder bare e-post.
 
-- [ ] **Step 3: Add the nav entries**
+- [ ] **Step 3: Put the bell and «Min profil» in the SHELL, not in the nav files**
 
-In each of the four `*Nav.tsx` files, add to `ITEMS`:
+⛔ **An earlier draft said «add the entry to each of the four `*Nav.tsx` files» with a trailing conditional about økonomi — and that conditional silently resolved to "no".** `src/app/(portal)/okonomi/` contains only `error.tsx`, `layout.tsx` and `page.tsx`; there is **no `OkonomiNav.tsx`**. So økonomi would have got no «Min profil» and no bell, contradicting the sentence two lines above it, which says they should. A conditional that quietly answers "no" is how a role gets dropped.
 
-```typescript
-  { href: '/profil', label: 'Min profil', exact: false },
-```
+✅ **Measured 2026-08-05: all five layouts already render `@/components/shell/PortalShell`** — `admin`, `laerer`, `elev` and `forelder` pass a Nav as a child; `okonomi` passes none. That component is the one place every signed-in role passes through, so it is where a surface that belongs to every role goes.
 
-⚠ `okonomi` gets **no messaging nav** (D17) but **does** get «Min profil» and the bell, since economy receives school-wide announcements. If `src/app/(portal)/okonomi/` has its own Nav file, add the entry there too — check before assuming there are only four.
+Add `<VarselBell />` and the «Min profil» link inside `PortalShell` itself. Determine `roleHome` from the caller's roles there, so no per-role layout has to pass it.
+
+⚠ **økonomi gets no *messaging* nav (D17) but does get the bell**, because economy receives school-wide announcements. Putting it in the shell makes that automatic rather than a thing to remember.
+
+⛔ The pupil variant stays quiet: `PortalShell` passes `quiet` when the caller holds `student`. «Ingen alarmstrøm til barn» is a product rule, and it now has exactly one implementation site.
 
 - [ ] **Step 4: Bump the counter and run the gate**
 
@@ -3469,10 +3562,16 @@ Then, with `npm run dev` running: log in as the teacher, publish an announcement
 - [ ] **Step 6: Commit**
 
 ```bash
-cd ~/dev/iqra-portal && git add src/components/portal/VarselBell.tsx "src/app/(portal)/profil" src/app/\(portal\)/*/[A-Z]*Nav.tsx src/app/action-guards.test.ts && git commit -m "feat(varsler): the bell, the opt-out, and a nav entry in every role
+cd ~/dev/iqra-portal && git add src/components/portal/VarselBell.tsx "src/app/(portal)/profil" src/components/shell/PortalShell.tsx src/app/action-guards.test.ts src/lib/supabase/database.types.ts && git commit -m "feat(varsler): the bell and the opt-out, in the one shell all five roles share
+
+Placed in PortalShell rather than in the four *Nav.tsx files, because okonomi
+has no Nav file — so the per-nav version silently gave economy no bell and no
+«Min profil», contradicting the rule that they receive school-wide
+announcements.
 
 The pupil variant is quiet by product rule — «ingen alarmstrøm til barn» — so
-no red dot and no interstitial, which is a decision and not a style knob.
+no red dot and no interstitial, which is a decision and not a style knob. In
+the shell it has exactly one implementation site.
 
 «Min profil» is the surface the ping opt-out lives on, and the copy says the
 part that matters: turning it off stops the e-mail, never the varsel in the
@@ -3531,6 +3630,38 @@ grant execute on function public.email_ping_health() to service_role;
 comment on function public.email_ping_health() is
   'Counts and an age for the admin health screen — never an address, never a name. oldest_pending_minutes is the number that catches a DEAD CRON: a drain that never runs never fails anything, so the failed ledger alone cannot distinguish a quiet week from a stopped schedule.';
 
+-- ── the failed ledger itself ────────────────────────────────────────
+-- ⛔ TASK 13 PREVIOUSLY SPECIFIED A SCREEN THAT COULD NOT BE BUILT. It called
+-- for a «Prøv igjen» button per failed row, and reset_failed_ping takes a
+-- user_id — but nothing returned the user_ids, and `private` is not
+-- PostgREST-exposed. Execution would have improvised an RPC under time
+-- pressure, and the obvious improvisation ("the admin needs to know whom to
+-- chase") returns the name or the address — exactly what the health function's
+-- own comment forbids, on what is a per-family communications-failure ledger.
+--
+-- ★ SO THE SHAPE IS FIXED HERE, DELIBERATELY MINIMAL: an opaque user_id, an
+-- error code and a timestamp. No name, no address, no pupil. An admin who
+-- needs to identify the family resolves the id through the existing AUDITED
+-- admin lookup, which leaves a record of having done so — rather than this
+-- screen handing out identities to anyone who opens it.
+create or replace function public.failed_email_pings()
+returns table (user_id uuid, last_error_code text, attempts integer, failed_since timestamptz)
+language sql stable security definer set search_path = ''
+as $$
+  select p.user_id, p.last_error_code, p.attempts, p.next_attempt_at
+    from private.email_pings p
+   where p.failed
+   order by p.next_attempt_at desc;
+$$;
+
+revoke execute on function public.failed_email_pings() from public;
+revoke execute on function public.failed_email_pings() from anon;
+revoke execute on function public.failed_email_pings() from authenticated;
+grant execute on function public.failed_email_pings() to service_role;
+
+comment on function public.failed_email_pings() is
+  'The admin ledger, deliberately minimal: an opaque user_id, an error code, an attempt count and a timestamp. NEVER a name, an address or a pupil — this is a per-family communications-failure list, and an admin who needs an identity must resolve it through the audited admin lookup so that the resolution itself is recorded.';
+
 -- Clearing a failed ping so a corrected address gets one more chance.
 -- ⚠ attempts resets to 0 and failed to false — this is the ONLY path back from
 -- the ceiling, and it is a deliberate human act, never automatic.
@@ -3569,10 +3700,32 @@ import { createServiceRoleClient } from '@/lib/admin/quarantine';
  * the stronger guard the repo reserves for exactly that.
  */
 export async function resetFailedPingAction(userId: string): Promise<void> {
-  await requireAdminActor();
+  const actorId = await requireAdminActor();
   const admin = createServiceRoleClient();
+
   const { error } = await admin.rpc('reset_failed_ping', { target: userId });
   if (error) throw new Error(`Kunne ikke nullstille varselet: ${error.message}`);
+
+  // ⛔ THE AUDIT ENTRY IS PART OF THE CONTRACT, NOT POLISH.
+  // quarantine.ts:17-23 states it explicitly for anything acting FOR an admin:
+  // re-verify AAL2, re-verify the role, and «write an audit entry describing
+  // what was done». Every existing consumer does — src/lib/admin/users.ts:59,
+  // 95 and 125 each insert into audit_log and THROW if the audit write fails.
+  // This action re-queues school e-mail to a named family and is the only path
+  // back from the attempts ceiling; without this, an admin can do it
+  // repeatedly with no trace of who did it or to whom.
+  // ⚠ Throwing on a failed audit write matches the house pattern: an action
+  // that happened but was not recorded is worse than one that did not happen.
+  const { error: auditError } = await admin.from('audit_log').insert({
+    actor_id: actorId,
+    action: 'admin.email_ping.reset',
+    entity: 'email_ping',
+    entity_id: userId,
+  });
+  if (auditError) {
+    throw new Error(`Nullstillingen ble ikke revisjonslogget: ${auditError.message}`);
+  }
+
   revalidatePath('/admin/varsler');
 }
 ```
