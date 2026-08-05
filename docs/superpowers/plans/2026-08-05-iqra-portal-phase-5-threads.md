@@ -3132,3 +3132,39 @@ for. Both lenses' findings are fixed. It still deserves the full panel.
 - Four `information_schema` assertions in `31_column_locks.sql` filter on
   `table_name` with no `table_schema` — a live trap now that
   `realtime.messages` exists.
+
+## Final: the three uncovered policies — `3f67907`
+
+The last three coverage gaps are closed. Suite **Files=37, Tests=748, PASS**
+(was 741). `35_threads_rls` 35 → **41**, `36_thread_counterparts` 13 → **14**.
+
+⚠ **The authoring agent was killed mid-run when the process exited**, after
+writing the assertions but before committing or reporting. Its mutation evidence
+was lost with it. Rather than commit unverified work, the key mutation was
+**re-measured in the main loop**: widening `threads_select_related` to
+`using (true)` reddens assertion 34 and **nothing else**, and the restore was
+verified by diffing `pg_get_expr(polqual)` back to the captured original — not
+by assuming the `alter` ran. That is the discipline from
+[[verify-the-restore-not-just-the-mutation]] applied to a case where the
+alternative was trusting a dead agent's silence.
+
+★ **A correction the agent made to file 29 is worth keeping.** Its
+`student_user_id` marker carried a comment claiming to be "the only thing
+standing between that exclusion and a silent deletion". Measured: rewriting the
+exclusion's `s.student_user_id = c.staff_id` to `= c.student_id` kills it stone
+dead **while leaving the word `student_user_id` in the body** — so file 29 stayed
+green, and so did every assertion in file 36. **A fingerprint catches a
+DELETION; only a witness catches a REWRITE.** File 36 now carries the witness.
+
+---
+
+# Plan 1 — FINAL STATE
+
+**13 commits on `feat/phase-5-meldinger`. Nothing pushed.**
+
+pgTAP **37 files / 748 assertions** · `npm test` **587 / 53 files** ·
+`test:api` **13 files / 360** · typecheck **0** · lint **0 errors** · knip at
+baseline · `next build` clean.
+
+Everything else — the five open decisions, the browser checklist, the known
+gaps — is in the MORNING HANDOFF section above.
