@@ -1,5 +1,15 @@
 # Phase 5 plan 2 — independent review panel, 2026-08-05
 
+> ✅ **MERGED 2026-08-05 into `2026-08-06-iqra-portal-phase-5-announcements.md`.**
+> Do not merge again. The three open decisions are now a section near the top of
+> that plan; the fixes are in place in the tasks they belong to; the SOUND list
+> is its ledger's «Round 3» section. **Two items were already applied** under
+> numbering that had moved (Task 1 mutation 9's collateral, Task 5 mutation 2's)
+> and were not merged twice, and **one SOUND item did not survive
+> re-measurement** — the cross-task numbering table was correct for the file at
+> HEAD when this panel ran and wrong for the committed rewrite. Round 3 of that
+> ledger records what each finding became.
+
 **Why this is a separate file:** a concurrent session was actively rewriting
 `2026-08-06-iqra-portal-phase-5-announcements.md` while this panel ran (3 558 →
 4 040 lines, mid-renumber, uncommitted). Editing it would have corrupted that
