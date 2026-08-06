@@ -1713,7 +1713,7 @@ pgTAP 878 -> 898."
 
 **Files:**
 - Create: `supabase/migrations/20260807124000_announcement_fanout.sql`
-- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(55)` → `plan(68)`)
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(55)` → `plan(69)`)
 
 ⛔ `supabase/migrations/20260806122000_announcement_fanout_claim.sql` is **applied** — never edit it. `claim_due_announcements` is replaced here with `create or replace`, and its own header says exactly what must happen: *«Plan 3 must add its notification INSERT INSIDE THIS FUNCTION BODY … If the fan-out is a separate round trip, a crash between the two leaves an announcement marked as announced with no notifications, and the partial index will never serve it again.»*
 
@@ -1904,7 +1904,7 @@ grant execute on function public.claim_due_announcements() to service_role;
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(55);` to `select plan(68);` (**13** new assertions, counted by hand — the entitled-reader control for the admin carve-out is the extra one). Append before `select * from finish();`:
+Change `select plan(55);` to `select plan(69);` (**14** new assertions — 13 planned plus the stamp-equivalence tripwire measured at execution, counted by hand — the entitled-reader control for the admin carve-out is the extra one). Append before `select * from finish();`:
 
 ```sql
 -- ── 30-37. the announcement fan-out, both trigger points ────────────
@@ -2053,7 +2053,7 @@ Expected: FAIL at assertion 31 — the immediate publish produces no notificatio
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
-Expected: `Files=39, Tests=912, PASS`.
+Expected: `Files=39, Tests=913, PASS`.
 
 - [ ] **Step 5: Three named mutations**
 
@@ -2066,6 +2066,21 @@ Expected: `Files=39, Tests=912, PASS`.
 3. In `private.fan_out_announcement`, delete the whole `and ( ann.class_id is null or … )` carve-out. Expected: **assertion 35 FAILS** — the defect the tree disagreed with the spec about, which would otherwise have shipped as ten unwanted bells a week.
 
 Restore after each; confirm green. Record all three outcomes in the commit body.
+
+⛔⛔ **MEASURED 2026-08-06 — TWO CAUGHT, ONE SURVIVED, AND THE SURVIVOR IS REAL.**
+
+| Mutation | Plan predicted | **Measured** |
+|---|---|---|
+| 1 drop the `fanned_out_at is not null` guard | assertion 32's first half | **SURVIVOR — nothing reddens.** See below. |
+| 2 `reads_announcement` → `true` | 36's invariant | **69** ✓ via the school-wide `a7`, exactly as the re-ordering intended |
+| 3 delete the carve-out | 35 | **66** ✓ |
+
+★ **Mutation 1 cannot be caught, and that is a property of the code — not a hole in the file.** `private.stamp_announcement_fanout` is a **BEFORE INSERT** trigger doing `fanned_out_at := case when published_at <= now() then now() else null end`, so at AFTER INSERT time `fanned_out_at is null` ⟺ `published_at > now()`. Every non-author arm of `reads_announcement_row` requires `pub <= now()`. So exactly when the guard's branch is not taken, the fan-out it guards returns **zero rows for everyone anyway**. The guard is defence in depth against that stamp rule changing, and it avoids scanning the whole role-holding population on every scheduled insert — but it is not a correctness boundary today. The plan's *second* prediction was as wrong as the first one it corrected; both assumed the early call would do something.
+⚠ Rather than record coverage this file does not have, a new assertion (index **60**) pins the left half of the equivalence: a future-dated announcement is **not** stamped. If `stamp_announcement_fanout` ever stamps a future row, that goes red — and whoever sees it must know the guard has just **become** load-bearing and its mutation is worth re-running. This is the +1 that makes `plan(68)` → `plan(69)` and the total **913**.
+
+⚠ **And the D12 assertion was mis-scoped.** «et oppslag køer ingen e-post» measured the *global* `private.email_pings` count and read `have: 1`. The row was not queued by an announcement: Task 4's §29 message removed the last staff reader, the rollover fallback fired correctly, and it admitted the **seeded** admin `1111…1111` (`seed.sql:76`), who is not the sender and is queued for mail exactly as designed. The fan-out was right; the assertion was global where its claim is about oppslag. Add `delete from private.email_pings;` to this section's fixture.
+
+⚠⚠ **AND RESET THE DATABASE AFTER THE LAST MUTATION, NOT JUST THE FILE.** A harness that restores the migration text and verifies its checksum still leaves the **applied schema** mutated — the next full run then fails on an unrelated assertion (measured: 66 red at `have: 2`) and reads as a fresh defect. Restoring the file is half a restore.
 
 - [ ] **Step 6: Commit**
 
@@ -3877,7 +3892,7 @@ Change `expect(allActions.length).toBe(82);` to `83`, and add the nav entry `{ h
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -4 && npx tsc --noEmit && echo OK
 ```
 
-Expected: pgTAP `Files=39, Tests=912, PASS`, action-guards PASS with 83, `OK`.
+Expected: pgTAP `Files=39, Tests=913, PASS`, action-guards PASS with 83, `OK`.
 
 - [ ] **Step 4: Commit**
 
@@ -3964,7 +3979,7 @@ because nothing works at all is the failure this file is built against."
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npm test 2>&1 | tail -4 && npx tsc --noEmit && npm run lint 2>&1 | tail -4 && npm run build 2>&1 | tail -8
 ```
 
-Expected: pgTAP `Files=39, Tests=912` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
+Expected: pgTAP `Files=39, Tests=913` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
 
 - [ ] **Step 2: ★ Run the timezone-sensitive tests under `TZ=UTC`**
 
