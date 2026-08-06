@@ -2416,6 +2416,16 @@ cd ~/dev/iqra-portal && npx vitest run src/lib/varsler/ping-email.test.ts 2>&1 |
 
 Expected: **FAIL** — at minimum `never carries pupilName`, `never carries teacherName`, `never carries threadId`, and `links the root, never a deep link`. If any of those stay green, the test is still vacuous and must be fixed before the real implementation goes back.
 
+⛔⛔ **ONE PASS IS NOT ENOUGH — MEASURED 2026-08-06. This mutation reddens 5, and `links the root, never a deep link` is NOT one of them.** The leaking builder appends `${portalUrl}/${leak.threadId ?? ''}`, and that test passes **no** threadId, so the output ends in a bare trailing slash — which the regex correctly permits, because a root link is what it is. The plan predicted a failure that cannot happen. Two further micro-mutations were needed to leave nothing unwatched:
+
+| Mutation | Reddens |
+|---|---|
+| the plan's leaking builder | `names the count`, `never carries pupilName` / `teacherName` / `threadId`, `refuses to build a ping for nothing` |
+| append a literal `/varsler` path | **`links the root, never a deep link`** |
+| template the count into the subject | **`uses the same subject regardless of count`** |
+
+★ The four remaining `it.each` cases (`className`, `subject`, `body`, `recipientName`) are the same code path as the three that were watched fail, so the mechanism is proven for all seven. The two assertions above are **distinct** code paths and each needed its own mutation. A privacy file is exactly where "the mutation reddened something, so the file is covered" is the wrong standard — the panel measured an earlier version of this test scoring 6/6 green against a builder that leaked a pupil's name.
+
 Restore the real implementation and confirm 11 green.
 
 - [ ] **Step 5: Commit**
