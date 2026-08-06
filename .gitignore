@@ -42,3 +42,11 @@ next-env.d.ts
 
 # brainstorming mockups (visual companion)
 .superpowers/
+
+# agent tooling scratch
+.claude/
+.firecrawl/
+.playwright-mcp/
+
+# iCloud placeholder stubs left behind when a local file is evicted
+*.icloud
