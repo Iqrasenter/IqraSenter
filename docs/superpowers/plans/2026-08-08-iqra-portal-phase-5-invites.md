@@ -3578,7 +3578,7 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | 15b | `c0b2b74` | **969 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` → **`plan(31)`** (+4, not +3 — the ledger's window assertion landed here). Markers **102 → 114**, counted. ⛔ Found that a fingerprint marker can be satisfied by a COMMENT; audited all 114, no other instance |
 | 15c | `3828d0b` | 969 / 41 (unchanged) | **670 / 61 ✔measured** | not run | ✅ DONE 2026-08-06. Unit 642 → 670 (+28), not the plan's «636 → 647». knip at baseline. ⛔ The plan's own subject-templating test would have thrown against its own template — see below |
 | 15d | `c387b87` | 969 / 41 (unchanged) | **685 / 62 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **85** as predicted. Build lists `/sett-passord`. Four proxy mutations + one action-guards mutation all reddened the intended test |
-| 15e | | = 15b | | 377 | action-guards 85 → 87 |
+| 15e | `fa03466` | 969 / 41 (unchanged) | **698 / 63 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **87** as predicted. Build lists `/admin/kontoer`. ⚠ «Finn en konto» takes a USER ID — see the open item below |
 | 16 | | | | | |
 | 16b | | | | | |
 | 16c | | | | | |
@@ -3980,3 +3980,29 @@ The plan spotted that it hard-codes «GoTrue-hooken gjelder fortsatt», which is
 - **`page.tsx` states why `force-dynamic` is there** (the CSP nonce is per-request; a prerendered shell ships a stale one). The plan asserts the export without the reason, and the reason is the only thing that stops someone deleting it.
 
 ⚠ Unit came out **685**, not a number the plan predicted — it says «record what actually runs». +15: nine action tests, five proxy tests, and one more from `action-guards`, which generates a test per action.
+
+
+---
+
+## Task 15e as executed — the last build task
+
+Executed 2026-08-06, portal `fa03466`. **unit 685 → 698 (63 files), action-guards 87, pgTAP 969 unchanged, typecheck clean, lint 0 errors, knip clean, build lists `/admin/kontoer`.**
+
+### Two plan snippets that would not have run
+
+- **`AdminNav.test.tsx`'s suggested test.** The plan writes `render(<AdminNav pathname="/admin" />)`. `AdminNav` takes **no props** — the file mocks `usePathname` and uses a local `at(pathname)` helper. Written with `at('/admin')`. (The plan was right about the important half: the file genuinely does *not* assert the entry set, so a nav entry ships untested unless someone adds it.)
+- **The `useEffect` that clears the one-time link.** The plan says to "clear it on unmount"; the obvious `useEffect(() => setDismissed(false), [linkState])` is an **eslint ERROR** in this repo — *«Calling setState synchronously within an effect can trigger cascading renders»* — the same rule the plan cites two paragraphs earlier for the `latest` bookkeeping. Folded into the same render-time adjustment instead.
+
+### `findAccount` is internal; `findAccountForAdmin` is the door
+
+knip flagged `findAccount` as an unused export. It is called by `sendInviteEmail` and by the admin-gated wrapper, and nothing outside the module needs it — so it is un-exported rather than re-exported to satisfy the tool. `sendInviteEmail` has already taken the actor before it calls `findAccount`, which is why the wrapper exists at all.
+
+### ⛔ OPEN: «Finn en konto» takes a user id, not a name
+
+`public.invite_find_account(uuid)` takes a **uuid**, so the D30 reset section resolves by id. An office volunteer does not have a uuid to hand; today they would copy it from `/admin/elever`. That is clunky and it is stated as clunky in the page's own comment rather than papered over.
+
+Closing it properly needs **one** of:
+1. a `invite_find_account_by_email(text)` RPC (small, and the search everyone actually wants), or
+2. a link from each guardian/pupil card on `/admin/elever` to `/admin/kontoer?konto=<id>` (no new SQL, and probably the better first move).
+
+**Neither is invented here** — inventing an RPC at the last build task, unreviewed, is how the S1 defect got in. It belongs in Task 16d's walkthrough as a usability finding, or in a follow-up. ⚠ Row 10 of the walkthrough («re-invite an already-activated guardian, then use the OLD link») is executable as written via the id field, so the exit gate is not blocked by this.
