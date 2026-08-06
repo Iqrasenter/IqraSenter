@@ -3576,7 +3576,7 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | 14b | `3f6656c` | **938 / 40 ✔measured** | **642 / 58 ✔** | not run | ✅ DONE 2026-08-06. **25 assertions, not 8; SEVEN clauses, not one; markers 95 → 102, not 96.** Two findings changed the task — see «Task 14b as executed» below. action-guards 83 → 84 as predicted. Every clause mutation-verified. knip's only error is `scripts/fiken-probe.mjs`, a foreign untracked file |
 | 15a | `538a786` | **965 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` — 19 base + 7 ledger + 1 for `invite_revoke`. Ledger item **d** (rate-limit window) moved to 15b: `private.invite_attempt_window` does not exist yet. Nine mutations run; **M6 as specified cannot run at all** — see below |
 | 15b | `c0b2b74` | **969 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` → **`plan(31)`** (+4, not +3 — the ledger's window assertion landed here). Markers **102 → 114**, counted. ⛔ Found that a fingerprint marker can be satisfied by a COMMENT; audited all 114, no other instance |
-| 15c | | = 15b | | 377 | |
+| 15c | `3828d0b` | 969 / 41 (unchanged) | **670 / 61 ✔measured** | not run | ✅ DONE 2026-08-06. Unit 642 → 670 (+28), not the plan's «636 → 647». knip at baseline. ⛔ The plan's own subject-templating test would have thrown against its own template — see below |
 | 15d | | = 15b | | 377 | action-guards 84 → 85 |
 | 15e | | = 15b | | 377 | action-guards 85 → 87 |
 | 16 | | | | | |
@@ -3912,3 +3912,37 @@ The delete (`< now() - v_window`) and the count (`>= now() - v_window`) are exac
 The plan said markers **96 → 106** (five entries, 2+3+2+2+1 = 10). Measured **102 → 114**, for two reasons: the baseline was already 102 after Task 14b's seven D32 entries, and `invite_attempt_consume` carries **three** markers rather than one — the limit call plus both redundant window clauses. Counted from the arrays via a deliberate tripwire (set the literal to a wrong value, read `have:`), never predicted.
 
 `invite_mark_activated`, `invite_attempts_prune` and `invite_attempts_clear` are deliberately unpinned: one leaves accounts on the admin queue, one is retention hygiene, one is a usability release. None guards anything.
+
+
+---
+
+## Task 15c as executed
+
+Executed 2026-08-06, portal `3828d0b`. **unit 642 → 670 (61 files), typecheck clean, lint 0 errors, knip at baseline, build clean.** No SQL, so pgTAP stays at 969.
+
+### ⛔ The plan's Step 3 test contradicts its Step 5 implementation
+
+The «never templates the subject» test builds a second mail from:
+
+```typescript
+buildInviteEmail({ inviteUrl: 'https://x/sett-passord?t=OTHER', validDays: 1 })
+```
+
+…and Step 5's `buildInviteEmail` **throws** on any URL not starting with `${PORTAL_URL}/sett-passord?`. So the test as written throws instead of comparing subjects, and the assertion never runs. Written as intended here, with a portal-origin URL. ⚠ Both halves came from the same plan step; the guard was added by the review and the test beside it was never re-read against it — the [[applying-a-review-is-an-edit]] shape again, one task later.
+
+### Counts: 670, not the predicted 647
+
+The plan said «unit 636 → 647 (6 template + 5 library assertions)». Three reasons it is 670:
+
+- the baseline was **642** after Task 14b, not 636;
+- the template file runs **11**, not 6 — its `it.each` contributes **six** cases, and the plan's own parenthetical («`it.each` with three cases contributes three») shows it knew the rule and still counted the block as one;
+- `invite-tokens.test.ts` contributes **11** more, and the plan **listed the file in its Files header and never wrote its content**.
+
+### `invite-tokens.test.ts`, written from the ledger's H5
+
+H5 said to cover all four wrappers because «nothing currently asserts `issueInvite` passes all four RPC args, or that `restoreInvite` swallows rather than throws». Both are now asserted, and both matter for a reason worth keeping:
+
+- **PostgREST matches RPC parameters by NAME.** A misspelt or omitted key is not a TypeScript error and not a runtime error — the function is simply invoked with `NULL` for that parameter. Omitting `p_issued_by` would mint credentials whose audit row names nobody, which is precisely what the direct-insert audit in `invite_issue` exists to prevent.
+- **`restoreInvite` swallowing is the design, not an oversight.** Its only caller is already on a failure path; throwing would replace a recoverable «prøv igjen» with a 500 *and* lose the original cause. Asserting it is what stops a later reader "fixing" the missing throw.
+
+One assertion was added beyond the plan: `inviteUrl` percent-encodes its argument. base64url is already URL-safe so the happy path never exercises it, but without the encode a token containing `&` would silently truncate the query parameter and every such link would be invalid with no error anywhere.
