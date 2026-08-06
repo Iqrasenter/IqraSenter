@@ -1091,13 +1091,21 @@ select is(
   0, 'en avmeldt bruker plukkes ikke i det hele tatt');
 ```
 
+⛔⛔ **THREE DEFECTS IN THE TEXT ABOVE, ALL MEASURED AT EXECUTION 2026-08-06 AND ALL CORRECTED IN THE TREE.** Each was invisible to reading and each stopped the task dead:
+
+1. **`record_email_ping_outcome` is a FOUR-argument function.** Its declaration is `(target uuid, succeeded boolean, error_code text default null, retryable boolean default false)`. A default does **not** create a shorter overload, so the three `revoke`s and the `comment on function` naming `(uuid, boolean, text)` raise `42883 function … does not exist` and **abort the whole migration**. All four references must name `(uuid, boolean, text, boolean)`.
+2. **Assertion `claim returnerer brukerens faktiske antall uleste` cannot pass with the fixture as written.** The panel added the reachability filter `private.reads_thread(n.user_id, n.entity_id)` to the claim's unread count (finding D-2/C-F2) and never re-measured the fixture feeding it. The fixture's only unread notification points at the invented thread id `…f1`, and a thread that does not exist is readable by nobody — so the count is **0** against a wanted 1. The fix builds a real readable thread (`…b0`: a pupil `…d0`, a `guardian_student` row for user `…001`, a staff user `…003`) and adds a second notification pointing at it, **leaving `…f1` dangling on purpose**. `= 1` then proves the filter ADMITS and EXCLUDES in one assertion, which is strictly stronger than what the plan asked for.
+3. **The fifth-attempt fixture never claims the row.** `update … set pending = true, attempts = 4, failed = false` leaves `claimed_at` null, and section 16's success path had just cleared it. The permanent-failure branch is guarded by `and p.claimed_at is not null` — the panel's own late-outcome finding (17c) — so the update matches **zero rows**, `failed` stays false, and assertions 27 **and** 28 both go red for a fixture reason. Sections 17b and 17c were written with that guard in mind; section 17 was never updated to match it. Add `claimed_at = now()`.
+
+★ The pattern across all three: the panel changed the *code* and left the *fixture* describing the previous world. That is the failure mode the panel-ledger memory names — a fixture is a claim too, and an unverified claim is usually wrong.
+
 - [ ] **Step 3: Run and watch it fail**
 
 ```bash
 cd ~/dev/iqra-portal && npx supabase test db supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
 ```
 
-Expected: FAIL — `relation "private.email_pings" does not exist`.
+Expected: FAIL — 17 assertions run, then `relation "private.email_pings" does not exist` aborts the transaction (`Bad plan. You planned 34 tests but ran 17`).
 
 - [ ] **Step 4: Apply and re-run**
 
@@ -1111,8 +1119,8 @@ Expected: `Files=39, Tests=878, PASS`.
 
 Two named mutations, run one at a time — reset and restore between them:
 
-1. In `claim_email_pings`, add `attempts = p.attempts + 1,` to the update. Expected: assertion 15 **FAILS**.
-2. In `record_email_ping_outcome`, change `pending = (p.queued_seq <> p.claimed_seq)` to `pending = false`. Expected: assertion 16's first half **FAILS**.
+1. In `claim_email_pings`, add `attempts = p.attempts + 1` to the update. **Measured 2026-08-06: assertion 24 fails, alone** — `claim øker ikke attempts`, have 1 want 0. (The plan said "assertion 15"; 15 is the *section* number. By assertion index — which is what the runner prints — it is 24.)
+2. In `record_email_ping_outcome`, change `pending = (p.queued_seq <> p.claimed_seq)` to `pending = false`. **Measured: assertion 25 fails, alone** — `meldingen som kom mens sendingen pågikk holder pending = true`, have false want true. (Section 16; assertion index 25.)
 
 Both are the exact defects the review found in earlier drafts of this mechanism. Restore and confirm green.
 
@@ -3694,6 +3702,9 @@ action-guards 81 -> 82."
 - Create: `supabase/migrations/20260807125000_ping_health.sql`
 - Modify: `src/app/(portal)/admin/AdminNav.tsx`
 - Modify: `src/app/action-guards.test.ts` (counter **82 → 83**)
+- Modify: `supabase/tests/38_notifications_rls.sql` (**counter 3 → 6**, no new assertion — see below)
+
+⛔⛔ **THE COUNTER BUMP THIS TASK OWNS, ADDED AT EXECUTION 2026-08-06.** File 38's assertion `de tre drift-RPC-ene som finnes nå er kallbare for service_role` asserts a **hard 3**. This task creates the other three — `email_ping_health`, `failed_email_pings`, `reset_failed_ping` — so change that literal to **6** and update the assertion text to drop the «Task 13 hever dette til 6» parenthetical. The plan originally wrote 6 into Task 3, which is unreachable there: those three functions do not exist until this migration, so file 38 would have been RED from Task 3 through Task 12 and Task 3's own expected `Tests=878, PASS` was impossible. A hard number is the point — it is what catches a function that silently failed to be created — which is exactly why it is bumped by hand, once, in the task that causes it. The sibling assertion (`ingen … kallbare for anon eller authenticated`, want 0) needs **no** change: a name matching no `pg_proc` row contributes nothing to a count of zero, so it was already correct at both points in time.
 
 ⛔ **Nothing currently observes whether the drain ran at all.** A cron that silently stops is indistinguishable from a quiet week — so this screen carries **two** numbers, not one: the failed ledger, and the **age of the oldest pending ping**. The second is the one that catches a dead cron.
 
