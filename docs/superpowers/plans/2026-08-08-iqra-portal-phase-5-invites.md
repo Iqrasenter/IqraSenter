@@ -3575,7 +3575,7 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | 14 | `9505cd8` (portal) · `6fcf898` (docs) | **913 / 39 ✔measured** | not run | not run | ✅ DONE 2026-08-06. Types unchanged, as predicted. **2 deviations:** Step 9's «no output» grep was unsatisfiable (its own Steps 3–4 write «Brevo» three times) → replaced with live-claim markers, measured empty. D5's **decision** cell also marked (plan corrected only its rationale, leaving the stale claim in the column a decision table is skimmed by). ⚠ Docker died twice mid-run — a **concurrent Claude session** was restarting it; the `db reset` seed completed anyway (profiles=7 students=5 classes=2 user_roles=8) |
 | 14b | `3f6656c` | **938 / 40 ✔measured** | **642 / 58 ✔** | not run | ✅ DONE 2026-08-06. **25 assertions, not 8; SEVEN clauses, not one; markers 95 → 102, not 96.** Two findings changed the task — see «Task 14b as executed» below. action-guards 83 → 84 as predicted. Every clause mutation-verified. knip's only error is `scripts/fiken-probe.mjs`, a foreign untracked file |
 | 15a | `538a786` | **965 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` — 19 base + 7 ledger + 1 for `invite_revoke`. Ledger item **d** (rate-limit window) moved to 15b: `private.invite_attempt_window` does not exist yet. Nine mutations run; **M6 as specified cannot run at all** — see below |
-| 15b | | 15a + 3 / 41 | 642 | 377 | `plan(<N>)` → `plan(<N>+3)`; markers **102 → 112** (14b added 7, not 1) |
+| 15b | `c0b2b74` | **969 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` → **`plan(31)`** (+4, not +3 — the ledger's window assertion landed here). Markers **102 → 114**, counted. ⛔ Found that a fingerprint marker can be satisfied by a COMMENT; audited all 114, no other instance |
 | 15c | | = 15b | | 377 | |
 | 15d | | = 15b | | 377 | action-guards 84 → 85 |
 | 15e | | = 15b | | 377 | action-guards 85 → 87 |
@@ -3858,3 +3858,57 @@ The extra eight are the ledger's, which added SQL to the migration and never the
 Nine mutations run, capture → mutate → run → restore → verify-restore. Eight behaved; the ninth exposed a defect in **my own harness** rather than in the code — see the corrected Mutation 6 above. The lesson generalises past this file: **`Tests=0` is not `no failures`.** A mutation that makes a fixture raise aborts the transaction before `ok 1`, and every grep-for-`# Failed`-lines harness will call that a survivor.
 
 ★ Note that M5 (deleting the whole `if`) reddens **8, 11 and 21** — three assertions, including the audit count, because with the wall gone the refused `epost` attempt succeeds and writes a second audit row. The plan predicted 8 and 18 (old numbering). The third was not predicted; **read the indices, not the pass/fail**.
+
+
+---
+
+## Task 15b as executed — a fingerprint marker can be satisfied by a comment
+
+Executed 2026-08-06, portal `c0b2b74`. **pgTAP 965 → 969, markers 102 → 114, typecheck clean, unit 642 unchanged, lint 0 errors, build clean.**
+
+### ⛔⛔ F3 — `pg_get_functiondef` includes comments, so a marker can pin prose
+
+The migration's first draft explained the window predicate by quoting it:
+
+```sql
+-- ⛔ `attempted_at >= now() - v_window` is what makes this a 15-MINUTE …
+```
+
+`29_definer_fingerprints.sql` matches with `position(m in pg_get_functiondef(...))`, and that output **contains the comments**. So the marker matched the prose: **deleting the predicate outright left file 29 green.** The wall was pinned to its own description.
+
+Fixed by rewording the comment so it never contains the literal clause, then re-measured: the marker now appears exactly once and deleting the predicate reddens assertion 2.
+
+**An audit of all 114 markers found no other instance** — run it again after any batch of new entries:
+
+```bash
+# reuse the file's own temp view, then strip comments and re-check every marker
+sed -n '83,568p' supabase/tests/29_definer_fingerprints.sql > /tmp/audit.sql
+cat >> /tmp/audit.sql <<'SQL'
+select d.sig||' :: '||m
+from definer_markers d, lateral unnest(d.markers) as m
+where position(m in regexp_replace(pg_get_functiondef(d.sig::regprocedure), '--[^\n]*', '', 'g')) = 0;
+SQL
+docker exec -i supabase_db_iqra-portal psql -U postgres -d postgres -tA < /tmp/audit.sql
+```
+
+**Standing rule this earns:** never write a pinned predicate into prose inside the same function body. The comment should say what the clause *does*, never what it *is*.
+
+### ★ The two window mechanisms are mutually redundant
+
+The ledger's mutation **14b** predicts that dropping `attempted_at >= now() - v_window` from the count reddens the window assertion. Measured: **it does not.**
+
+| Mutation | assertion 31 |
+|---|---|
+| drop the count's window predicate | survives |
+| drop the bucket-scoped `delete` | survives |
+| **drop both** | **reddens** |
+
+The delete (`< now() - v_window`) and the count (`>= now() - v_window`) are exact complements, so either alone enforces the behaviour. The assertion is sound — it watches the *property*, which is guarded twice — but **no single-clause mutation can redden it**, and the plan's mutation row is wrong to expect one. Both clauses are now pinned in file 29, which is the only mechanism that can see one of them disappear.
+
+⚠ This is the [[a-mutation-that-reddens-is-not-coverage]] shape again, in its rarer form: not "the prediction named the wrong assertion" but "the thing being mutated is not what protects the property".
+
+### Counts, and why they are not the plan's
+
+The plan said markers **96 → 106** (five entries, 2+3+2+2+1 = 10). Measured **102 → 114**, for two reasons: the baseline was already 102 after Task 14b's seven D32 entries, and `invite_attempt_consume` carries **three** markers rather than one — the limit call plus both redundant window clauses. Counted from the arrays via a deliberate tripwire (set the literal to a wrong value, read `have:`), never predicted.
+
+`invite_mark_activated`, `invite_attempts_prune` and `invite_attempts_clear` are deliberately unpinned: one leaves accounts on the admin queue, one is retention hygiene, one is a usability release. None guards anything.
