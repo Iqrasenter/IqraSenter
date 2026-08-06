@@ -623,6 +623,8 @@ cd ~/dev/iqra-portal && npx supabase test db
 
 Expected: **913 / 39**, unchanged — every existing fixture has `suppressed = false` by default, so no existing assertion should move. **If anything reddens, stop.** It means either a fixture depended on the old shape or the `create or replace` dropped something; do not proceed until the baseline is back.
 
+✅ **Measured 2026-08-06: 913 / 39, PASS** — and that held after all SEVEN predicate changes and the `revoke update`, not just the one this step describes.
+
 - [ ] **Step 3: Write the pgTAP file**
 
 Create `supabase/tests/39_guardian_suppression.sql` with `select plan(8);` and the `c3` fixture prefix (⚠ **verify `c3` is free first**: `grep -rn "c3000000-" supabase/tests/ supabase/seed.sql` must return nothing).
@@ -660,7 +662,7 @@ The eight assertions, in pairs so no refusal stands alone:
     )
 ```
 
-**+1 marker: 95 → 96.** Recount the total from the arrays at execution rather than trusting that number — this task and Task 15b both touch the literal (15b then takes it 96 → 106), and the file's own header records it being got wrong twice already.
+⛔ **MEASURED: +7 markers, 95 → 102 — not +1.** One entry per clause, because six other functions bypass the predicate (below). Recount from the arrays rather than trusting any number: ⚠ a naive regex over the file counts **103**, because two existing markers contain escaped quotes (`'kind = ''laerer'''`). The SQL is authoritative — proved by setting the literal to 999 and watching assertion 1 report `have: 102`. 15b then takes it **102 → 112**.
 
 - [ ] **Step 5: The admin control**
 
@@ -710,6 +712,8 @@ cd ~/dev/iqra-portal && npx supabase test db && npm test && npm run typecheck &&
 ```
 
 Expected: pgTAP **921 / 40** (913 + 8). `action-guards` reports **84**. Record the measured unit total.
+
+✅ **Measured: pgTAP 938 / 40** (913 + **25**), unit **642 / 58**, action-guards **84**, typecheck clean, lint 0 errors, build clean. The +25 rather than +8 is the six-function finding below.
 
 - [ ] **Step 7: Commit**
 
@@ -3556,9 +3560,9 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | Task | Commit | pgTAP (exp.) | unit (exp.) | api (exp.) | Notes / deviations |
 |---|---|---|---|---|---|
 | 14 | `9505cd8` (portal) · `6fcf898` (docs) | **913 / 39 ✔measured** | not run | not run | ✅ DONE 2026-08-06. Types unchanged, as predicted. **2 deviations:** Step 9's «no output» grep was unsatisfiable (its own Steps 3–4 write «Brevo» three times) → replaced with live-claim markers, measured empty. D5's **decision** cell also marked (plan corrected only its rationale, leaving the stale claim in the column a decision table is skimmed by). ⚠ Docker died twice mid-run — a **concurrent Claude session** was restarting it; the `db reset` seed completed anyway (profiles=7 students=5 classes=2 user_roles=8) |
-| 14b | | 921 / 40 | 636 | 377 | D32. +8 in the new `39_guardian_suppression.sql`; +1 marker (95 → 96); action-guards 83 → 84 |
-| 15a | | 921 + `<N>` / 41 | 636 | 377 | `<N>` = counted plan of `40_invite_tokens.sql`; **≈26** (19 pre-review + Step 4b's ~7), so ≈947 — **not** the 940 an earlier draft predicted |
-| 15b | | 15a + 3 / 41 | 636 | 377 | `plan(<N>)` → `plan(<N>+3)`; markers 96 → 106 |
+| 14b | `3f6656c` | **938 / 40 ✔measured** | **642 / 58 ✔** | not run | ✅ DONE 2026-08-06. **25 assertions, not 8; SEVEN clauses, not one; markers 95 → 102, not 96.** Two findings changed the task — see «Task 14b as executed» below. action-guards 83 → 84 as predicted. Every clause mutation-verified. knip's only error is `scripts/fiken-probe.mjs`, a foreign untracked file |
+| 15a | | **938** + `<N>` / 41 | 642 | 377 | ⚠ baseline is 14b's **measured 938**, not the predicted 921. `<N>` = counted plan of `40_invite_tokens.sql`, **≈26** → ≈**964** |
+| 15b | | 15a + 3 / 41 | 642 | 377 | `plan(<N>)` → `plan(<N>+3)`; markers **102 → 112** (14b added 7, not 1) |
 | 15c | | = 15b | | 377 | |
 | 15d | | = 15b | | 377 | action-guards 84 → 85 |
 | 15e | | = 15b | | 377 | action-guards 85 → 87 |
@@ -3762,3 +3766,52 @@ The review panel's ~70 findings were applied to the plan body in the preceding s
 **What this pass did not do:** it did not re-verify the panel's measurements, and it deliberately left them as recorded — `935 / 40` and `95 → 103` are correct for the tree they were run against, annotated rather than overwritten. Three of the ten fingerprint markers (`u.deleted_at is null`, `s.student_user_id = p.id`, `not suppressed`) are confirmed present in the plan's SQL but **not** against `pg_get_functiondef`; that check is now an explicit instruction rather than an assumption.
 
 ★ **The lesson, and it is the same one twice now.** The panel found ~70 defects the author's self-review found 3 of. This pass found 5 more that the panel could not have found — because they did not exist until its own fixes were applied. **Applying a review is an edit, and an edit needs a review.** C1 alone would have stopped execution at the first `db reset`, and it was created by the fix for S1.
+
+
+---
+
+## Task 14b as executed — two findings that changed the task
+
+Executed 2026-08-06, portal `3f6656c`. The task shipped **25 pgTAP assertions instead of 8, seven suppression clauses instead of one, and 102 fingerprint markers instead of 96**, because two of the plan's premises were false. Both were found by reading the live database, not the plan.
+
+### F1 ⛔ "One clause covers everything" was wrong by a factor of seven
+
+The plan's central argument — repeated in the task header, the migration comment and the commit message — was that `private.is_guardian_of` is *the* predicate behind every guardian read, so suppression lands in one place. The 35 call sites are real. What the count missed: **eleven other functions join `public.guardian_student` directly and never call the predicate.** Measured:
+
+| Function | Verdict |
+|---|---|
+| `guardian_thread_options`, `submission_attachment_filenames` | reach `is_guardian_of` — safe |
+| `thread_recipients` | wide candidate set filtered by `reads_thread` → safe. **Messages and message e-mail were never at risk** |
+| `fan_out_announcement` | filtered by `reads_announcement` + `guardian_in_class_asof` → safe **once those are fixed**. Asserted (14–15), not assumed |
+| ⛔ `guardian_in_class` | gates **five** policies: classes, class_subjects, class_schedule, lessons, tests |
+| ⛔ `guardian_in_class_asof` | class announcements |
+| ⛔ `guardian_sees_assignment` · `guardian_sees_lesson` · `guardian_sees_test` | assignments, timetable, tests **and test results** |
+| ⛔ `reads_announcement_row` | school-wide announcements |
+
+With only the predicate patched, a parent under adressesperre kept seeing the child's class, timetable, assignments, lessons, tests and announcements — while `/admin/elever` told the office «denne foresatte ser ingenting om dette barnet». **Shipping a screen that says a court order has been honoured when it has not is worse than shipping no flag**, so all seven clauses ship here rather than as a follow-up.
+
+★ §10.7 called the property "structural rather than patchable by a later policy". The plan rebutted that; the rebuttal was half right. The *predicate* is patchable — but "one clause" was the belief that would have shipped a control that was roughly 60 % effective and advertised as total.
+
+### F2 ⛔ The audit trail was bypassable
+
+The plan justified the definer RPC by saying `guardian_student` "has admin-only INSERT and DELETE policies and deliberately **no UPDATE policy at all**". It has `guardian_student_admin_update`, and `authenticated` held a **table-level** UPDATE grant. An admin could therefore `PATCH` `suppressed` straight through PostgREST — flipping a court-ordered access decision **with no audit row**, which is the single thing this feature exists to guarantee.
+
+Fixed with the house pattern from `31_column_locks.sql`, whose header records this exact trap being learned twice: a column-level revoke under a table-level grant subtracts **nothing**. So `revoke update on public.guardian_student from authenticated`, then `grant update (is_payer)` — the one column the app actually writes (`setGuardianPayerAction`, `actions.ts:273`). `relationship`, `guardian_id` and `student_id` are now unwritable too; re-pointing a link row's `guardian_id` was a latent way to move a child's whole record between adults. Assertions 19–20 pin the shape, table-level first.
+
+### The mutation pass — run for this task, not deferred to 16b
+
+Every clause was mutated one at a time, capture → mutate → run → restore → verify-restore. **Two survived the first pass**, and both were gaps in the test, not the code:
+
+| Mutation | Reddens |
+|---|---|
+| `is_guardian_of` | 1, 4 |
+| `guardian_in_class` | **22** — reddened *nothing* until assertions 22–23 were added |
+| `guardian_in_class_asof` | 6, **14** (the fan-out, which has no clause of its own) |
+| `guardian_sees_assignment` / `_lesson` / `_test` | 8 / 10 / 12 |
+| `reads_announcement_row` | **24** — reddened *nothing* until a school-wide announcement and a guardian whose **only** link is suppressed were added |
+
+★ Assertion 22 also caught an ordering bug in my own fixture: assertion 16 deliberately un-suppresses, so everything after it ran against a cleared flag. **Had I written only the entitled-reader control, the whole block would have passed while proving nothing** — the exact shape [[a-mutation-that-reddens-is-not-coverage]] warns about.
+
+### Deliberately not fixed, and named rather than folded in
+
+`public.announcement_read_status` counts suppressed guardians in its `has_read` and `reachable` columns. That is **teacher-facing** and leaks nothing to the suppressed parent: a stale `announcement_reads` row from before suppression can still read as "the family has read it", and a pupil whose only guardian is suppressed still counts as reachable. It is an accuracy bug in an exit-gated Phase-5 surface, not a privacy hole. Recorded in the migration header and here; **not** silently expanded into.
