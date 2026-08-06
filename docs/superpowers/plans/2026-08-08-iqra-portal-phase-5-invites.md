@@ -40,7 +40,7 @@ Plans 1–3 are code-complete, green and pushed. This plan continues on the **sa
 
 ### Gate baselines carried in from plan 3
 
-pgTAP **913 / 39 files** · unit **636 / 58** · api **377 / 15** ·
+pgTAP **913 / 39 files** · unit **636 / 57** · api **377 / 15** ·
 `action-guards` counter **83** · fingerprint markers **95** (`plan(2)` is unchanged — it counts markers, not rows) ·
 lint 0 errors (5 pre-existing warnings) · knip: only `scripts/fiken-probe.mjs` + 9 unused **types**.
 
@@ -132,7 +132,7 @@ The probe user was deleted; `auth.users` and `public.profiles` were confirmed ba
 |---|---|
 | `supabase/migrations/20260808120000_invite_tokens.sql` | `private.invite_tokens`, `private.account_activation`, the four token RPCs, TTL tunables, grants |
 | `supabase/migrations/20260808121000_invite_rate_limit.sql` | `private.invite_attempts` + `public.invite_attempt_consume` |
-| `supabase/migrations/20260808122000_assignment_storage_comment.sql` | Task 14's `comment on` correction — the applied migration is never edited |
+| `supabase/migrations/20260808110000_assignment_storage_comment.sql` | Task 14's `comment on` correction — the applied migration is never edited |
 | `supabase/tests/39_invite_tokens.sql` | pgTAP for both migrations |
 | `src/lib/auth/invite.ts` | Token generation, the issue/redeem/restore wrappers, the invite URL |
 | `src/lib/auth/invite.test.ts` | Unit tests for the above |
@@ -158,7 +158,7 @@ The probe user was deleted; `auth.users` and `public.profiles` were confirmed ba
 | `supabase/tests/29_definer_fingerprints.sql` | Five new entries; marker literal 95 → **counted, not predicted** |
 | `src/app/(portal)/admin/AdminNav.tsx` + `.test.tsx` | Nav entry |
 | `src/app/api/varsler/drain/route.ts` | Uses the extracted `PORTAL_URL` |
-| `src/lib/admin/users.ts:19-23` | The doc comment naming Brevo and a flow that now exists |
+| `src/lib/admin/users.ts:19-24` | The doc comment naming Brevo and a flow that now exists |
 | `docs/spec.md`, `README.md`, Phase-4 design spec | Task 14 reconciliation |
 
 ---
@@ -169,10 +169,10 @@ Done first because it is the cheapest task and it removes stale facts the rest o
 
 **Files:**
 - Modify: `docs/spec.md:20`, `:109`, `:110`, `:149`, `:208` (portal repo)
-- Modify: `README.md:119-125`, `:145-147` (portal repo)
+- Modify: `README.md:119-124`, `:145-147` (portal repo)
 - Modify: `docs/superpowers/specs/2026-07-27-iqra-portal-phase-4-oppgaver-design.md:17`, `:18`, `:203` (**Desktop/iqra** repo)
-- Modify: `src/lib/admin/users.ts:19-23`
-- Create: `supabase/migrations/20260808122000_assignment_storage_comment.sql`
+- Modify: `src/lib/admin/users.ts:19-24`
+- Create: `supabase/migrations/20260808110000_assignment_storage_comment.sql`
 
 ### ⚠ The spec's task 14 undercounts by two
 
@@ -243,7 +243,7 @@ Replace with:
 
 - [ ] **Step 4: Replace Brevo in `README.md`**
 
-`README.md:119-125` currently reads:
+`README.md:119-124` currently reads:
 
 ```markdown
 6. **Authentication → SMTP** — sett opp Brevo som e-postleverandør
@@ -313,7 +313,7 @@ Replace `:203` with:
 
 ⛔ `20260728094000_assignment_storage.sql` is **already applied**. Editing it changes a file whose checksum the migration history has recorded, and the correction never reaches an existing database. Write a new migration instead.
 
-Create `supabase/migrations/20260808122000_assignment_storage_comment.sql`:
+Create `supabase/migrations/20260808110000_assignment_storage_comment.sql`:
 
 ```sql
 -- Comment-only correction to 20260728094000_assignment_storage.sql.
@@ -355,7 +355,7 @@ If either is null, find the real name with `\dt public.*attachment*` and correct
 
 - [ ] **Step 8: Correct the provisioning doc comment**
 
-`src/lib/admin/users.ts:19-23` currently reads:
+`src/lib/admin/users.ts:19-24` currently reads:
 
 ```typescript
 /**
@@ -422,7 +422,7 @@ Portal:
 
 ```bash
 cd ~/dev/iqra-portal && git add docs/spec.md README.md src/lib/admin/users.ts \
-  supabase/migrations/20260808122000_assignment_storage_comment.sql \
+  supabase/migrations/20260808110000_assignment_storage_comment.sql \
   src/lib/supabase/database.types.ts
 git commit -m "docs: reconcile the spec, the README and a shipped migration comment with Q14=(a)
 
@@ -580,11 +580,38 @@ as $$
 declare
   v_expires timestamptz;
 begin
-  -- ⛔ D29. A pupil is never mailed. Keyed on the RELATIONSHIP
-  -- (students.student_user_id), never on a role — the same test the ping
-  -- fan-out uses, so a pupil who also holds another role is still covered.
+  -- ⛔ THE ACCOUNT MUST STILL EXIST. Measured 2026-08-06: without this, an
+  -- invite issued before a soft-delete still redeems for the whole TTL, so
+  -- updateUserById runs against an erased identity and account_activation
+  -- gains a fresh row for it. The read side alone is not a wall.
+  if not exists (
+        select 1 from auth.users u where u.id = target and u.deleted_at is null)
+  then
+    raise exception 'kontoen finnes ikke eller er slettet' using errcode = '42501';
+  end if;
+
+  -- ⛔ D29. A pupil is never mailed.
+  --
+  -- ★ RELATIONSHIP **OR** ROLE, and the disjunction is the whole finding.
+  -- The relationship alone was the first draft, on the reasoning that it
+  -- mirrors the ping fan-out. It does not hold here, because two shipped admin
+  -- buttons produce a pupil the relationship cannot see:
+  --   · unlinkStudentLoginAction (elever/actions.ts:373) clears
+  --     students.student_user_id and its own comment says it DELIBERATELY does
+  --     not revoke the student role;
+  --   · deleting the students row does the same, via `on delete set null`.
+  -- Either leaves a live auth account holding role 'student' with no link — so
+  -- the relationship test goes false, /admin/kontoer renders an e-mail button
+  -- next to a card that still says «student», and a 13-year-old is mailed a
+  -- credential with every test green. The fixture only ever used a LINKED
+  -- pupil, which is why nothing caught it.
+  --
+  -- The fan-out can key on the relationship alone because it asks "who is the
+  -- pupil in THIS thread"; this asks "is this account a child", and a child
+  -- whose login was unlinked is still a child.
   if p_delivery = 'epost'
-     and exists (select 1 from public.students s where s.student_user_id = target)
+     and (exists (select 1 from public.students s where s.student_user_id = target)
+          or private.has_role(target, 'student'))
   then
     raise exception 'D29: en elev skal aldri motta invitasjon på e-post'
       using errcode = '42501';
@@ -696,7 +723,12 @@ as $$
          u.email::text,
          coalesce(array_agg(r.role::text order by r.role)
                     filter (where r.role is not null), '{}'),
-         exists (select 1 from public.students s where s.student_user_id = p.id),
+         -- ⛔ THE SAME DISJUNCTION AS invite_issue, and it must stay identical.
+         -- This column is what /admin/kontoer renders the e-mail button off,
+         -- so if it disagrees with the RPC the UI offers an action the database
+         -- will refuse with a raw 42501.
+         (exists (select 1 from public.students s where s.student_user_id = p.id)
+          or private.has_role(p.id, 'student')),
          t.issued_at,
          t.expires_at,
          t.delivery
@@ -825,7 +857,7 @@ values ('c2000000-0000-0000-0000-0000000000a1', 'C2', 'Elev', 2012,
 select public.invite_issue(
   'c2000000-0000-0000-0000-000000000002',
   'c2-token-a',
-  'epost',
+  'skjerm',
   'c2000000-0000-0000-0000-000000000001');
 
 select is(
@@ -844,7 +876,7 @@ select isnt(
 select public.invite_issue(
   'c2000000-0000-0000-0000-000000000002',
   'c2-token-b',
-  'epost',
+  'skjerm',
   'c2000000-0000-0000-0000-000000000001');
 
 select is(
@@ -1376,14 +1408,40 @@ const { buildInviteEmail } = await import('./invite-email');
 const URL = 'https://portal.iqrasenter.no/sett-passord?t=ZZTOKENZZ';
 
 describe('buildInviteEmail', () => {
-  it('names no person, no child and no role', () => {
-    const mail = buildInviteEmail({ inviteUrl: URL, validDays: 7 });
-    const whole = `${mail.subject}\n${mail.text}`;
-    for (const forbidden of ['ZZPUPILZZ', 'ZZPARENTZZ', 'ZZTEACHERZZ', 'ZZCLASSZZ']) {
-      expect(whole).not.toContain(forbidden);
-    }
+  /**
+   * ⛔ THE SENTINEL MUST TRAVEL THROUGH THE PARAMETER. Asserting that a body
+   * built from `{inviteUrl, validDays}` does not contain 'ZZPUPILZZ' is
+   * VACUOUS — there is no input channel through which any implementation could
+   * emit it, so the assertion passes for every possible body, including one
+   * that reads `(input as any).pupilName` and prints it. The only way to
+   * redden it would be to hard-code the literal into the template.
+   *
+   * This is not hypothetical on this project. ping-email.test.ts's own comment
+   * records that its earlier version — which keyed on the human description
+   * instead of feeding the field through — scored 6/6 GREEN against a builder
+   * that put a pupil's name in the body. Distinctiveness was never the
+   * mechanism; the parameter is.
+   */
+  it.each([
+    ['pupilName', 'ZZPUPILZZ'],
+    ['recipientName', 'ZZPARENTZZ'],
+    ['teacherName', 'ZZTEACHERZZ'],
+    ['className', 'ZZCLASSZZ'],
+    ['email', 'zz@zz.invalid'],
+    ['userId', 'c2000000-0000-0000-0000-000000000002'],
+  ])('never carries %s even when the caller passes one', (field, secret) => {
+    const mail = buildInviteEmail({
+      inviteUrl: URL,
+      validDays: 7,
+      ...({ [field]: secret } as Record<string, unknown>),
+    } as Parameters<typeof buildInviteEmail>[0]);
+    expect(mail.text).not.toContain(secret);
+    expect(mail.subject).not.toContain(secret);
   });
 
+  // ⚠ Kept, but it is NOT the privacy wall it reads as: with no address-shaped
+  // input, it can only catch an address hard-coded into the footer. The
+  // it.each above is what actually guards the promise.
   it('echoes no e-mail address — the recipient is the envelope, never the body', () => {
     const mail = buildInviteEmail({ inviteUrl: URL, validDays: 7 });
     expect(mail.text).not.toMatch(/@/);
@@ -1727,7 +1785,9 @@ vi.mock('@/lib/admin/quarantine', () => ({
   createServiceRoleClient: () => ({ auth: { admin: { updateUserById } } }),
 }));
 vi.mock('next/navigation', () => ({
-  redirect: (to: string) => { throw new Error(`REDIRECT:${to}`); },
+  // `NEXT_REDIRECT:` matches the repo's existing precedent at
+  // src/app/logg-inn/actions.test.ts:7-11 — do not invent a second prefix.
+  redirect: (to: string) => { throw new Error(`NEXT_REDIRECT:${to}`); },
 }));
 
 const { setPasswordAction } = await import('./actions');
@@ -1788,7 +1848,7 @@ describe('setPasswordAction', () => {
 
   it('★ marks the account activated only AFTER GoTrue accepted', async () => {
     await expect(setPasswordAction({ error: null }, form(GOOD)))
-      .rejects.toThrow('REDIRECT:/logg-inn?aktivert=1');
+      .rejects.toThrow('NEXT_REDIRECT:/logg-inn?aktivert=1');
     expect(updateUserById).toHaveBeenCalledWith('user-1', { password: GOOD.passord });
     expect(markActivated).toHaveBeenCalledWith('user-1');
     expect(restoreInvite).not.toHaveBeenCalled();
@@ -1939,7 +1999,7 @@ export default async function SettPassordPage({
   const { t } = await searchParams;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
+    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
       <h1 className="text-2xl font-semibold">Velg passord</h1>
       {t ? (
         <>
@@ -2055,16 +2115,33 @@ export default async function LoggInnPage({
 In `src/proxy.ts`, immediately **after** the drain exclusion at `:92` and **before** `if (!user)`:
 
 ```typescript
-  // ⛔ ALSO BEFORE THE !user BRANCH, and for the same reason as the drain: the
-  // whole point of this page is that its visitor has no session, so the
-  // matcher would 307 every invited parent to /logg-inn — a login page they
-  // cannot use, reached from a link that appears to be broken.
+  // ⛔ BEFORE THE !user BRANCH, and for the same reason as the drain: the whole
+  // point of this page is that its visitor has no session, so the matcher would
+  // 307 every invited parent to /logg-inn — a login page they cannot use,
+  // reached from a link that appears to be broken.
   //
-  // ⚠ ONE EXACT PATH, never a prefix, and trailing-slash tolerant. It also
-  // deliberately lets a SIGNED-IN user through rather than bouncing them to
-  // «/» the way /logg-inn does: an admin testing an invite link, or a parent
-  // with a stale session, should reach the form rather than be told nothing.
-  if (path.replace(/\/$/, '') === '/sett-passord') return respond();
+  // ⚠ ONE EXACT PATH, never a prefix, and trailing-slash tolerant.
+  //
+  // ★ GUARDED ON `!user`, and that guard is load-bearing. An unguarded
+  // exclusion returns BEFORE the user_roles read (:106) and the AAL2 block
+  // (:115-128), making this the first path in the app where an authenticated
+  // STAFF session at AAL1 skips the MFA gate — and Server Actions POST to page
+  // paths, so that is a real reachable surface, not a theoretical one.
+  //
+  // Nothing is lost by guarding it. A signed-in PARENT still reaches the page:
+  // they hold no staff role, so they fall through the role check to respond()
+  // at :130. Only /logg-inn bounces a signed-in user to «/», and this is not
+  // that path. (An earlier draft of this plan claimed the opposite and wrote a
+  // test around it; the test could not fail.)
+  if (!user && path.replace(/\/$/, '') === '/sett-passord') {
+    const response = respond();
+    // The token is in the query string, and Referrer-Policy is
+    // strict-origin-when-cross-origin globally (next.config.ts:22) — which
+    // sends the FULL URL on same-origin requests. Every chunk, stylesheet and
+    // RSC fetch this page makes would carry a live credential in Referer.
+    response.headers.set('referrer-policy', 'no-referrer');
+    return response;
+  }
 ```
 
 - [ ] **Step 9: The proxy tests**
@@ -2073,27 +2150,47 @@ Add to `src/proxy.test.ts`, alongside the four drain exclusion tests (copy their
 
 ```typescript
   it('lets an unauthenticated GET /sett-passord through instead of 307ing it', async () => {
-    const response = await proxy(request('/sett-passord?t=abc', { user: null }));
-    expect(response.status).not.toBe(307);
+    expect((await proxy(request('/sett-passord?t=abc'))).status).not.toBe(307);
   });
 
   it('tolerates the trailing slash', async () => {
-    const response = await proxy(request('/sett-passord/', { user: null }));
-    expect(response.status).not.toBe(307);
+    expect((await proxy(request('/sett-passord/'))).status).not.toBe(307);
   });
 
   it('★ does not exempt a neighbouring path — the exclusion is exact, not a prefix', async () => {
-    const response = await proxy(request('/sett-passord-noe', { user: null }));
-    expect(response.status).toBe(307);
+    expect((await proxy(request('/sett-passord-noe'))).status).toBe(307);
   });
 
-  it('lets a signed-in user reach it rather than bouncing to «/»', async () => {
-    const response = await proxy(request('/sett-passord?t=abc', { user: { id: 'u1' } }));
-    expect(response.status).not.toBe(307);
+  it('sends no Referer — the token is in the query string', async () => {
+    const response = await proxy(request('/sett-passord?t=abc'));
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  });
+
+  // ★ THE GUARD, not the exclusion. Staff at AAL1 must STILL be MFA-gated
+  // here; without the `!user &&` this is the one path in the app where they
+  // are not. A signed-in non-staff user proves nothing — they reach respond()
+  // at proxy.ts:130 with or without this line.
+  it('★ still MFA-gates a signed-in staff session below AAL2', async () => {
+    getUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    from.mockReturnValue({
+      select: () => ({ eq: async () => ({ data: [{ role: 'admin' }], error: null }) }),
+    });
+    expect((await proxy(request('/sett-passord?t=abc'))).status).toBe(307);
   });
 ```
 
-⚠ `request()` here stands for whatever helper the existing drain tests use. **Read `src/proxy.test.ts` and reuse it verbatim** — do not introduce a second harness.
+⛔ **`request()` takes ONE argument.** `src/proxy.test.ts:45` is `function request(path: string)`; the session user comes from the module-level `getUser` mock, which `beforeEach` pins to `null`. An earlier draft of this plan called it as `request(path, { user: null })` — that is TS2554, so it fails `npm run typecheck`, and under vitest's transpile-only esbuild the extra argument is silently **dropped**, so the "signed-in" test would have run against `user: null` and passed for the wrong reason. Reuse the helper verbatim; do not introduce a second one.
+
+⚠ The last test needs `getUser` and `from` to be able to *hold* a signed-in staff session. Their current inferred types are `user: null` and `data: never[]`, so widen the two mock declarations at `src/proxy.test.ts:13-16` first, and reset both in `beforeEach`:
+
+```typescript
+const getUser = vi.fn<() => Promise<{ data: { user: { id: string } | null } }>>(
+  async () => ({ data: { user: null } }),
+);
+const from = vi.fn<
+  () => { select: () => { eq: () => Promise<{ data: { role: string }[]; error: null }> } }
+>(() => ({ select: () => ({ eq: async () => ({ data: [], error: null }) }) }));
+```
 
 - [ ] **Step 10: The static wall**
 
@@ -2215,7 +2312,7 @@ export async function sendInviteEmail(
   send: SendPing = sendViaResend,
 ): Promise<{ sent: boolean; reason?: string }> {
   const actorId = await requireAdminActor();
-  const pending = await listPendingAccountsOrAll(userId);
+  const pending = await findAccount(userId);
   if (!pending) return { sent: false, reason: 'Kontoen finnes ikke.' };
   if (pending.isStudent) {
     return {
@@ -2257,13 +2354,76 @@ export async function revealInviteLink(userId: string): Promise<string> {
   return inviteUrl(token);
 }
 
-async function listPendingAccountsOrAll(userId: string): Promise<PendingAccount | null> {
-  const all = await listPendingAccounts();
-  return all.find((a) => a.userId === userId) ?? null;
+/**
+ * ⛔ RESOLVES THROUGH invite_find_account, NOT THROUGH THE QUEUE.
+ *
+ * An earlier draft resolved by scanning listPendingAccounts(). That queue
+ * filters `not exists (… account_activation …)`, so an ACTIVATED account is
+ * never in it — and every caller below then answered «Kontoen finnes ikke» for
+ * exactly the people D30 exists to serve. The result was a plan in which
+ * re-issuing an invite was the documented password reset, had SQL written for
+ * it (invite_mark_activated's upsert), had a walkthrough step exercising it,
+ * and had NO REACHABLE UI. Phase 5 would have shipped with no password reset
+ * of any kind. The draft's own note defended the queue scan as a scale
+ * trade-off and never noticed it was a correctness bug.
+ */
+async function findAccount(userId: string): Promise<PendingAccount | null> {
+  const service = createServiceRoleClient();
+  const { data, error } = await service
+    .rpc('invite_find_account', { target: userId })
+    .maybeSingle();
+  if (error) throw new Error(`Kunne ikke hente kontoen: ${error.message}`);
+  return data ? mapAccount(data) : null;
 }
 ```
 
-⚠ `listPendingAccountsOrAll` re-reads the whole queue to resolve one account. At IQRA's scale (a few hundred rows, and shrinking as accounts activate) that is the right trade against a second RPC — but say so in the commit rather than leaving it to look like an oversight. If the queue ever exceeds ~1000 rows, add a single-row RPC.
+⚠ `sendInviteEmail` and `revealInviteLink` both call `findAccount`, never `listPendingAccounts`. Extract the row→`PendingAccount` mapping as `mapAccount` so the queue and the single-row lookup cannot drift.
+
+- [ ] **Step 1b: The single-row resolver, and the reset path it unblocks**
+
+Add to `supabase/migrations/20260808120000_invite_tokens.sql` (Task 15a), beside `invite_pending_accounts`:
+
+```sql
+-- The single-account lookup. Deliberately does NOT filter on activation: this
+-- is the resolver the RESET path uses (D30), and a reset is by definition for
+-- someone who can already log in. invite_pending_accounts is the work queue;
+-- this is the lookup. Keeping them separate is what stops the queue's filter
+-- from silently becoming a precondition for issuing.
+create function public.invite_find_account(target uuid)
+returns table (
+  user_id uuid, full_name text, email text, roles text[], is_student boolean,
+  activated boolean,
+  invite_issued_at timestamptz, invite_expires_at timestamptz, invite_delivery text
+)
+language sql
+security definer
+set search_path = ''
+as $$
+  select p.id, p.full_name, u.email::text,
+         coalesce(array_agg(r.role::text order by r.role)
+                    filter (where r.role is not null), '{}'),
+         (exists (select 1 from public.students s where s.student_user_id = p.id)
+          or private.has_role(p.id, 'student')),
+         exists (select 1 from private.account_activation a where a.user_id = p.id),
+         t.issued_at, t.expires_at, t.delivery
+    from public.profiles p
+    join auth.users u on u.id = p.id
+    left join public.user_roles r on r.user_id = p.id
+    left join private.invite_tokens t on t.user_id = p.id
+   where p.id = target and u.deleted_at is null
+   group by p.id, p.full_name, u.email, t.issued_at, t.expires_at, t.delivery;
+$$;
+
+revoke execute on function public.invite_find_account(uuid) from public, anon, authenticated;
+grant execute on function public.invite_find_account(uuid) to service_role;
+```
+
+`/admin/kontoer` therefore has **two** sections, and the second is D30:
+
+1. **«Kan ikke logge inn ennå»** — `listPendingAccounts()`, the work queue, which shrinks to empty.
+2. **«Finn en konto»** — a search field resolving to `invite_find_account`, rendering the same `InviteCard` with the button labelled **«Send invitasjon på nytt»** when `activated` is true. This is the whole of the password-reset flow, and it is the only way a family who forgot a password gets back in.
+
+⚠ Add the pgTAP assertion that pins it, because nothing else does: issue → redeem → `invite_mark_activated` → issue again → the **old** token is dead and the **new** one redeems. That is D30's only mechanical claim.
 
 - [ ] **Step 2: The test**
 
@@ -2540,6 +2700,29 @@ diff /tmp/before.sql /tmp/after.sql && echo "✓ restored"
 
 If the diff is not empty, **`npx supabase db reset` before the next mutation.** Do not proceed on a database you have not re-verified.
 
+- [ ] **Step 1b: A SECOND restore idiom, for the grant mutations (rows 10, 11, 11b)**
+
+⛔ **The harness above cannot restore a grant, and it will tell you it did.** `create or replace function` **preserves the existing ACL**, and `pg_get_functiondef` never renders a grant — so after row 10 the re-applied definition changes nothing about the privilege, `diff` is empty, and the harness prints **`✓ restored`** while `authenticated` still holds EXECUTE. Assertion 16 is then red for every remaining mutation and reads as a fresh defect. Row 11 is worse: it is a *table* grant that `pg_get_functiondef` cannot see at all.
+
+This is failure modes 2 and 3 of this task's own preamble, reproduced inside the harness written to prevent them. For those rows the restore is the matching `REVOKE`, and the verification is **re-running the assertion**, not diffing a definition:
+
+```bash
+cd ~/dev/iqra-portal
+# mutate
+docker exec -i supabase_db_iqra-portal psql -U postgres -d postgres <<'SQL'
+grant execute on function public.invite_redeem(text) to authenticated;
+SQL
+npx supabase test db supabase/tests/39_invite_tokens.sql   # assertion 16 must be RED
+
+# restore — the inverse statement, never a definition replay
+docker exec -i supabase_db_iqra-portal psql -U postgres -d postgres <<'SQL'
+revoke execute on function public.invite_redeem(text) from authenticated;
+SQL
+npx supabase test db supabase/tests/39_invite_tokens.sql   # 16 AND 17 must be green
+```
+
+⚠ Two further harness corrections measured by the panel: row 14 needs `FN="private.invite_attempt_limit()"`, and row 15's affected file is **29**, not the 39 the Step 1 harness runs.
+
 - [ ] **Step 2: Work the table**
 
 | # | Mutation | Expected to redden | Measured |
@@ -2698,3 +2881,139 @@ Run against the spec with fresh eyes after writing.
 3. Assertion 18 claimed **2** audited pupil issues. It is **1**: the refused `epost` attempt raises before the audit insert.
 
 **And one design defect:** the RPCs originally took `bytea` and hashed in TypeScript. Passing a bytea through PostgREST needs hex encoding, and getting it wrong yields an invite flow where every link is silently invalid. Changed to hash in SQL, following `private.login_email_hash`.
+
+---
+
+# ★★ REVIEW PANEL LEDGER — 2026-08-06
+
+Six lenses, run in parallel over the plan **before** any execution: SQL/schema, security threat model, test quality, Next.js/React, repo fidelity, spec intent + GDPR. Each was required to **execute** rather than read, and to label every finding CONFIRMED (ran it) or PLAUSIBLE (reasoned).
+
+**~70 findings. My own self-review had found three.** That ratio is the argument for the panel, and it is the second time it has held on this project — plan 3's panel found ~78 after a careful self-review found 7.
+
+Only the SQL lens was permitted to touch the database; the other five were read-only, so its measurements could not be contaminated. It left the stack at the plan-3 baseline (`913 / 39`, `max(version) = 20260807125000`, HEAD `7f90094`) — verified.
+
+## What the panel confirmed as SOUND, by running it
+
+Recorded so no later session re-litigates it:
+
+- Every migration applies clean under `--single-transaction … ON_ERROR_STOP=1`. All 11 functions create. No argument-count error, no `search_path = ''` qualification error, and `extensions.digest` **is** reachable that way.
+- `plan(19)` runs exactly 19 and `plan(22)` exactly 22, all green. `throws_ok(…, '42501', …)` matches the errcode actually raised. No polymorphic-`is()` type failure.
+- Full suite after all three migrations: **935 assertions / 40 files** — the predicted number, exactly.
+- Fingerprint arithmetic **95 → 103** is right; all 8 markers appear verbatim in `pg_get_functiondef`, each dot-qualified or carrying an operator, none duplicated within its body.
+- ★ **The concurrency claim HOLDS.** Two live sessions: A held `begin; invite_redeem('race-token')` open for 3 s, B called concurrently. A → the user id, B → `NULL`, one `consumed_at`. B blocked on the row lock and EvalPlanQual rejected it. The one-statement form does what the header says.
+- `npm run db:types` generates exactly the six functions with the shapes the TypeScript consumes. `.maybeSingle()` is valid on `invite_attempt_consume`.
+- Task 14 Step 7's precondition holds (`to_regclass` returns both tables) and Step 10's `obj_description … like '%ONE OF TWO buckets%'` returns `t`.
+- The `audit_log` direct insert works through `FORCE ROW LEVEL SECURITY` (owner `postgres` has `rolbypassrls`), and `private.audit()` really does reject `admin.*` with 42501.
+- `/sett-passord` under `src/app` needs **no** layout of its own — `src/app/layout.tsx` supplies the font, `globals.css`, `lang="nb"` and the base classes, exactly as for `logg-inn` and `mfa/*`. `/admin/kontoer` does get `PortalShell` via the admin layout.
+- `export const dynamic = 'force-dynamic'` is **required**, not redundant: `scripts/check-csp-nonce.mjs` fails the build on a prerendered page shipping un-nonced inline scripts, and `/mfa/registrer` once shipped as a dead skeleton for exactly that reason.
+- The hidden-token-input reasoning holds against the installed `react-dom@19.2.8`: `hasReadOnlyValue` includes `hidden`, so there is no controlled-field warning, and `initInput` sets `defaultValue` from `value`, so React's post-action `form.reset()` restores the same token.
+- `redirect()` outside try/catch, and testing it via a throwing mock, are the repo's own precedent (`logg-inn/actions.ts:85`, `logg-inn/actions.test.ts:7-11`).
+- Action counts **83 → 84 → 86** are right; `parseExports` matches only function/arrow-const forms, so the exported interfaces are invisible to it.
+- `invites.test.ts`'s `vi.importActual` spread genuinely works — the override lands after the spread and the real `inviteUrl`/`generateInviteToken` stay live, which is what makes the `{43}` regex a real assertion.
+- No existing pgTAP file is disturbed: `26_rls_force.sql` and `00_grant_firewall.sql` sweep **public** only, and this plan adds no public table.
+- The `PRE_AUTH` exemption is genuinely load-bearing — `action-guards.test.ts:132` asserts against the action **body**, not the allowlist literal.
+- All five `docs/spec.md` anchors, `README:145-147`, `PRODUCT.md:35`, all three Phase-4 spec anchors, `20260728182000:54`, `20260728200000:14-17` and `:235-241`, `20260728094000:4-11`, `drain/route.ts:125`, `proxy.ts:92` and `users.ts:59` are **verbatim exact**. The `c2` fixture prefix is genuinely free.
+
+## ⛔ EXECUTION-STOPPERS — fix before Task 14 starts
+
+| # | Lens | Finding | Disposition |
+|---|---|---|---|
+| **S1** | spec/GDPR | **D30's reset path has no button.** `invite_pending_accounts` excludes activated accounts; `sendInviteEmail` resolves *through that queue*, so an activated account gets «Kontoen finnes ikke». Task 16d row 10 is unexecutable and the phase would ship with **no password reset of any kind** — while `invite_mark_activated`'s own comment says re-issuing *is* the reset. | **FIXED** — Task 15e gains `public.invite_find_account(uuid)` (single-row, includes activated) which `sendInviteEmail`/`revealInviteLink` use instead of the queue; `/admin/kontoer` gains a «Finn en konto» lookup section for the reset path. pgTAP gains an assertion that an **activated** account can be re-issued and the old link dies. |
+| **S2** | security | **D29's wall has a hole.** `unlinkStudentLoginAction` (`elever/actions.ts:373`) deliberately keeps the `student` role while clearing `student_user_id`, and deleting a `students` row does the same via `on delete set null`. My predicate then goes false → the account appears with an **e-mail button** and `invite_issue` permits `epost`. Every test stays green; the fixture only ever uses a linked pupil. | **FIXED** — predicate becomes relationship **OR** role, using the existing `private.has_role`, in **both** `invite_issue` and `invite_pending_accounts.is_student`. New pgTAP assertion for the unlinked pupil + its own mutation row. |
+| **S3** | SQL | **Migration versions are ordered against task order.** Task 14 creates `…122000` and executes *first*; 15a/15b create `…120000`/`…121000`. Measured: `supabase migration up` → `LegacyMigrationMissingRemoteError`. Any database receiving Task 14's commit first — i.e. the cloud project being provisioned — refuses the later push. Invisible locally because every task does a full reset. | **FIXED** — Task 14's migration renumbered to `20260808110000`; D32 takes `20260808111000`. Versions are now monotonic with execution order. |
+| **S4** | test + SQL | **The privacy test cannot fail, and its mutation aborts the file.** `buildInviteEmail` takes `{inviteUrl, validDays}`, so the `ZZ…` sentinels are never passed in — the loop passes for any body. And mutation 6 makes the bare `'epost'` fixture calls raise, aborting the transaction before `ok 1`: measured as *zero TAP output*, not "assertion 10 red". **Assertions 9 and 10 have no mutation that reddens them.** | **FIXED** — the omission test spreads sentinels **through the parameter** with a cast (the `ping-email.test.ts` mechanic, whose own comment records that the version without it scored 6/6 green against a leaking builder); the two fixture issues become `'skjerm'`; mutation **5b** added for assertion 9. |
+| **S5** | Next + repo + test | **Two proxy tests are broken in a way that passes.** `request()` at `proxy.test.ts:45` takes **one** argument — session state comes from the module-level `getUser` mock. The two-arg form is TS2554 (fails `npm run typecheck`) and, under vitest's transpile-only esbuild, the extra argument is *dropped*, so the "signed-in" test runs against `user: null`. It also **cannot fail even when correct**: a signed-in non-staff user reaches `respond()` regardless. | **FIXED** — one-argument calls throughout; the fourth test becomes staff-at-AAL1, the only case the exclusion changes. |
+| **S6** | test | **The mutation harness cannot restore grant mutations.** Rows 10/11 are grants; `create or replace function` preserves the ACL and `pg_get_functiondef` never renders one, so the diff is empty and the harness prints **`✓ restored`** while `authenticated` still holds EXECUTE. Failure modes 2 and 3 from the plan's own preamble, reproduced inside the harness written to prevent them. | **FIXED** — Task 16b Step 1 gains a second, explicit restore idiom for DDL/grant mutations (the matching `REVOKE`, verified by re-running the assertion rather than by diffing a definition). |
+
+## HIGH — fixed in this revision
+
+| # | Lens | Finding | Fix |
+|---|---|---|---|
+| H1 | security + SQL | **The "global prune" does not exist.** The `attempted_at` index comment claims one; the only `delete` is bucket-scoped, so an IP that never returns leaves a permanent row — on an unauthenticated endpoint that fails open, storing IP addresses. 5 000 rows inserted, none reachable by any prune path. | Add `public.invite_attempts_prune()` mirroring `login_attempts_prune()`, with the same revoke/grant pair. |
+| H2 | SQL | **`invite_redeem` has no `deleted_at` check.** Measured: an invite issued before a soft-delete still redeems, so `updateUserById` runs on an erased account and `invite_mark_activated` writes a fresh row for it. The wall exists only on the read side, while the fingerprint comment claims it protects against "a live invite path into an erased identity". | Add the check to **both** `invite_redeem` and `invite_issue`; pin `deleted_at` as a marker on redeem; assertion + mutation row. |
+| H3 | SQL | **`private.invite_attempts` is in no grant assertion.** Assertion 17's table list stops at `invite_tokens`/`account_activation`. Measured: `grant select on private.invite_attempts to authenticated` reddens **nothing**, and `authenticated` already holds `USAGE` on schema `private`. The table stores IP addresses. | Add it to assertion 17 and add the mutation row. |
+| H4 | repo | **`src/lib/auth/invite.ts` breaches the quarantine.** `quarantine.ts:13-15` says `createServiceRoleClient` is for siblings in `src/lib/admin/` only; no lint rule enforces it, so this would compile and pass CI as the first `src/lib/` module to cross it. | Move the four RPC wrappers to `src/lib/admin/invite-tokens.ts` as quarantine **category B** (the `rate-limit.ts` contract, which they satisfy verbatim). `src/lib/auth/invite.ts` keeps only the pure helpers. Also resolves K1. |
+| H5 | Next | **knip fails Task 15c at error level** on four *function* exports (`issueInvite`, `redeemInvite`, `restoreInvite`, `markActivated`) with no consumer until 15d/15e. My warning named `PORTAL_URL` and `InviteDelivery` — and per `knip.json`, **types are warn-only**, so it targeted the two symbols that cannot fail the gate. | Cover all four in the library test (they need tests regardless: nothing currently asserts `issueInvite` passes all four RPC args, or that `restoreInvite` swallows rather than throws). |
+| H6 | Next | **The one-time link can render in the wrong pupil's card.** `invite_pending_accounts` orders `issued_at asc nulls first`, so issuing moves that row to the **bottom**; `revealInviteLinkAction` then calls `revalidatePath`, re-sorting the list while a non-recoverable credential is on screen. Keyed by index, hook state stays bound to the position. | Key on `account.userId`, stated explicitly in the code. Drop `revalidatePath` from the reveal action. |
+| H7 | security | **Every GoTrue failure is treated as "not the user's fault".** No classifier, against the `isCredentialFailure` precedent. If the cloud project's password policy rejects a passphrase (422), the parent is told the system had a hiccup and to try again — forever. | Classify permanent 4xx vs transient; restore the token in **both** cases; add the 422 unit test. |
+| H8 | security | **A `markActivated` failure tells the user their link is dead when their password already works.** It throws → 500 → they click the link again → «Lenken er ugyldig eller utløpt». They phone the school about a working password, and the admin mints another credential. | Make it non-fatal (log and continue); the activation row is bookkeeping, nothing authorizes on it. Unit test. |
+| H9 | security | **No way to revoke an invitation, and no cap on issuance.** A mistyped address sends a live 7-day credential to a stranger whose only kill switch is minting *another* one. A hijacked admin session can blast the school from IQRA's verified sending domain. | Add `public.invite_revoke(target)` + «Trekk tilbake invitasjonen» + `admin.invite.revoked` audit. Cap issuance per actor using the `invite_attempts` construct pointed at `p_issued_by`. |
+| H10 | spec/GDPR | **Two new permanent stores the pupil-erasure unit cannot reach**, plus an un-rotatable per-child audit row in a table with no DELETE grant for anyone. `students.student_user_id` is `on delete set null`, so deleting a `students` row never touches `profiles`. This is §10.11's exact failure mode, twice more, and §10.8's minimisation instruction ignored. | Drop `expires_at` from `meta` (derivable from the row). Extend §10.11's list from three to five with the explicit Phase-7 instruction. State a retention rule for consumed/expired tokens. |
+
+## MEDIUM — fixed in this revision
+
+| # | Finding | Fix |
+|---|---|---|
+| M1 | The proxy exclusion sits above the role/AAL2 read, making `/sett-passord` the first path where an authenticated staff session at AAL1 skips the MFA gate. | Scope to `!user &&`. A signed-in parent still falls through to `respond()`. |
+| M2 | The token leaks via same-origin `Referer` on every subresource — `strict-origin-when-cross-origin` sends the **full URL** same-origin. The plan hardens the provider's logs and ignores its own. | `Referrer-Policy: no-referrer` on the exclusion branch; `history.replaceState` after hydration; Vercel log retention added to 16d. |
+| M3 | The 12-character minimum — the plan's headline password decision — is pinned by nothing. The test asserts `/12/` against the *message*, so `min(12)` → `min(6)` stays green. | Boundary test at 11 and 12 characters. |
+| M4 | `formatDateNb` throws on timestamptz (correct), but the prescribed fallback `toLocaleDateString('nb-NO')` is documented as a bug at `dates.ts:26` — no `timeZone`, server runs UTC. The grep I prescribed returns nothing usable. | Name the real pair: `formatDateNb(osloDateOf(v))` for a date, `formatDateTimeNb(v)` for date+time — the `AnnouncementList.tsx:48` precedent. |
+| M5 | Two `useActionState` hooks in `InviteCard` with no state adjustment: a failed send's error renders **beneath** the one-time link from the other action. `NO_API_KEY` is the expected state until Resend exists, so this is the default experience. | Apply `LoginCard.tsx:49-76`'s adjust-during-render idiom; write `InviteCard` out as code rather than prose. |
+| M6 | `logThrottleFailure` hard-codes «GoTrue-hooken gjelder fortsatt» — false for the invite path, which the plan itself says has no backstop. | Parameterise the backstop clause. |
+| M7 | `invite_pending_accounts.is_student` is uncovered in both suites. Measured: replacing the projection with `false` reddens **nothing**, and every pupil gets an e-mail button. | Assert `is_student` directly for pupil and guardian; add `s.student_user_id = p.id` as a marker; mutation row. |
+| M8 | The two TTLs (24 h vs 7 days) are unasserted and unpinned — swapping the arms reddens nothing. | Ordering assertion + marker. |
+| M9 | The limiter's *window* is unasserted: deleting `attempted_at >= now() - v_window` turns a 15-minute limiter into a permanent per-IP ban on a school that shares one NAT. | Assertion with rows aged 20 minutes. |
+| M10 | No clear-on-success, against the `clearLoginAttempts` precedent. An admin walking families through activation on school wifi hits the cap at the 21st family. | `public.invite_attempts_clear(p_ip)` called after a successful redemption. |
+| M11 | The limiter header claims it defends bcrypt CPU. It cannot: `updateUserById` is only reached **after** a successful redeem, so a bogus token never touches GoTrue. | Correct the header — it defends against endpoint flooding and its own write amplification. |
+| M12 | `invite_issue`'s `p_issued_by` is caller-supplied and written verbatim to `audit_log.actor_id`; nothing says it must come from `requireAdminActor()`. | State it in both the SQL comment and the wrapper's doc. |
+| M13 | D30 is not a full reset for staff: a lost second factor still needs the dashboard, and there is no in-app MFA recovery. | One sentence in D30's cost column; a 16d row. |
+| M14 | `/logg-inn` has no recovery instruction, so D30's stated cost is unpayable by the person paying it. | Add the line with the school's number. Also record the **admin lockout** case: if the only admin loses their password, nobody can re-invite anyone. |
+| M15 | The privacy copy handed to Phase 7 says "7-day" (wrong for `skjerm`), "and nothing else" (the body also carries the phone number and validity), omits the on-screen pupil link as a processing disclosure, omits retention, and asserts "US processor **with SCCs**" as fact when §5.2 records the Resend DPA is **not signed**. | Correct all five; write the transfer mechanism as undetermined until the DPA exists. |
+| M16 | D29's rationale claims the school "never needs a working address for a 13-year-old". False — `provisionStudentLoginAction` **requires** one and `LoginCard.tsx:128` renders it `required`. The school collects it; D29 stops it being *used*. | Correct the rationale. Also copy plan 3's actual reason into the SQL header: a pupil's address in **Resend's US-held logs** (`20260807123000:1289`). |
+| M17 | `AdminNav.test.tsx` does **not** assert the entry set — my claim was false, and an executor would hunt for an assertion that does not exist. | Correct the claim; specify the assertion to add. |
+| M18 | The fingerprint file's **header** goes stale: "TWENTY-ONE functions", "live SECURITY DEFINER count is 60". The plan adds 5 entries and 6 definers and updates neither — on the file whose own header records a reader auditing its scope note as a coverage guarantee. | Step 5b: update both numbers from the header's own query. |
+| M19 | Task 15b says "**six** definer fingerprints" for **five** entries — the third occurrence of this defect class on this file. | «five». |
+| M20 | The five new `private.*` helpers are `EXECUTE TO PUBLIC`, and `authenticated` holds `USAGE` on `private`. Inconsistent with `private.audit` / `private.has_role`, which revoke from PUBLIC. | `revoke execute on function private.invite_* from public;` |
+
+## Counts corrected
+
+| Claim | Was | Measured | Source |
+|---|---|---|---|
+| unit baseline files | 58 | **57** | ran `vitest run` → 636 passed / 57 files |
+| unit after 15c | 636 → 647 | **648** (`invite.test.ts` has 6 `it`s, not 5) | counted |
+| unit after all tasks | not stated | **665** before the new assertions this ledger adds | counted |
+| fingerprint entries | "six" | **five** | counted |
+| fingerprint markers | 95 → 103 | 103 **before** H2/M7 add two more → **105** | counted, then recount at execution |
+| `users.ts` comment | :19-23 | **:19-24** | grep |
+| `LoginCard` `text-danger-ink` | :92 | **:93** | grep |
+| `README.md` SMTP block | :119-125 | **:119-124** | grep |
+
+## Mutation-table corrections (Task 16b)
+
+Measured by the SQL lens, one at a time, with capture → mutate → run → restore → diff:
+
+- **Row 2** also reddens **39: 11**, and makes assertion 7 pass for the wrong reason.
+- **Row 5** also reddens **39: 18** — ★ **assertion 18 is a second D29 control**, which the plan did not know.
+- **Row 6** produces **no TAP output at all** (see S4). Fixed by the `'skjerm'` fixture change.
+- **Row 12** also reddens **39: 19**.
+- **Row 23** is wrong: the happy-path test is order-blind (`toHaveBeenCalledWith` does not observe order), so it stays green. The assertion that moves is test 5's `expect(markActivated).not.toHaveBeenCalled()`. **The test whose title claims the ordering property is the one test that cannot see it.** Replaced with an explicit call-order array.
+- **Row 27** reddens via an unhandled `TypeError` on `result.ok`, not via any of its three `expect`s.
+- **Row 14** needs `FN="private.invite_attempt_limit()"`; **row 15**'s file is **29**, not 39.
+- Rows 1, 3, 4, 7, 8, 9, 10, 11, 13, 16–22, 24, 25 verified correct as predicted.
+
+**~20 of ~45 new assertions had no mutation row and no named skip**, in a task that opens by forbidding exactly that. The revised table closes the gap or names each skip.
+
+## Grant assertions — rewritten in the house idiom
+
+Assertions 16/17 use `information_schema.role_routine_grants`, which has **zero precedent** in this repo; `00_grant_firewall.sql` uses `pg_class` + `aclexplode` and `31_column_locks.sql:224-232` documents why. The SQL lens confirmed they are non-vacuous *as written*, but two lenses independently recommended the safer form. Rewritten as `has_function_privilege('anon', …, 'execute')` negatives **plus a `service_role` positive control**, so the assertion cannot go vacuous through a typo'd grantee.
+
+Also corrected: the ⚠ justifying the `revoke` lines blames `supabase_admin`'s default ACLs. Migrations run as **`postgres`**, whose defaults this project already narrowed — so the revokes are defence-in-depth against those defaults changing, not against a different applying role. Measured: the assertions pass with the revokes deleted, and redden under an added grant.
+
+## Accepted without change, with the reason
+
+- **The rate limiter degrades under true concurrency** — 30 simultaneous calls against `limit 20` gave 22 `t` / 8 `f`, because each call's uncommitted insert is invisible under READ COMMITTED. Identical to the `login_attempt_consume` precedent and acceptable for an anti-DoS limiter. Only the migration comment overclaimed; softened.
+- **`invite_restore`'s `expires_at > now()` is unpinned and untested.** Harmless — redeem re-checks expiry. Recorded as defence-in-depth rather than claimed as covered.
+- **pgTAP assertion 3 (`count(*) = 1`) is near-tautological** with `user_id` as PK. Kept as a tripwire, named as one.
+- **Plaintext token as an RPC bind parameter.** `pg_stat_statements` captured 0 rows matching any test token locally. Cloud log settings unverified → added to the 16d checklist rather than asserted either way.
+- **D30 lets an admin mint a credential for any account, including another admin's**, and a never-activated staff account has no second factor to stop the takeover. Not fixed — IQRA has one or two admins who already hold the service-role blast radius. **Now stated in D30 rather than left implicit**, with `admin.invite.reset` distinguished from `admin.invite.issued` in the audit, and a content-free "your login was reset" ping to already-activated accounts.
+
+## Decisions taken from the panel — D32, and the exit gate
+
+- **D32 — a guardian suppression flag ships in this plan.** §10.7's "decide before pilot" decision point is this plan, because this is what turns every registered guardian into an actual reader. New **Task 14b**: `guardian_student.suppressed`, consulted by `private.is_guardian_of` **and** by the invite queue, with pgTAP and an admin control. The user chose this over deferring with a recorded risk.
+- **Task 16d widens to the whole phase.** As written it gated the invite flow plus three leftovers while økonomi never logged in, no announcement was ever published, the scheduled-publish path §5.1 calls "the single most likely thing to be got wrong" was never exercised, and the disclosure block — the phase's legal mitigation, whose copy §12 Q3 still lists as open — was never rendered by anyone.
+
+## Still open, and deliberately so
+
+- **§12 Q3** — the user's own edit of the three disclosure drafts and the board's sign-off. On the critical path for tasks 10–12 of the *phase*, and now an explicit unchecked item in the exit gate.
+- **The phase spec still carries its `⛔ THIS DRAFT HAS NOT BEEN REVIEWED … Nothing here may be implemented yet` header**, after three code-complete plans. Task 14 is the reconciliation task and should clear it, and append D29–D32 to §1's decision table with the exception note under D12/§5.3.
+- **Vercel Cron's actual request** and the **15-minute interval** — unchanged, still blocking, still 16d items.
