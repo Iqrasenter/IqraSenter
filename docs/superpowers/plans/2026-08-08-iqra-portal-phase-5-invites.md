@@ -3577,7 +3577,7 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | 15a | `538a786` | **965 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` — 19 base + 7 ledger + 1 for `invite_revoke`. Ledger item **d** (rate-limit window) moved to 15b: `private.invite_attempt_window` does not exist yet. Nine mutations run; **M6 as specified cannot run at all** — see below |
 | 15b | `c0b2b74` | **969 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` → **`plan(31)`** (+4, not +3 — the ledger's window assertion landed here). Markers **102 → 114**, counted. ⛔ Found that a fingerprint marker can be satisfied by a COMMENT; audited all 114, no other instance |
 | 15c | `3828d0b` | 969 / 41 (unchanged) | **670 / 61 ✔measured** | not run | ✅ DONE 2026-08-06. Unit 642 → 670 (+28), not the plan's «636 → 647». knip at baseline. ⛔ The plan's own subject-templating test would have thrown against its own template — see below |
-| 15d | | = 15b | | 377 | action-guards 84 → 85 |
+| 15d | `c387b87` | 969 / 41 (unchanged) | **685 / 62 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **85** as predicted. Build lists `/sett-passord`. Four proxy mutations + one action-guards mutation all reddened the intended test |
 | 15e | | = 15b | | 377 | action-guards 85 → 87 |
 | 16 | | | | | |
 | 16b | | | | | |
@@ -3946,3 +3946,37 @@ H5 said to cover all four wrappers because «nothing currently asserts `issueInv
 - **`restoreInvite` swallowing is the design, not an oversight.** Its only caller is already on a failure path; throwing would replace a recoverable «prøv igjen» with a 500 *and* lose the original cause. Asserting it is what stops a later reader "fixing" the missing throw.
 
 One assertion was added beyond the plan: `inviteUrl` percent-encodes its argument. base64url is already URL-safe so the happy path never exercises it, but without the encode a token containing `&` would silently truncate the query parameter and every such link would be invalid with no error anywhere.
+
+
+---
+
+## Task 15d as executed
+
+Executed 2026-08-06, portal `c387b87`. **unit 670 → 685 (62 files), action-guards 85, typecheck clean, lint 0 errors, knip baseline, build lists `/sett-passord` as ƒ.** No SQL, so pgTAP stays at 969.
+
+Every claim checked before writing and all held: `rate-limit.ts` really does hard-code the GoTrue backstop clause; `proxy.ts` has the drain exclusion at `:92`, `!user` at `:94`, the roles read at `:107` and `respond()` at `:130`; `proxy.test.ts`'s `request()` takes one argument; `next.config.ts:22` is `strict-origin-when-cross-origin`; and `Button`/`Field`/`Input`/`text-danger-ink` all exist as used (the last in three places).
+
+### The mutation pass — every new assertion verified, none vacuous
+
+The plan warns that an earlier draft's version of the guard test **could not fail**. This one can:
+
+| Mutation | Reddens |
+|---|---|
+| drop the `!user &&` guard | ★ «still MFA-gates a signed-in staff session below AAL2» — and only that |
+| `===` → `.startsWith(` | «does not exempt a neighbouring path» |
+| drop the `referrer-policy` header | «sends no Referer» |
+| invert the guard to `user &&` | the four unauthenticated-visitor tests |
+| delete the `consumeInviteAttempt` call | **action-guards** («calls a…») **and** the action's own over-budget test |
+
+The last one is what makes the `PRE_AUTH` exemption a condition rather than a blank cheque, and it is now measured rather than asserted.
+
+### `logThrottleFailure` gained a required parameter
+
+The plan spotted that it hard-codes «GoTrue-hooken gjelder fortsatt», which is true for the login gate and **false** for the invite gate — redemption has no backstop at all, only the token's 256 bits. It is now a required third argument; the three login call sites pass the GoTrue clause, the invite path passes «ingen backstop — token-entropien er alt som gjenstår». Making it **required** rather than defaulted is deliberate: a default that is wrong for every new caller is the same trap one layer down.
+
+### Two small extensions beyond the plan
+
+- **`proxy.test.ts`'s `from` mock is now reset in `beforeEach` too.** The plan widens both mock declarations but only resets `getUser`. Without resetting `from`, the staff-session test's `mockReturnValue` leaks into every later test in the file — they would all run as an admin.
+- **`page.tsx` states why `force-dynamic` is there** (the CSP nonce is per-request; a prerendered shell ships a stale one). The plan asserts the export without the reason, and the reason is the only thing that stops someone deleting it.
+
+⚠ Unit came out **685**, not a number the plan predicted — it says «record what actually runs». +15: nine action tests, five proxy tests, and one more from `action-guards`, which generates a test per action.
