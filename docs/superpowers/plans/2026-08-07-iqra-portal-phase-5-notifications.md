@@ -4045,6 +4045,63 @@ Run the audit skill over `VarselBell.tsx`, `profil/page.tsx` and `admin/varsler/
 
 ---
 
+## ✅ Execution ledger — 2026-08-06, all 14 tasks
+
+**Final gate, measured from a clean database:** pgTAP **913 / 39 files** · unit **636 / 58 files** · api **377 / 15 files** · `tsc` 0 · lint 0 errors (5 pre-existing warnings) · `knip` at baseline · `npm run build` clean with `/api/varsler/drain`, `/admin/varsler` and `/profil` listed · timezone tests green under `TZ=UTC`.
+
+Counts moved from the plan's ladder because **three assertions were added at execution**: 911 → **913**, and file 38 runs `plan(15) → 34 → 55 → 69`.
+
+### The mutation ledger — every one watched fail AND watched restore
+
+| # | Mutation | Predicted | **Measured** |
+|---|---|---|---|
+| 1 | `grant insert on notifications to authenticated` | "3 and 9" | **5 and 10** — the insert becomes an RLS refusal, so the expected 42501 message stops matching |
+| 2 | remove `grant update (email_pings_enabled)` | assertion 1 of the pair | **32** ✓ |
+| 3 | increment `attempts` at claim time | "15" (section no.) | **24** ✓ alone |
+| 4 | `pending = false` instead of the watermark | "16" (section no.) | **25** ✓ alone |
+| 5 | drop `reads_thread` filter from `substantive` | the `kontor` assertion | **52** — the kontor wall is held by `t.kind`, NOT by this filter |
+| 6 | drop `t.kind = 'laerer'` (**the teaching rektor**) | 45 **and** 47 | **45, 51, 53** — 47 cannot fire: b2's `staff_id` IS the admin |
+| 7 | admin fallback on `substantive` | 27 (section) | **52** ✓ |
+| 8 | drop the sender exclusion | 21 (section), must not abort | **35, 36, 37, 40**, fails rather than aborting ✓ |
+| 9 | drop the pupil mail carve-out | 26c's second | **49** ✓ alone |
+| 10 | B10's veto — forced FK failure in the ping insert | message must survive | ✓ **both directions**: with the handler only 41+50 redden and every message lands; without it the message INSERT aborts at assertion 35 |
+| 11 | drop the announcement trigger's `fanned_out_at` guard | 32's first half | ⚠ **SURVIVOR, and correctly so** — provably a no-op; see the tripwire at assertion 60 |
+| 12 | `reads_announcement` → `true` | 36's invariant | **69** ✓ |
+| 13 | delete the bare-oversight carve-out | 35 | **66** ✓ |
+| 14 | fingerprint: delete the `reads_thread` filter | file 29 fails by name | ✓ «thread_recipients no longer mentions `private.reads_thread(c.uid, tid)`» |
+| 15 | ping-email: the plan's leaking builder | 4 named assertions | **5, but NOT «links the root»** — it emits an empty threadId there |
+| 16 | ping-email: append a literal `/varsler` | (not in the plan) | ✓ **that** is what reddens «links the root» |
+| 17 | ping-email: template the count into the subject | (not in the plan) | ✓ reddens «uses the same subject regardless of count» |
+| 18 | remove the proxy exclusion | (not in the plan) | ✓ both positive cases redden, both negatives stay green |
+| 19 | route wall: delete the gate call | fails by name | ✓ |
+| 20 | route wall: bare `assertCronSecret(request);` | must **PASS** | ✓ passes — the evidence for throw-not-boolean |
+| 21 | route wall: ungated handler at `src/app/rapport/route.ts` | fails | ✓ — an `/api`-scoped wall would have missed it entirely |
+| 22 | api: break the fan-out | tests 2 **and** 3 fail, 1 passes | **only 3 fails**; 1 passes ✓ — a do-nothing upsert still creates the first row |
+
+**Nothing was skipped.** Two mutations (16, 17) and one wall (18) were **added** because the plan's single pass left assertions unwatched. One survivor (11) is recorded as correct-by-construction rather than as coverage.
+
+⚠ **Restoring a mutation's FILE is half a restore** — the applied schema stays mutated until `db reset`, and the next full run then reddens an unrelated assertion (measured: 66 at `have: 2`) that reads as a fresh defect.
+⚠ **`db reset` did not clear GoTrue churn.** After the api mutation round every login failed with `innlogging … feilet: {}` and 7 of 8 tests went red with the migration restored and checksum-verified. `docker restart supabase_auth_iqra-portal` fixed it immediately.
+
+### Human walkthrough — what I verified, and what still needs the user
+
+Verified in a browser as seeded **parent** and **pupil** (neither needs MFA):
+
+| Check | Result |
+|---|---|
+| Teacher publishes → parent's bell shows it **immediately** (D26) | ✅ «Varsler (1)» with the announcement, no drain involved |
+| «Min profil» toggle saves and survives a reload | ✅ `email_pings_enabled = false` in the DB |
+| Opting out leaves the in-app varsel alone | ✅ «Varsler (1)» unchanged |
+| Pupil surface has **no red dot** | ✅ same row, no dot; the sr-only «Ulest» survives |
+| 1280 and 375 | ✅ both, no horizontal overflow |
+
+⛔ **STILL NEEDS THE USER — staff roles need MFA re-enrolment at `/mfa/registrer`, which every `db reset` wipes and which needs their authenticator:**
+- teacher sends a message → parent's bell shows the thread and the **teacher's own does not**;
+- ten messages in one thread → **one** bell entry (D25 coalescing, asserted in pgTAP but never clicked);
+- the **admin health screen** at 1280 and 375 — built and building clean, but **nobody has looked at it**.
+
+---
+
 ## ⛔ Carried to plan 4 — do not lose these
 
 1. **The real-delivery check (D28).** Confirm against a genuine delivered message that Resend's link-rewriting and open-tracking are **off**. `ping-email.test.ts` asserts over the template *before* the provider touches it and **structurally cannot** catch this. Needs IQRA's account and `varsler.iqrasenter.no`.
