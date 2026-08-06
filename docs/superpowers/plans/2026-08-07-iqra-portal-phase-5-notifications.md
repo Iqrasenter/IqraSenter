@@ -39,11 +39,13 @@ The spec orders work, and the work invalidates the spec's own numbers. Every one
 | Purpose | Command |
 |---|---|
 | pgTAP suite | `npx supabase test db` (no npm script wraps it) |
-| one pgTAP file | `npx supabase test db --file supabase/tests/NN_name.sql` |
+| one pgTAP file | `npx supabase test db supabase/tests/NN_name.sql` |
 | unit suite | `npm test` (= `vitest run`) |
 | api suite | `npm run test:api` |
 | typecheck | `npm run typecheck` (= `tsc --noEmit`) |
 | lint · knip | `npm run lint` · `npm run knip` |
+
+⚠ **And the single-file pgTAP flag was wrong too — measured at execution, 2026-08-06.** The plan said `--file supabase/tests/NN.sql` in seven places; supabase CLI v2.109.1 has **no `--file` flag** on `test db` and answers with `Unrecognized flag: --file` plus a help dump. The path is **positional**: `npx supabase test db supabase/tests/NN.sql`. All seven were corrected in place. The lesson is the same one the npm-script row records — a command written from memory of the project reads as plausibly as a measured one.
 
 ## ⛔⛔ TWO THINGS THAT MUST BE DONE IN EVERY TASK THAT TOUCHES THEM
 
@@ -468,7 +470,7 @@ rollback;
 - [ ] **Step 3: Run it and watch it fail**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+cd ~/dev/iqra-portal && npx supabase test db supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
 ```
 
 Expected: FAIL — `relation "public.notifications" does not exist`.
@@ -575,7 +577,7 @@ select is(
 - [ ] **Step 3: Run and watch it fail**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/31_column_locks.sql 2>&1 | tail -15
+cd ~/dev/iqra-portal && npx supabase test db supabase/tests/31_column_locks.sql 2>&1 | tail -15
 ```
 
 Expected: FAIL — the array is `{full_name,locale,phone}`, missing `email_pings_enabled`.
@@ -1092,7 +1094,7 @@ select is(
 - [ ] **Step 3: Run and watch it fail**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+cd ~/dev/iqra-portal && npx supabase test db supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
 ```
 
 Expected: FAIL — `relation "private.email_pings" does not exist`.
@@ -1635,7 +1637,7 @@ select is(
 - [ ] **Step 3: Run and watch it fail**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+cd ~/dev/iqra-portal && npx supabase test db supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
 ```
 
 Expected: FAIL — `function private.thread_recipients(uuid) does not exist`.
@@ -2012,7 +2014,7 @@ select is(
 - [ ] **Step 3: Run and watch it fail**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db --file supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db supabase/tests/38_notifications_rls.sql 2>&1 | tail -20
 ```
 
 Expected: FAIL at assertion 31 — the immediate publish produces no notification, because nothing fans out yet.
@@ -2159,7 +2161,7 @@ That is **12 new markers** (3+3+3+1+2), so change the literal from `83` to `95`:
 - [ ] **Step 3: Run**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase test db --file supabase/tests/29_definer_fingerprints.sql 2>&1 | tail -10
+cd ~/dev/iqra-portal && npx supabase test db supabase/tests/29_definer_fingerprints.sql 2>&1 | tail -10
 ```
 
 Expected: PASS, with the literal at 95. `plan(2)` is unchanged, so the suite total does not move.
