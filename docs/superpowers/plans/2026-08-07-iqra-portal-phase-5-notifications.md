@@ -1144,7 +1144,7 @@ pgTAP 859 -> 878."
 
 **Files:**
 - Create: `supabase/migrations/20260807123000_thread_fanout.sql`
-- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(34)` → `plan(54)`)
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(34)` → `plan(55)`)
 
 ⛔ **D21 is the whole content of this task.** The spec's earlier draft hand-copied the recipient rule as «`teaches_student` ∪ guardians ∪ pupil-login, minus the sender» — and **it had already drifted from the wall in two places**: it pinged teachers a `kontor` thread excludes (telling them an office conversation about their pupil exists), and it pinged no admin ever. A restatement here is the defect, not the style. This function builds a **candidate set** and then filters every candidate through `private.reads_thread`.
 
@@ -1358,7 +1358,7 @@ create trigger messages_fan_out
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(34);` to `select plan(54);` (**20** new assertions, counted by hand — includes the teaching-rektor trio and the pupil-mail trio added in review). Append before `select * from finish();`:
+Change `select plan(34);` to `select plan(55);` (**21** new assertions — 20 planned plus the T-12 split measured at execution, counted by hand — includes the teaching-rektor trio and the pupil-mail trio added in review). Append before `select * from finish();`:
 
 ```sql
 -- ── 19-25. the fan-out, over a real thread with a real family ───────
@@ -1669,6 +1669,26 @@ Expected: `Files=39, Tests=898, PASS`.
 
 Restore after each and confirm green. Record all six results in the commit body — and per §8's binding rule, state any you skipped and why, rather than letting silence read as coverage.
 
+⛔⛔ **ALL SIX MEASURED 2026-08-06 — NO SURVIVORS, BUT TWO PREDICTIONS ABOVE ARE WRONG.** Corrected against the runner's own output:
+
+| Mutation | Plan predicted | **Measured** |
+|---|---|---|
+| 1 drop the `reads_thread` filter | assertion 26 (`kontor`, index 43) | **52 alone.** 43 does **not** move — it is guarded by `t.kind = 'laerer'` on the teachers CTE, so a `kontor` thread never admits the teacher as a *candidate*. The filter is not what protects it. |
+| 2 drop `t.kind = 'laerer'` | 26b **and** its third assertion (45 + 47) | **45, 51, 53.** 47 does **not** move, and structurally cannot: b2's `staff_id` **is** the admin, so they are notified through `named_staff` whether or not the rektor fills `staff_substantive`. The fallback-suppression half of C-F1 is real in the code but **this fixture cannot observe it** — the thread it would need is one whose `staff_id` is the departed teacher. |
+| 3 fallback on `substantive` | 27 (index 52) | **52** ✓ |
+| 4 drop the sender exclusion | 21 (index 36), must fail not abort | **35, 36, 37, 40 — and it fails rather than aborting** ✓ the `array_agg` guard works |
+| 5 drop the pupil carve-out | 26c's second (index 49) | **49 alone** ✓ |
+| 6 B10's veto | the message INSERT fails | ✓ **both directions.** With the handler and a forced FK failure inside the ping insert: only 41 and 50 redden, every message lands. Without it: the message INSERT aborts the transaction at assertion 35 — 34 of 55 ran. |
+
+★ Mutations 1 and 3 both redden **only 52**, so that assertion is carrying two distinct defects. Worth knowing before anyone "simplifies" it.
+
+⛔⛔ **AND T-12 WAS UNSATISFIABLE AS WRITTEN.** The single `= 0` invariant at section 28 measures `have: 2`. It is not a defect in the fan-out — it is the plan asserting zero unreachable rows *immediately after deliberately engineering two*: §26c clears `student_user_id` and §27 deletes the `class_teachers` row, both **after** the fan-out has already written, and notifications carry no FK **by design** (D11/Q13). Task 3's own header says this in as many words. T-12 is a **write-time** invariant and only ever was one. It is now two assertions:
+
+- **26d** — the global scan placed where nothing has been retroactively invalidated. True, load-bearing, and it is one of the three that caught mutation 2.
+- **28** — the same scan after the reverts, asserting **2**, naming both rows and why they survive. This is the fact `claim_email_pings`' reachability filter exists for, so it is asserted rather than assumed; it also goes red if a future change makes stale rows impossible (are the filters still needed?) or makes more of them (what else outlived its relationship?).
+
+This is the +1 that moves `plan(54)` → `plan(55)` and the plan's final total 911 → **912**.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -1693,7 +1713,7 @@ pgTAP 878 -> 898."
 
 **Files:**
 - Create: `supabase/migrations/20260807124000_announcement_fanout.sql`
-- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(54)` → `plan(67)`)
+- Modify: `supabase/tests/38_notifications_rls.sql` (`plan(55)` → `plan(68)`)
 
 ⛔ `supabase/migrations/20260806122000_announcement_fanout_claim.sql` is **applied** — never edit it. `claim_due_announcements` is replaced here with `create or replace`, and its own header says exactly what must happen: *«Plan 3 must add its notification INSERT INSIDE THIS FUNCTION BODY … If the fan-out is a separate round trip, a crash between the two leaves an announcement marked as announced with no notifications, and the partial index will never serve it again.»*
 
@@ -1884,7 +1904,7 @@ grant execute on function public.claim_due_announcements() to service_role;
 
 - [ ] **Step 2: Extend file 38**
 
-Change `select plan(54);` to `select plan(67);` (**13** new assertions, counted by hand — the entitled-reader control for the admin carve-out is the extra one). Append before `select * from finish();`:
+Change `select plan(55);` to `select plan(68);` (**13** new assertions, counted by hand — the entitled-reader control for the admin carve-out is the extra one). Append before `select * from finish();`:
 
 ```sql
 -- ── 30-37. the announcement fan-out, both trigger points ────────────
@@ -2033,7 +2053,7 @@ Expected: FAIL at assertion 31 — the immediate publish produces no notificatio
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -5
 ```
 
-Expected: `Files=39, Tests=911, PASS`.
+Expected: `Files=39, Tests=912, PASS`.
 
 - [ ] **Step 5: Three named mutations**
 
@@ -3857,7 +3877,7 @@ Change `expect(allActions.length).toBe(82);` to `83`, and add the nav entry `{ h
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npx vitest run src/app/action-guards.test.ts 2>&1 | tail -4 && npx tsc --noEmit && echo OK
 ```
 
-Expected: pgTAP `Files=39, Tests=911, PASS`, action-guards PASS with 83, `OK`.
+Expected: pgTAP `Files=39, Tests=912, PASS`, action-guards PASS with 83, `OK`.
 
 - [ ] **Step 4: Commit**
 
@@ -3944,7 +3964,7 @@ because nothing works at all is the failure this file is built against."
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db 2>&1 | tail -4 && npm test 2>&1 | tail -4 && npx tsc --noEmit && npm run lint 2>&1 | tail -4 && npm run build 2>&1 | tail -8
 ```
 
-Expected: pgTAP `Files=39, Tests=911` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
+Expected: pgTAP `Files=39, Tests=912` · unit 600 + the new files · typecheck 0 · lint 0 errors (5 pre-existing warnings) · build clean with `/api/varsler/drain` listed.
 
 - [ ] **Step 2: ★ Run the timezone-sensitive tests under `TZ=UTC`**
 
