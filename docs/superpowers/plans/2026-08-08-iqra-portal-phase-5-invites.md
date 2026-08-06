@@ -26,7 +26,7 @@ Plans 1–3 are code-complete, green and pushed. This plan continues on the **sa
 | What | Command |
 |---|---|
 | pgTAP, all | `npx supabase test db` |
-| pgTAP, one file | `npx supabase test db supabase/tests/39_invite_tokens.sql` — **positional, there is no `--file` flag** |
+| pgTAP, one file | `npx supabase test db supabase/tests/40_invite_tokens.sql` — **positional, there is no `--file` flag** |
 | unit | `npm test` |
 | api (~21 min, silent) | `npm run test:api` |
 | types | `npm run typecheck` |
@@ -66,8 +66,8 @@ Three questions the spec left open were put to the user on 2026-08-06 and answer
 
 | # | Decision | Why, and what it costs |
 |---|---|---|
-| **D29** | **A pupil is never mailed an invite.** Guardians and staff receive an e-mail; for a pupil the admin is shown the link **once, on screen**, and hands it over in person or via the guardian. | Keeps plan 3's «pupils are never mailed» rule **absolute** rather than carved-out, and means the school never needs a working address for a 13-year-old. Cost: one extra admin surface, and a link that exists only in one browser render — if the admin loses it they must re-issue. |
-| **D30** | **There is no self-serve password reset.** Re-issuing an invite is the reset, and only an admin can do it. | The portal has *no* reset today, so this closes a real dead end with no new unauthenticated surface and no account-enumeration oracle. Cost, and it is real: a parent who forgets their password must phone the school. Revisit if that burden proves untenable — the lever is a `/glemt-passord` page on this same token machinery, not a second mechanism. |
+| **D29** | **A pupil is never mailed an invite.** Guardians and staff receive an e-mail; for a pupil the admin is shown the link **once, on screen**, and hands it over in person or via the guardian. | Keeps plan 3's «pupils are never mailed» rule **absolute** rather than carved-out. ⚠ An earlier draft justified it as «the school never needs a working address for a 13-year-old» — **that is false**: `provisionStudentLoginAction` requires one and `LoginCard.tsx:128` renders it `required`. The school already collects the address; D29 stops it being **used**. The real reason is plan 3's, recorded at `20260807123000:1289` — a pupil's address in a mail path puts it into **Resend's US-held logs**. Cost: one extra admin surface, and a link that exists only in one browser render — if the admin loses it they must re-issue. |
+| **D30** | **There is no self-serve password reset.** Re-issuing an invite is the reset, and only an admin can do it. | The portal has *no* reset today, so this closes a real dead end with no new unauthenticated surface and no account-enumeration oracle. Cost, and it is real: a parent who forgets their password must phone the school — so **`/logg-inn` gains the line that makes that payable** («Glemt passordet? Ring skolen på +47 998 64 331 — vi sender deg en ny aktiveringslenke.»). Without it the recovery instruction exists only inside this document. ⚠ **For staff this resets the password only**: a lost second factor still needs the Supabase dashboard, and Phase 5 adds no in-app MFA recovery. ⚠ **The admin is subject to D30 too** — if the only admin loses their password, nobody can re-invite anyone, including themselves; the recovery is the dashboard. ⛔ **And an admin can mint a live credential for ANY account, including another admin's or økonomi's.** For an *activated* staff account the attacker still faces AAL2; for a **never-activated** one — which is exactly what `/admin/kontoer` lists — `mfaGate` returns `enroll` and they enrol their own factor. Accepted because IQRA's one or two admins already hold the service-role blast radius, but it is stated here rather than left implicit. Revisit the phoning burden if it proves untenable — the lever is a `/glemt-passord` page on this same token machinery, not a second mechanism. |
 | **D31** | **One admin screen, `/admin/kontoer`,** lists every account that cannot log in yet and offers the invite. | `adminProvisionUser` is called from exactly two places (`admin/elever/actions.ts:218` guardian, `:319` pupil login) and **there is no staff-provisioning UI at all** — a teacher/økonomi/admin account can only be created by hand in the Supabase dashboard. Per-card buttons would therefore have left staff with no path. One screen covers all five roles and makes «who still cannot log in?» a visible work queue instead of a hidden per-record fact. ⛔ This task does **not** add staff *provisioning* — creating a staff account stays a dashboard operation; this screen only invites accounts that already exist. |
 
 ---
@@ -130,11 +130,15 @@ The probe user was deleted; `auth.users` and `public.profiles` were confirmed ba
 
 | File | Responsibility |
 |---|---|
-| `supabase/migrations/20260808120000_invite_tokens.sql` | `private.invite_tokens`, `private.account_activation`, the four token RPCs, TTL tunables, grants |
-| `supabase/migrations/20260808121000_invite_rate_limit.sql` | `private.invite_attempts` + `public.invite_attempt_consume` |
+| `supabase/migrations/20260808120000_invite_tokens.sql` | `private.invite_tokens`, `private.account_activation`, **seven** public RPCs (issue · redeem · restore · mark_activated · revoke · pending_accounts · find_account), three `private` helpers, TTL tunables, grants |
+| `supabase/migrations/20260808121000_invite_rate_limit.sql` | `private.invite_attempts`, `public.invite_attempt_consume`, `invite_attempts_prune`, `invite_attempts_clear` |
+| `supabase/migrations/20260808111000_guardian_suppression.sql` | **Task 14b / D32** — `guardian_student.suppressed`, the `is_guardian_of` clause, `public.guardian_set_suppressed` |
+| `supabase/tests/39_guardian_suppression.sql` | pgTAP for D32 (8 assertions) |
+| `src/lib/admin/guardians.ts` + `.test.ts` | `setGuardianSuppressed` — quarantine **category B** |
 | `supabase/migrations/20260808110000_assignment_storage_comment.sql` | Task 14's `comment on` correction — the applied migration is never edited |
-| `supabase/tests/39_invite_tokens.sql` | pgTAP for both migrations |
-| `src/lib/auth/invite.ts` | Token generation, the issue/redeem/restore wrappers, the invite URL |
+| `supabase/tests/40_invite_tokens.sql` | pgTAP for both migrations |
+| `src/lib/auth/invite.ts` | PURE helpers only — token generation, the URL, the day arithmetic. **No service-role import** (quarantine; see 15c step 9) |
+| `src/lib/admin/invite-tokens.ts` | The service-role wrappers — quarantine **category B**, beside `rate-limit.ts` |
 | `src/lib/auth/invite.test.ts` | Unit tests for the above |
 | `src/lib/varsler/invite-email.ts` | The content-free invite e-mail template |
 | `src/lib/varsler/invite-email.test.ts` | T-16-shaped privacy assertions over the template |
@@ -154,9 +158,10 @@ The probe user was deleted; `auth.users` and `public.profiles` were confirmed ba
 |---|---|
 | `src/proxy.ts` | A second exclusion, above the `!user` branch |
 | `src/proxy.test.ts` | Its four-test counterpart |
-| `src/app/action-guards.test.ts` | Counter 83 → 84; one `PRE_AUTH` + one `PRE_AUTH_REQUIRES` entry |
-| `supabase/tests/29_definer_fingerprints.sql` | Five new entries; marker literal 95 → **counted, not predicted** |
-| `src/app/(portal)/admin/AdminNav.tsx` + `.test.tsx` | Nav entry |
+| `src/app/action-guards.test.ts` | Counter **83 → 87** across the plan (14b→84, 15d→85, 15e→87); one `PRE_AUTH` + one `PRE_AUTH_REQUIRES` entry |
+| `supabase/tests/29_definer_fingerprints.sql` | Task 14b's entry (+1) and Task 15b's five (+10, H2 and M7 included); marker literal 95 → 96 → 106, **counted, not predicted** |
+| `src/app/(portal)/admin/AdminNav.tsx` + `.test.tsx` | Nav entry — ⚠ the test does **not** assert the entry set; add the assertion (Task 15e Step 5) |
+| `src/app/(portal)/admin/elever/GuardianCard.tsx` + `actions.ts` | **Task 14b / D32** — the «Sperret innsyn» control and its action |
 | `src/app/api/varsler/drain/route.ts` | Uses the extracted `PORTAL_URL` |
 | `src/lib/admin/users.ts:19-24` | The doc comment naming Brevo and a flow that now exists |
 | `docs/spec.md`, `README.md`, Phase-4 design spec | Task 14 reconciliation |
@@ -447,12 +452,292 @@ bucket that Q14=(a) ruled out; fixing one of three leaves the contradiction."
 ```
 
 ---
+---
 
-## Task 15a: the token tables, the five RPCs, and the D29 wall
+## Task 14b: D32 — the guardian suppression flag
+
+**Files:**
+- Create: `supabase/migrations/20260808111000_guardian_suppression.sql`
+- Create: `supabase/tests/39_guardian_suppression.sql`
+- Create: `src/lib/admin/guardians.ts`, `src/lib/admin/guardians.test.ts`
+- Modify: `src/app/(portal)/admin/elever/GuardianCard.tsx`, `src/app/(portal)/admin/elever/actions.ts`
+- Modify: `supabase/tests/29_definer_fingerprints.sql`
+
+### Why this is in this plan and not a later one
+
+Spec **§10.7**, recorded by the 2026-08-04 review and never acted on:
+
+> There is no custody or protection concept between guardians. `is_guardian_of` is a bare `exists` over `guardian_student` with no status, date or exclusion column, so **every registered guardian is an unconditional, permanent, unrevokable reader of every message about that child** … In a shared-custody family, or one where a parent holds adressesperre against the other, this is the most dangerous property of the system. §4.2 now **discloses** it; nothing yet **fixes** it. **Decide before pilot whether a suppression flag is owed.**
+
+Until this plan it was latent: no guardian held credentials, so no guardian could actually read anything. **This is the plan that hands out the logins**, so §10.7's "decide before pilot" moment is this one. The user ruled on 2026-08-06 that the flag ships here (**D32**).
+
+⚠ §10.7 says the property is "structural rather than patchable by a later policy" because D1+D2 derive participation rather than storing it. That is true of the *participant list* and **not** of the predicate: `private.is_guardian_of` is one `SECURITY DEFINER` function used **35 times across 17 migrations** — attendance, grades, progress, submissions, tests, absence notices, threads, announcements. Suppression therefore lands in exactly one place and takes effect across every surface at once. That property is the whole reason this is affordable now.
+
+### The shape, and two deliberate omissions
+
+- **Per (guardian, student) pair, not per person.** The column lives on `guardian_student`, whose PK is exactly that pair. A parent suppressed for one child keeps full access to their other children — which is the actual shape of a shared-custody or adressesperre situation, and a per-person flag would be wrong.
+- **No `suppressed_reason` column.** The reason is a court order or a police-issued adressesperre — a legal document in the school's own file. Duplicating it into the database creates a second copy of the most sensitive fact about a family, inside a table every admin can read, subject to §10.8's rotation problem. `suppressed_at` records **when**; the school's paperwork records **why**. State this in the migration or someone will add the column as an obvious improvement.
+- **The write goes through a definer RPC, not an UPDATE policy.** `guardian_student` today has admin-only INSERT and DELETE policies and deliberately **no UPDATE policy at all**. Adding one to carry a single column would widen the table's write surface; the RPC keeps it shut and gets the audit row for free.
+
+- [ ] **Step 1: Write the migration**
+
+Create `supabase/migrations/20260808111000_guardian_suppression.sql`:
+
+```sql
+-- D32 — guardian suppression (spec §10.7's "decide before pilot", decided
+-- 2026-08-06 as part of the invite flow).
+--
+-- ── What this fixes ─────────────────────────────────────────────────
+-- private.is_guardian_of was a bare exists() over guardian_student, so every
+-- registered guardian was an unconditional, permanent, UNREVOKABLE reader of
+-- everything about a child: messages, attendance, grades, progress, hand-ins.
+-- The only way to remove one was to delete the link row, which also removes
+-- them from the child's record entirely — so the school's real choice was
+-- "full access" or "pretend they are not a parent". In a shared-custody family,
+-- or one where one parent holds adressesperre against the other, neither is a
+-- usable answer.
+--
+-- ── Why one column is enough ────────────────────────────────────────
+-- §10.7 calls the property "structural rather than patchable by a later
+-- policy", and that is right about the PARTICIPANT LIST (D1+D2 derive it) but
+-- not about the PREDICATE. private.is_guardian_of is one SECURITY DEFINER
+-- function, referenced 35 times across 17 migrations. Changing it here
+-- suppresses a guardian on every surface simultaneously, and no policy
+-- anywhere needs editing.
+--
+-- ── Per PAIR, never per person ──────────────────────────────────────
+-- The column is on guardian_student, whose primary key is (guardian_id,
+-- student_id). A parent suppressed for one child keeps full access to their
+-- other children. A per-person flag would punish siblings for a court order
+-- that names one of them.
+--
+-- ⛔ THERE IS DELIBERATELY NO `suppressed_reason`. The reason is a court order
+-- or a police adressesperre — a legal document that lives in the school's own
+-- file. Copying it into a table every admin can read creates a second, worse
+-- copy of the most sensitive fact about a family, in a database whose audit
+-- rotation (§10.8) is not built. suppressed_at records WHEN; the paperwork
+-- records WHY. Do not add the column.
+
+alter table public.guardian_student
+  add column suppressed    boolean not null default false,
+  add column suppressed_at timestamptz;
+
+comment on column public.guardian_student.suppressed is
+  'D32 (spec §10.7). When true this guardian reads NOTHING about this child on any surface — private.is_guardian_of returns false for the pair. Per (guardian, student), so the guardian keeps access to their other children. Written only by public.guardian_set_suppressed. See the migration header on why there is no reason column.';
+
+-- Suppression is rare and the flag is false for almost every row, so a partial
+-- index keeps the common lookup on the PK path untouched.
+create index guardian_student_suppressed_idx
+  on public.guardian_student (student_id) where suppressed;
+
+-- ── The predicate, now the only place suppression is expressed ──────
+create or replace function private.is_guardian_of(uid uuid, sid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.guardian_student
+    where guardian_id = uid and student_id = sid
+      -- ⛔ D32. Dropping this one clause silently restores a suppressed
+      -- parent's access to every message, mark and absence about a child a
+      -- court has kept them away from. It is pinned in
+      -- 29_definer_fingerprints.sql for exactly that reason.
+      and not suppressed
+  );
+$$;
+
+-- ── The write path ──────────────────────────────────────────────────
+-- A definer RPC rather than an UPDATE policy: guardian_student has admin-only
+-- INSERT and DELETE policies and NO update policy at all, and adding one to
+-- carry a single column would widen the table's write surface permanently.
+-- This also makes the audit row unforgettable.
+create function public.guardian_set_suppressed(
+  p_guardian   uuid,
+  p_student    uuid,
+  p_suppressed boolean,
+  p_actor      uuid
+) returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_hit integer;
+begin
+  update public.guardian_student
+     set suppressed    = p_suppressed,
+         suppressed_at = case when p_suppressed then now() else null end
+   where guardian_id = p_guardian and student_id = p_student;
+
+  get diagnostics v_hit = row_count;
+  if v_hit = 0 then
+    raise exception 'ingen slik foresatt-kobling' using errcode = '42501';
+  end if;
+
+  -- ⛔ Direct insert, explicit actor — private.audit() rejects the `admin.`
+  -- namespace outright and reads its actor from auth.uid(), which is null
+  -- under service_role. Same reasoning as invite_issue.
+  --
+  -- ⚠ meta carries the pair and the direction, and NOTHING ELSE. §10.8 asks
+  -- for minimisation here specifically, and a free-text reason in an
+  -- unrotatable log is the single worst field this table could gain.
+  insert into public.audit_log (actor_id, action, entity, entity_id, meta)
+  values (p_actor,
+          case when p_suppressed then 'admin.guardian.suppressed'
+                                 else 'admin.guardian.unsuppressed' end,
+          'guardian_student', p_student::text,
+          jsonb_build_object('guardian_id', p_guardian));
+end;
+$$;
+comment on function public.guardian_set_suppressed(uuid, uuid, boolean, uuid) is
+  'Sets or clears D32 suppression for one (guardian, student) pair and audits it. service_role only. p_actor MUST come from requireAdminActor() — it is written verbatim to audit_log.actor_id.';
+
+revoke execute on function public.guardian_set_suppressed(uuid, uuid, boolean, uuid)
+  from public, anon, authenticated;
+grant execute on function public.guardian_set_suppressed(uuid, uuid, boolean, uuid)
+  to service_role;
+```
+
+- [ ] **Step 2: Apply and regenerate types**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase db reset && npm run db:types
+```
+
+⚠ **Watch the existing suite here, not just the migration.** This changes a predicate 35 call sites depend on. Run the full pgTAP suite immediately:
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db
+```
+
+Expected: **913 / 39**, unchanged — every existing fixture has `suppressed = false` by default, so no existing assertion should move. **If anything reddens, stop.** It means either a fixture depended on the old shape or the `create or replace` dropped something; do not proceed until the baseline is back.
+
+- [ ] **Step 3: Write the pgTAP file**
+
+Create `supabase/tests/39_guardian_suppression.sql` with `select plan(8);` and the `c3` fixture prefix (⚠ **verify `c3` is free first**: `grep -rn "c3000000-" supabase/tests/ supabase/seed.sql` must return nothing).
+
+Build: two guardians (`c3…001` suppressed, `c3…002` not) both linked to pupil `c3…0a1`; guardian `c3…001` **also** linked to a second pupil `c3…0a2` and **not** suppressed there; one thread on each pupil; one attendance row and one class announcement for `c3…0a1`.
+
+The eight assertions, in pairs so no refusal stands alone:
+
+1. ★ the suppressed guardian reads **0** rows of the child's thread
+2. ★ **the same guardian reads their OTHER child's thread** — proves suppression is per-pair, not a broken session
+3. ★ **the co-guardian reads the SAME thread** — proves it is the suppression, not the thread
+4. the suppressed guardian reads **0** attendance rows for that child — a second surface, proving the one predicate reaches everywhere
+5. …and **0** announcements for that child's class
+6. un-suppressing restores the thread read (same actor, same row, opposite outcome)
+7. `guardian_set_suppressed` writes exactly one `admin.guardian.suppressed` row naming the actor
+8. `guardian_set_suppressed` is executable by neither `anon` nor `authenticated`, and **is** by `service_role` (one `has_function_privilege` assertion carrying both the negative and the positive control)
+
+⚠ Assertions 2 and 3 are what make 1 mean anything. A lone "returns 0 rows" passes when the fixture is wrong, the session is missing, or the thread does not exist — the shape that let four Phase-4 assertions survive `select true`.
+
+- [ ] **Step 4: Pin the clause**
+
+`private.is_guardian_of` is **already** in `29_definer_fingerprints.sql` as a *marker on other functions* (8 sites), but it has no entry of its own. Add one:
+
+```sql
+    ,
+    -- Stubbed or with the clause dropped, a parent a court has kept away from
+    -- a child silently regains every message, mark and absence about them —
+    -- across all 35 call sites at once, which is also what makes the single
+    -- clause worth pinning.
+    (
+      'private.is_guardian_of(uuid,uuid)',
+      array[
+        'not suppressed'
+      ]
+    )
+```
+
+**+1 marker: 95 → 96.** Recount the total from the arrays at execution rather than trusting that number — this task and Task 15b both touch the literal (15b then takes it 96 → 106), and the file's own header records it being got wrong twice already.
+
+- [ ] **Step 5: The admin control**
+
+Create `src/lib/admin/guardians.ts` — quarantine **category B**, documented as such:
+
+```typescript
+import 'server-only';
+import { createServiceRoleClient, requireAdminActor } from './quarantine';
+
+/**
+ * D32 suppression (spec §10.7). Sets or clears the flag for ONE
+ * (guardian, student) pair.
+ *
+ * ⛔ The actor comes from requireAdminActor(), never from a form field — it is
+ * written verbatim to audit_log.actor_id, and this is the audit trail for a
+ * decision that follows a court order.
+ */
+export async function setGuardianSuppressed(input: {
+  guardianId: string;
+  studentId: string;
+  suppressed: boolean;
+}): Promise<void> {
+  const actorId = await requireAdminActor();
+  const service = createServiceRoleClient();
+  const { error } = await service.rpc('guardian_set_suppressed', {
+    p_guardian: input.guardianId,
+    p_student: input.studentId,
+    p_suppressed: input.suppressed,
+    p_actor: actorId,
+  });
+  if (error) throw new Error(`Kunne ikke endre tilgangen: ${error.message}`);
+}
+```
+
+Add `setGuardianSuppressedAction` to `src/app/(portal)/admin/elever/actions.ts` (it calls `requireStaffRole('admin')`, so it needs no `PRE_AUTH` entry) and a control on `GuardianCard.tsx` behind a confirm step — reuse `useConfirmFocus`, which that directory already imports for the unlink flow.
+
+The copy has to be usable by an office volunteer, so it says what happens rather than naming the flag:
+
+> **Sperret innsyn** — denne foresatte ser ingenting om dette barnet: ingen meldinger, fravær, karakterer eller innleveringer. Tilgangen til eventuelle søsken påvirkes ikke. Brukes ved adressesperre eller pålegg fra retten. Skolen oppbevarer dokumentasjonen selv — ikke skriv begrunnelsen inn her.
+
+⚠ **The action counter moves.** `expect(allActions.length).toBe(83)` → **84** here, and Tasks 15d and 15e then take it to 85 and 87. Update the numbers in those tasks too — the ledger's original 84/86 predated this task.
+
+- [ ] **Step 6: Run everything**
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db && npm test && npm run typecheck && npm run lint && npm run knip && npm run build
+```
+
+Expected: pgTAP **921 / 40** (913 + 8). `action-guards` reports **84**. Record the measured unit total.
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd ~/dev/iqra-portal && git add supabase/migrations/20260808111000_guardian_suppression.sql \
+  supabase/tests/39_guardian_suppression.sql supabase/tests/29_definer_fingerprints.sql \
+  src/lib/admin/guardians.ts src/lib/admin/guardians.test.ts \
+  "src/app/(portal)/admin/elever" src/app/action-guards.test.ts src/lib/supabase/database.types.ts
+git commit -m "feat(foresatte): D32 — suppression, so a court order has somewhere to land
+
+Spec §10.7 recorded that every registered guardian was an unconditional,
+permanent, unrevokable reader of everything about a child, called it the most
+dangerous property of the system, and said to decide before pilot. It was
+latent only because no guardian had credentials. This plan hands out the
+logins, so the decision is now.
+
+§10.7 called it structural and unpatchable. That is true of the participant
+list and not of the predicate: private.is_guardian_of is ONE definer function
+behind 35 call sites, so suppression lands in one clause and takes effect on
+messages, attendance, grades, progress and hand-ins simultaneously.
+
+Per (guardian, student), never per person — a parent suppressed for one child
+keeps access to their siblings.
+
+Deliberately NO reason column. The reason is a court order in the school's own
+file; copying it into a table every admin can read, with no audit rotation
+built, would be the worst field this table could gain.
+
+pgTAP 913 -> 921. action-guards 83 -> 84."
+```
+
+## Task 15a: the token tables, the seven RPCs, and the D29 wall
 
 **Files:**
 - Create: `supabase/migrations/20260808120000_invite_tokens.sql`
-- Create: `supabase/tests/39_invite_tokens.sql`
+- Create: `supabase/tests/40_invite_tokens.sql`
 - Modify: `supabase/seed.sql`
 - Modify: `src/lib/supabase/database.types.ts` (generated)
 
@@ -636,9 +921,23 @@ begin
   -- REJECTS any action in the `admin.`/`system.` namespace (errcode 42501),
   -- and it takes its actor from auth.uid(), which is null under service_role.
   -- Routing this through it would fail the issue outright AND record no actor.
+  -- ⚠ meta carries `delivery` and NOTHING ELSE. §10.8 asks for minimisation in
+  -- this table specifically, and expires_at is derivable from created_at plus
+  -- private.invite_ttl(delivery) — both already on the row. audit_log has NO
+  -- DELETE grant for anyone (20260716184149:24-26) and docs/spec.md requires
+  -- ~3-month rotation of access events, so every redundant field here is
+  -- permanent by construction.
+  --
+  -- The action distinguishes a first issue from a RESET, because they are
+  -- different events: one is onboarding, the other is someone changing the
+  -- credentials of an account that already worked.
   insert into public.audit_log (actor_id, action, entity, entity_id, meta)
-  values (p_issued_by, 'admin.invite.issued', 'auth.users', target::text,
-          jsonb_build_object('delivery', p_delivery, 'expires_at', v_expires));
+  values (p_issued_by,
+          case when exists (select 1 from private.account_activation a
+                             where a.user_id = target)
+               then 'admin.invite.reset' else 'admin.invite.issued' end,
+          'auth.users', target::text,
+          jsonb_build_object('delivery', p_delivery));
 
   return v_expires;
 end;
@@ -662,6 +961,16 @@ as $$
    where token_hash = private.invite_token_hash(p_token)
      and consumed_at is null
      and expires_at > now()
+     -- ⛔ THE ERASURE CHECK, and it belongs on BOTH sides. Measured 2026-08-06:
+     -- with it only on the read side (invite_pending_accounts), an invite
+     -- issued BEFORE a soft-delete still redeemed for the whole TTL — so
+     -- updateUserById ran against an erased identity and invite_mark_activated
+     -- wrote a fresh activation row for it. The fingerprint comment claimed
+     -- this function was protected against "a live invite path into an erased
+     -- identity"; until now only the listing was.
+     and exists (
+           select 1 from auth.users u
+            where u.id = private.invite_tokens.user_id and u.deleted_at is null)
   returning user_id;
 $$;
 comment on function public.invite_redeem(text) is
@@ -699,6 +1008,35 @@ as $$
   values (target, now())
   on conflict (user_id) do update set password_set_at = now();
 $$;
+-- ── Revoke ──────────────────────────────────────────────────────────
+-- ⛔ THE MISSING KILL SWITCH. adminProvisionUser sets email_confirm: true on an
+-- address an admin TYPED; nothing verifies it belongs to the person. A single
+-- mistyped character sends a live 7-day credential to a stranger, who can
+-- redeem it and then read a named child's messages, attendance and hand-ins.
+--
+-- The privacy framing does not help here: «the e-mail contains no information
+-- about a child» is true of the BODY and irrelevant to the risk, because the
+-- credential is the disclosure.
+--
+-- Without this function the admin's only way to kill a misdirected link is to
+-- click «Vis engangslenke», which destroys the old link by MINTING A NEW ONE —
+-- not an obvious move under pressure, and it leaves a second live credential
+-- behind.
+create function public.invite_revoke(target uuid, p_actor uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from private.invite_tokens where user_id = target;
+  insert into public.audit_log (actor_id, action, entity, entity_id, meta)
+  values (p_actor, 'admin.invite.revoked', 'auth.users', target::text, '{}'::jsonb);
+end;
+$$;
+comment on function public.invite_revoke(uuid, uuid) is
+  'Kills the outstanding invite for an account without issuing another. The recovery path for a credential sent to the wrong address. service_role only.';
+
 comment on function public.invite_mark_activated(uuid) is
   'Records that an account has completed the set-password flow. The upsert matters: re-issuing an invite is also the password RESET path (D30), so an already-activated account passes through here again.';
 
@@ -747,6 +1085,40 @@ $$;
 comment on function public.invite_pending_accounts() is
   'Every account that cannot log in yet, with its outstanding invite state. Drives /admin/kontoer. service_role only — it returns e-mail addresses across the whole school.';
 
+-- ── The single-account lookup (S1) ──────────────────────────────────
+-- Deliberately does NOT filter on activation: this is the resolver the RESET
+-- path uses (D30), and a reset is by definition for someone who can already
+-- log in. invite_pending_accounts is the work QUEUE; this is the LOOKUP.
+-- Keeping them separate is what stops the queue's filter from silently
+-- becoming a precondition for issuing — which is exactly the bug that would
+-- have shipped Phase 5 with no password reset of any kind.
+create function public.invite_find_account(target uuid)
+returns table (
+  user_id uuid, full_name text, email text, roles text[], is_student boolean,
+  activated boolean,
+  invite_issued_at timestamptz, invite_expires_at timestamptz, invite_delivery text
+)
+language sql
+security definer
+set search_path = ''
+as $$
+  select p.id, p.full_name, u.email::text,
+         coalesce(array_agg(r.role::text order by r.role)
+                    filter (where r.role is not null), '{}'),
+         (exists (select 1 from public.students s where s.student_user_id = p.id)
+          or private.has_role(p.id, 'student')),
+         exists (select 1 from private.account_activation a where a.user_id = p.id),
+         t.issued_at, t.expires_at, t.delivery
+    from public.profiles p
+    join auth.users u on u.id = p.id
+    left join public.user_roles r on r.user_id = p.id
+    left join private.invite_tokens t on t.user_id = p.id
+   where p.id = target and u.deleted_at is null
+   group by p.id, p.full_name, u.email, t.issued_at, t.expires_at, t.delivery;
+$$;
+comment on function public.invite_find_account(target uuid) is
+  'Single-account resolver for /admin/kontoer, including ACTIVATED accounts — the D30 password-reset path. service_role only.';
+
 -- ── Backfill ────────────────────────────────────────────────────────
 -- Anyone who has ever signed in demonstrably holds a working password, and
 -- that is the only signal available: the placeholder bcrypt is indistinguish-
@@ -755,7 +1127,9 @@ comment on function public.invite_pending_accounts() is
 -- stamp themselves — so the false-positive direction is "appears on the admin
 -- queue for a while", never "silently unable to log in".
 insert into private.account_activation (user_id, password_set_at)
-select p.id, coalesce(u.last_sign_in_at, u.created_at)
+-- ⚠ No coalesce: the predicate below already excludes null last_sign_in_at,
+-- so a fallback here could never fire and would only suggest it might.
+select p.id, u.last_sign_in_at
   from public.profiles p
   join auth.users u on u.id = p.id
  where u.last_sign_in_at is not null
@@ -769,12 +1143,24 @@ revoke execute on function public.invite_issue(uuid, text, text, uuid) from publ
 revoke execute on function public.invite_redeem(text) from public, anon, authenticated;
 revoke execute on function public.invite_restore(text) from public, anon, authenticated;
 revoke execute on function public.invite_mark_activated(uuid) from public, anon, authenticated;
+revoke execute on function public.invite_revoke(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.invite_find_account(uuid) from public, anon, authenticated;
 revoke execute on function public.invite_pending_accounts() from public, anon, authenticated;
 
 grant execute on function public.invite_issue(uuid, text, text, uuid) to service_role;
 grant execute on function public.invite_redeem(text) to service_role;
 grant execute on function public.invite_restore(text) to service_role;
 grant execute on function public.invite_mark_activated(uuid) to service_role;
+grant execute on function public.invite_revoke(uuid, uuid) to service_role;
+grant execute on function public.invite_find_account(uuid) to service_role;
+
+-- ⚠ The private helpers too — a `private` function with no explicit ACL is
+-- EXECUTE TO PUBLIC, and `authenticated` holds USAGE on the schema. Measured:
+-- `set role authenticated; select private.invite_attempt_limit();` returns 20.
+-- Not exploitable, but private.audit and private.has_role both revoke this.
+revoke execute on function private.invite_ttl(text) from public;
+revoke execute on function private.invite_restore_window() from public;
+revoke execute on function private.invite_token_hash(text) from public;
 grant execute on function public.invite_pending_accounts() to service_role;
 ```
 
@@ -806,7 +1192,7 @@ Expected: reset completes; `git diff --stat src/lib/supabase/database.types.ts` 
 
 - [ ] **Step 4: Write the pgTAP file**
 
-Create `supabase/tests/39_invite_tokens.sql`:
+Create `supabase/tests/40_invite_tokens.sql`:
 
 ```sql
 begin;
@@ -1000,7 +1386,7 @@ select is_empty(
     select grantee || ' holds ' || privilege_type || ' on ' || table_name
       from information_schema.role_table_grants
      where table_schema = 'private'
-       and table_name in ('invite_tokens', 'account_activation')
+       and table_name in ('invite_tokens', 'account_activation', 'invite_attempts')
        and grantee in ('anon', 'authenticated', 'service_role', 'PUBLIC')
   $$,
   'the invite tables carry no table grants at all — reachable only through the definer functions');
@@ -1036,15 +1422,40 @@ cd ~/dev/iqra-portal && docker exec supabase_db_iqra-portal psql -U postgres -d 
   "select action, entity_id, meta from public.audit_log where action = 'admin.invite.issued' order by id;"
 ```
 
-- [ ] **Step 5: Run the new file alone and read the assertion indices**
+- [ ] **Step 4b: The six assertions the review ledger requires and the block above does NOT contain**
+
+⛔ **The 19 assertions written above are the pre-review set.** The review panel added SQL to this migration — `invite_revoke`, the `deleted_at` check on redeem, `invite_find_account`, the prune and clear functions, the window clause — and specified the assertions that cover them, but the block above was never extended. Its mutation rows (6c, 14b, 14c, 14d, 28) all point at *"the new …"* assertions. **Write them, or those mutations have nothing to redden and five ledger fixes ship unwatched.**
+
+| # | Covers | Assert | Ledger |
+|---|---|---|---|
+| a | S2 — the D29 hole | An **unlinked** pupil (role `student`, `student_user_id` null) is still refused `epost`. This is the `or private.has_role(…)` arm; without it a pupil whose link was cleared gets an e-mail button. | S2 / mutation 6c |
+| b | M7 | `is_student` is **true** for a pupil and **false** for a guardian, read directly off `invite_pending_accounts` — two assertions, because the projection mutating to a constant must redden in both directions. | M7 / mutation 14c |
+| c | M8 | `private.invite_ttl('skjerm') < private.invite_ttl('epost')` — the 24 h / 7 d ordering. Swapping the arms currently reddens nothing. | M8 / mutation 14d |
+| d | rate limit | The window is **respected**: an attempt older than `private.invite_attempt_window()` does not count toward the cap. Without it a 15-minute limiter is a permanent per-IP ban on a school behind one NAT. | mutation 14b |
+| e | H2 | `invite_redeem` returns **null** for a token whose user is soft-deleted. Assertion 15 covers the *listing*; this covers the *redemption*, and they are different code paths. | H2 |
+| f | S1 | An **activated** account can be re-issued, and the **old link dies** at that instant. This is the whole D30 reset path; nothing currently asserts it in SQL. | S1 |
+
+⚠ **b is two assertions, so this block is 7, not 6.** Count what you write.
+
+⚠ Assertion **f needs `invite_find_account`**, which is defined in this same migration — resolve through it, not through `invite_pending_accounts`, or the assertion reproduces the S1 bug it exists to prevent.
+
+- [ ] **Step 5: Set `plan()` from the count, then run the file alone and read the indices**
+
+⛔ **`select plan(19);` on line 3 is now wrong** — Step 4b adds ~7. Count the `select is/isnt/ok/throws_ok/lives_ok/is_empty` calls in the finished file and set `plan()` to **that number**:
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase test db supabase/tests/39_invite_tokens.sql
+cd ~/dev/iqra-portal && grep -cE '^select (is|isnt|ok|throws_ok|lives_ok|is_empty)\(' supabase/tests/40_invite_tokens.sql
+```
+
+```bash
+cd ~/dev/iqra-portal && npx supabase test db supabase/tests/40_invite_tokens.sql
 ```
 
 ⚠ **Positional path. There is no `--file` flag** — CLI v2.109.1 rejects it.
 
-Expected: `ok 1` … `ok 19`, no failures. If `plan(19)` disagrees with the number that ran, **count the `select is/isnt/ok/throws_ok/lives_ok/is_empty` calls** and set `plan()` to that; never nudge it to silence a failure.
+Expected: `ok 1` … `ok <N>`, no failures, where `<N>` is the counted value (**≈26**: 19 + 7). If `plan()` disagrees with the number that ran, **count again** and set `plan()` to that; never nudge it to silence a failure.
+
+⛔ **This is the number every downstream total depends on.** Task 15a's suite total is `921 + <N>`, and the 940 quoted below assumes the stale 19. **Recompute it from `<N>` and correct Step 6, Step 7's commit message, Task 15b, Task 16 and Task 16b** — they all inherit this. Record the real figure in the execution ledger; the plan's numbers are expectations and this one is known to be low.
 
 - [ ] **Step 6: Run the whole suite**
 
@@ -1052,13 +1463,15 @@ Expected: `ok 1` … `ok 19`, no failures. If `plan(19)` disagrees with the numb
 cd ~/dev/iqra-portal && npx supabase test db
 ```
 
-Expected: **932** assertions across **40** files (913 + 19). If the total is not 932, the difference is not this file — find it before continuing.
+Expected: **921 + `<N>`** assertions across **41** files, where `<N>` is Step 5's counted plan — **≈940 if `<N>`=19, ≈947 if `<N>`=26.** ⛔ Do not treat 940 as the target: it assumes the pre-review 19, and Step 4b adds about seven. If the total is not `921 + <N>`, the difference is not this file — find it before continuing.
+
+⚠ **The baseline is Task 14b's 921 / 40, not plan 3's 913 / 39.** 14b adds `39_guardian_suppression.sql`, so this file is the **41st** and the 19 land on top of 921. Every count from here to the exit gate carries that +8/+1-file shift; an earlier draft of this plan predated 14b and said 932 / 40.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 cd ~/dev/iqra-portal && git add supabase/migrations/20260808120000_invite_tokens.sql \
-  supabase/tests/39_invite_tokens.sql supabase/seed.sql src/lib/supabase/database.types.ts
+  supabase/tests/40_invite_tokens.sql supabase/seed.sql src/lib/supabase/database.types.ts
 git commit -m "feat(invitasjon): single-outstanding, single-use invite tokens with a pupil-mail wall
 
 user_id is the PK, so re-issuing kills the previous link — 'send it again'
@@ -1076,7 +1489,7 @@ The audit row is a direct insert with an explicit actor, because private.audit()
 rejects the admin. namespace outright and reads its actor from auth.uid(),
 which is null under service_role.
 
-pgTAP 913 -> 932."
+pgTAP 921 -> <the measured total>. (≈947 with Step 4b's assertions.)"
 ```
 
 ---
@@ -1085,8 +1498,8 @@ pgTAP 913 -> 932."
 
 **Files:**
 - Create: `supabase/migrations/20260808121000_invite_rate_limit.sql`
-- Modify: `supabase/tests/39_invite_tokens.sql` (`plan(19)` → `plan(22)`)
-- Modify: `supabase/tests/29_definer_fingerprints.sql` (marker literal **95** → counted)
+- Modify: `supabase/tests/40_invite_tokens.sql` (`plan(19)` → `plan(22)`)
+- Modify: `supabase/tests/29_definer_fingerprints.sql` (marker literal **96** after Task 14b → counted, not predicted)
 
 - [ ] **Step 1: Write the migration**
 
@@ -1098,9 +1511,16 @@ Create `supabase/migrations/20260808121000_invite_rate_limit.sql`:
 --
 -- ── What is actually being defended, stated honestly ────────────────
 -- NOT the token. The token is 32 bytes from a CSPRNG — 256 bits — so guessing
--- it is not a threat model, it is arithmetic. This limiter exists for the two
--- things that ARE reachable: hammering the endpoint as a denial of service,
--- and burning CPU on bcrypt via the GoTrue call behind it.
+-- it is not a threat model, it is arithmetic.
+--
+-- ⚠ NOR IS IT BCRYPT CPU, though an earlier draft of this header said so.
+-- updateUserById is reached only AFTER a successful redeem, so a bogus token
+-- never touches GoTrue and never costs a hash. Stating a threat the code makes
+-- unreachable is how a control ends up defended by the wrong argument.
+--
+-- What it actually defends: flooding the endpoint, and this function's OWN
+-- write amplification — the delete+insert+select below is the most expensive
+-- thing on the anonymous path.
 --
 -- ── Why the bucket is ip ALONE, unlike login_attempts ───────────────
 -- login_attempts buckets on (email, ip) because it has an email. Redemption
@@ -1179,14 +1599,65 @@ $$;
 comment on function public.invite_attempt_consume(text) is
   'Records a redemption attempt and reports whether the ip bucket still has budget, in ONE statement. Anti-DoS only — the token''s 256 bits are what make guessing infeasible. service_role only.';
 
+-- ── The global prune ────────────────────────────────────────────────
+-- ⛔ WITHOUT THIS THE TABLE GROWS FOREVER. The delete inside
+-- invite_attempt_consume is bucket-scoped, so a row is removed only if that
+-- same ip comes back inside the window — and an internet-facing, unauthen-
+-- ticated, fail-open endpoint is precisely where addresses arrive once and
+-- never return. Measured during review: 5 000 rows inserted, none reachable by
+-- any prune path. These are IP addresses, on a project with a retention module.
+--
+-- Kept out of the hot path, exactly like login_attempts_prune(): any call
+-- prunes its own bucket, this mops up the buckets nobody revisits. It is what
+-- the attempted_at index above exists for.
+create function public.invite_attempts_prune()
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from private.invite_attempts
+   where attempted_at < now() - private.invite_attempt_window();
+$$;
+
+-- ── Clear on success ────────────────────────────────────────────────
+-- The clearLoginAttempts sibling, and it is not cosmetic here. The bucket is
+-- ip ALONE and IQRA's families share the school network: an admin walking
+-- families through activation at a parents' evening would hit the cap at the
+-- 21st family. A completed redemption is proof the traffic was honest.
+create function public.invite_attempts_clear(p_ip text)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from private.invite_attempts where ip = p_ip;
+$$;
+
 revoke all on table private.invite_attempts from anon, authenticated, service_role;
 revoke execute on function public.invite_attempt_consume(text) from public, anon, authenticated;
+revoke execute on function public.invite_attempts_prune() from public, anon, authenticated;
+revoke execute on function public.invite_attempts_clear(text) from public, anon, authenticated;
 grant execute on function public.invite_attempt_consume(text) to service_role;
+grant execute on function public.invite_attempts_prune() to service_role;
+grant execute on function public.invite_attempts_clear(text) to service_role;
+
+-- ── The private helpers are not for anyone else ─────────────────────
+-- ⚠ A function in `private` with no explicit ACL is EXECUTE TO PUBLIC, and
+-- `authenticated` holds USAGE on the schema — measured, `set role
+-- authenticated; select private.invite_attempt_limit();` returns 20. Not
+-- exploitable (the schema is not exposed through PostgREST and the tokens
+-- themselves are unreadable) but it leaks the tunables, and private.audit /
+-- private.has_role both revoke this. Match them.
+revoke execute on function private.invite_attempt_window() from public;
+revoke execute on function private.invite_attempt_limit() from public;
 ```
+
+⚠ **The same revoke is owed by Task 15a's helpers** — `private.invite_ttl(text)`, `private.invite_restore_window()` and `private.invite_token_hash(text)` are all `EXECUTE TO PUBLIC` as written. Add the three `revoke execute … from public` lines to that migration too; they were missed because the plan followed `private.login_email_hash`, which has the same gap.
 
 - [ ] **Step 2: Extend the pgTAP file — `plan(19)` becomes `plan(22)`**
 
-Change the third line of `supabase/tests/39_invite_tokens.sql` from `select plan(19);` to `select plan(22);`, and add the `invite_attempt_consume` name to the grants assertion's list (assertion 16) so the new RPC is covered by the same wall:
+Change the third line of `supabase/tests/40_invite_tokens.sql` from `select plan(19);` to `select plan(22);`, and add the `invite_attempt_consume` name to the grants assertion's list (assertion 16) so the new RPC is covered by the same wall:
 
 ```sql
      where routine_schema = 'public'
@@ -1223,7 +1694,7 @@ select is(
 - [ ] **Step 3: Run the file and read the indices**
 
 ```bash
-cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db supabase/tests/39_invite_tokens.sql
+cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db supabase/tests/40_invite_tokens.sql
 ```
 
 Expected: `ok 1` … `ok 22`.
@@ -1234,7 +1705,7 @@ docker exec supabase_db_iqra-portal psql -U postgres -d postgres -tAc \
   "select ip, count(*) from private.invite_attempts group by ip;"
 ```
 
-- [ ] **Step 4: Add the six definer fingerprints**
+- [ ] **Step 4: Add the five definer fingerprints**
 
 In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `definer_markers` VALUES list, immediately before the closing `) as f(sig, markers);`:
 
@@ -1250,13 +1721,18 @@ In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `defin
         'admin.invite.issued'
       ]
     ),
-    -- Drop either marker and the token stops being single-use, or stops
-    -- expiring. Both turn one leaked link into a permanent account takeover.
+    -- Drop either of the first two and the token stops being single-use, or
+    -- stops expiring. Both turn one leaked link into a permanent account
+    -- takeover. The third is H2: without it an invite issued before a
+    -- soft-delete still redeems, so GoTrue is driven against an erased
+    -- identity — which is the exact property the pending_accounts entry below
+    -- already claims to protect, on the read side only.
     (
       'public.invite_redeem(text)',
       array[
         'consumed_at is null',
-        'expires_at > now()'
+        'expires_at > now()',
+        'u.deleted_at is null'
       ]
     ),
     -- Without the window this is not a refund, it is a way to re-open ANY
@@ -1268,13 +1744,18 @@ In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `defin
         'consumed_at is not null'
       ]
     ),
-    -- Same marker, same reason, as resolve_ping_address: a soft-deleted
-    -- account is not a person waiting for a login, and listing one hands an
-    -- admin a live invite path into an erased identity.
+    -- First marker: same one, same reason, as resolve_ping_address — a
+    -- soft-deleted account is not a person waiting for a login, and listing
+    -- one hands an admin a live invite path into an erased identity.
+    -- Second is M7. Measured: replacing the is_student projection with `false`
+    -- reddens nothing, and every pupil card then gains an e-mail button whose
+    -- click returns a raw 42501 — D29 defeated through the UI rather than
+    -- through the wall.
     (
       'public.invite_pending_accounts()',
       array[
-        'u.deleted_at is null'
+        'u.deleted_at is null',
+        's.student_user_id = p.id'
       ]
     ),
     -- Stubbed, the limiter is decorative.
@@ -1290,23 +1771,37 @@ In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `defin
 
 - [ ] **Step 5: Count the markers — do not predict them**
 
-The five entries above carry **2 + 2 + 2 + 1 + 1 = 8** markers, so the literal goes **95 → 103**. Update the two places in the file:
+The five entries above carry **2 + 3 + 2 + 2 + 1 = 10** markers, and the baseline is **96**, not 95 — Task 14b already added `not suppressed` on `private.is_guardian_of`. So the literal goes **96 → 106**.
+
+⛔ **Do not copy that number in. Run the count and use what it prints:**
+
+```bash
+cd ~/dev/iqra-portal && docker exec supabase_db_iqra-portal psql -U postgres -d postgres -tAc \
+  "select count(*) from (select unnest(markers) from definer_markers) x;" 2>/dev/null \
+  || echo "definer_markers is a CTE local to the test file — count from the arrays by hand instead"
+```
+
+Then update the two places in the file, substituting the counted value for `<N>`:
 
 ```sql
 select is(
   (select count(*)::int from definer_markers d, lateral unnest(d.markers) as m),
-  103,
-  'the fingerprint table still covers 103 (function, predicate) pairs'
+  <N>,
+  'the fingerprint table still covers <N> (function, predicate) pairs'
 );
 ```
 
 and extend the arithmetic comment above it:
 
 ```sql
--- 83 → 95. Phase 5 plan 4 then added FIVE entries carrying 2+2+2+1+1 = 8,
--- so 95 → 103. public.invite_mark_activated is deliberately absent — it holds
--- no wall to pin; see the note beside the entries.
+-- 83 → 95. Phase 5 plan 4 then added D32's `not suppressed` on
+-- private.is_guardian_of (95 → 96, Task 14b), then FIVE invite entries
+-- carrying 2+3+2+2+1 = 10, so 96 → <N>. public.invite_mark_activated is
+-- deliberately absent — it holds no wall to pin; see the note beside the
+-- entries.
 ```
+
+⚠ **106 assumes M8's TTL ordering is pinned by an assertion and not by a marker.** If you pin `private.invite_ttl(text)` as a **sixth** entry instead, the total is 107 and the "five entries" wording above is wrong too. Decide when you write the TTL assertion, then make the entry list, the comment and the literal agree with each other — the point is that all three are counted from the same arrays, not that any particular number is right.
 
 ⛔ **This counter has now been got wrong twice on this file** — once by reading "five new functions" and writing 31, once by a plan step that stated three different numbers for one value. **The arrays are what count.** If assertion 1 is red, count the markers; never reconcile the two numbers by adjusting either one.
 
@@ -1317,16 +1812,16 @@ cd ~/dev/iqra-portal && npx supabase test db supabase/tests/29_definer_fingerpri
   && npx supabase test db
 ```
 
-Expected: file 29 `ok 1`, `ok 2`. Full suite **935** assertions across **40** files (932 + 3).
+Expected: file 29 `ok 1`, `ok 2`. Full suite **Task 15a's total + 3** across **41** files (file 29's `plan(2)` is unchanged — it counts markers, not rows). ⚠ **≈946 if Task 15a landed at 943, ≈950 if it landed at 947.** Carry forward the number 15a actually measured, not the one this plan predicted.
 
 - [ ] **Step 7: Regenerate types and commit**
 
 ```bash
 cd ~/dev/iqra-portal && npm run db:types
 git add supabase/migrations/20260808121000_invite_rate_limit.sql \
-  supabase/tests/39_invite_tokens.sql supabase/tests/29_definer_fingerprints.sql \
+  supabase/tests/40_invite_tokens.sql supabase/tests/29_definer_fingerprints.sql \
   src/lib/supabase/database.types.ts
-git commit -m "feat(invitasjon): the redemption limiter, and six new definer fingerprints
+git commit -m "feat(invitasjon): the redemption limiter, and five new definer fingerprints
 
 Bucketed on ip alone because redemption is anonymous — there is no second
 dimension. Set well above honest use (20/15min against an honest ONE) because
@@ -1336,10 +1831,10 @@ Fails open, and the reason is not login's: there is no backstop here, but the
 token is 256 bits, so an unreachable limiter grants unlimited guesses against
 a secret that cannot be guessed. Locking families out of activation is worse.
 
-Fingerprint markers 95 -> 103 (2+2+2+1+1, counted from the arrays).
+Fingerprint markers 96 -> 106 (2+3+2+2+1, counted from the arrays).
 invite_mark_activated is deliberately unpinned — it holds no wall.
 
-pgTAP 932 -> 935."
+pgTAP <15a's measured total> -> <that + 3>."
 ```
 
 ---
@@ -1347,7 +1842,7 @@ pgTAP 932 -> 935."
 ## Task 15c: the token library, the invite e-mail, and the shared portal URL
 
 **Files:**
-- Create: `src/lib/portal-url.ts`, `src/lib/auth/invite.ts`, `src/lib/auth/invite.test.ts`
+- Create: `src/lib/portal-url.ts`, `src/lib/auth/invite.ts`, `src/lib/auth/invite.test.ts`, `src/lib/admin/invite-tokens.ts`, `src/lib/admin/invite-tokens.test.ts`
 - Create: `src/lib/varsler/invite-email.ts`, `src/lib/varsler/invite-email.test.ts`
 - Modify: `src/app/api/varsler/drain/route.ts:125`
 
@@ -1603,21 +2098,34 @@ cd ~/dev/iqra-portal && npm test -- lib/auth/invite
 
 Expected: FAIL — `Cannot find module './invite'`.
 
-- [ ] **Step 9: Write the library**
+- [ ] **Step 9: Write the library — as TWO files, on opposite sides of the quarantine**
 
-Create `src/lib/auth/invite.ts`:
+⛔ **The obvious single file breaches the quarantine.** `src/lib/admin/quarantine.ts:13-15` says:
+
+> `createServiceRoleClient` is exported for **SIBLING FILES IN THIS DIRECTORY ONLY** — never import it outside `src/lib/admin/`.
+
+**No lint rule enforces that** (`eslint.config.mjs` is the bare `next` preset), so a `src/lib/auth/invite.ts` that imports it compiles, passes CI, and becomes the first `src/lib/` module to cross the line — with nothing to stop the next one. The house already has the answer for exactly this case: `src/lib/admin/rate-limit.ts` is the quarantine's **category B (pre-auth infrastructure)**, and the invite RPC wrappers satisfy its contract verbatim — they take no input that widens their own authority, reach nothing but their own narrowly-granted functions, and mutate no school data.
+
+So: **pure helpers in `src/lib/auth/invite.ts`, service-role wrappers in `src/lib/admin/invite-tokens.ts`.** This also fixes the knip failure — `invite.test.ts` no longer needs the whole quarantine graph in its import chain — and it is why the test file at Step 7 imports only the three pure functions.
+
+Create `src/lib/auth/invite.ts` — **no service-role import, no `@/lib/admin/*` import at all**:
 
 ```typescript
 import 'server-only';
 import { randomBytes } from 'node:crypto';
-import { createServiceRoleClient } from '@/lib/admin/quarantine';
 import { PORTAL_URL } from '@/lib/portal-url';
 
 /**
- * The invite token, app side. The DIGEST is computed in SQL, not here —
- * see the migration header: passing a bytea argument through PostgREST needs
- * hex encoding, and getting that subtly wrong yields an invite flow where
- * every link is silently invalid.
+ * The invite token's PURE half: generation, the URL, and the day arithmetic.
+ *
+ * ⛔ Nothing here touches the database. The service-role wrappers live in
+ * src/lib/admin/invite-tokens.ts because createServiceRoleClient is quarantined
+ * to that directory (quarantine.ts:13-15) — a rule no lint rule enforces, which
+ * is exactly why it has to be kept by hand.
+ *
+ * The DIGEST is computed in SQL, not here — see the migration header: passing a
+ * bytea argument through PostgREST needs hex encoding, and getting that subtly
+ * wrong yields an invite flow where every link is silently invalid.
  */
 export type InviteDelivery = 'epost' | 'skjerm';
 
@@ -1638,6 +2146,33 @@ export function validDaysUntil(expiresAt: Date, now: Date = new Date()): number 
   const ms = expiresAt.getTime() - now.getTime();
   return Math.max(1, Math.ceil(ms / 86_400_000));
 }
+
+```
+
+- [ ] **Step 9b: The service-role half**
+
+Create `src/lib/admin/invite-tokens.ts`. The header states its quarantine category, the way `rate-limit.ts` does — a file in this directory without one is the next reviewer's problem:
+
+```typescript
+import 'server-only';
+import type { InviteDelivery } from '@/lib/auth/invite';
+import { createServiceRoleClient } from './quarantine';
+
+/**
+ * Invite tokens — the quarantine's PRE-AUTH category (see quarantine.ts).
+ *
+ * These run before any session exists (redemption is anonymous by
+ * construction), so the admin contract — AAL2, admin role, audit entry —
+ * cannot apply to all of them. What replaces it, and what puts them in
+ * category B alongside rate-limit.ts: they take no input that can widen their
+ * own authority, they reach nothing but their own service_role-granted RPCs,
+ * and they mutate no school data.
+ *
+ * ⚠ issueInvite is the exception that DOES carry an actor, and its `issuedBy`
+ * MUST come from requireAdminActor(). It is written verbatim to
+ * audit_log.actor_id, so a value taken from a request forges the only record
+ * of who minted a credential.
+ */
 
 /** Issues (and replaces) the account's single outstanding invite. */
 export async function issueInvite(input: {
@@ -1698,6 +2233,7 @@ Expected: unit **636 → 647** (6 template + 5 library assertions… **count wha
 
 ```bash
 git add src/lib/portal-url.ts src/lib/auth/invite.ts src/lib/auth/invite.test.ts \
+  src/lib/admin/invite-tokens.ts src/lib/admin/invite-tokens.test.ts \
   src/lib/varsler/invite-email.ts src/lib/varsler/invite-email.test.ts \
   src/app/api/varsler/drain/route.ts
 git commit -m "feat(invitasjon): token library, content-free invite e-mail, shared portal origin
@@ -1752,6 +2288,11 @@ export async function consumeInviteAttempt(): Promise<LoginGate> {
       .rpc('invite_attempt_consume', { p_ip: await currentIp() })
       .maybeSingle();
     if (error) {
+      // ⚠ logThrottleFailure hard-codes «GoTrue-hooken gjelder fortsatt»
+      // (rate-limit.ts:120-129), which is FALSE on this path — the doc comment
+      // above says there is no backstop here. Parameterise the backstop clause
+      // and pass nothing for the invite path, or the only record that a
+      // security control stopped working claims another one is still holding.
       logThrottleFailure('invite_attempt_consume', error);
       return ALLOW;
     }
@@ -1779,7 +2320,7 @@ const markActivated = vi.fn();
 const consumeInviteAttempt = vi.fn();
 const updateUserById = vi.fn();
 
-vi.mock('@/lib/auth/invite', () => ({ redeemInvite, restoreInvite, markActivated }));
+vi.mock('@/lib/admin/invite-tokens', () => ({ redeemInvite, restoreInvite, markActivated }));
 vi.mock('@/lib/admin/rate-limit', () => ({ consumeInviteAttempt }));
 vi.mock('@/lib/admin/quarantine', () => ({
   createServiceRoleClient: () => ({ auth: { admin: { updateUserById } } }),
@@ -1815,13 +2356,44 @@ describe('setPasswordAction', () => {
     expect(state.error).toMatch(/ikke like/i);
   });
 
-  it('★ does NOT redeem the token when the password is too short', async () => {
-    const state = await setPasswordAction(
+  /**
+   * ⛔ THE BOUNDARY, not a short string. Asserting that 'kort' is rejected with
+   * a message matching /12/ pins the MESSAGE, not the threshold: mutate
+   * `min(12)` to `min(6)` and leave the message text alone, and this stays
+   * green while 8-character passwords are accepted portal-wide. The plan
+   * spends a paragraph on why 12 rather than config.toml's 6; this is what
+   * makes that paragraph true.
+   */
+  it.each([
+    [11, false],
+    [12, true],
+  ])('a %i-character password is accepted: %s', async (len, ok) => {
+    const pw = 'a'.repeat(len);
+    const run = setPasswordAction(
       { error: null },
-      form({ ...GOOD, passord: 'kort', bekreft: 'kort' }),
+      form({ t: 'tok', passord: pw, bekreft: pw }),
     );
-    expect(redeemInvite).not.toHaveBeenCalled();
-    expect(state.error).toMatch(/12/);
+    if (ok) {
+      // The accepted case redirects, and redirect() throws.
+      await expect(run).rejects.toThrow('NEXT_REDIRECT:/logg-inn?aktivert=1');
+    } else {
+      expect((await run).error).toMatch(/12/);
+      expect(redeemInvite).not.toHaveBeenCalled();
+    }
+  });
+
+  it('★ reports a rejected password as rejected, not as a system hiccup', async () => {
+    updateUserById.mockResolvedValue({ error: { message: 'weak', status: 422 } });
+    const state = await setPasswordAction({ error: null }, form(GOOD));
+    expect(restoreInvite).toHaveBeenCalledWith('tok');
+    expect(state.error).toMatch(/avvist/i);
+    expect(state.error).not.toMatch(/øyeblikk/i);
+  });
+
+  it('still redirects when the activation row cannot be written', async () => {
+    markActivated.mockRejectedValue(new Error('rpc nede'));
+    await expect(setPasswordAction({ error: null }, form(GOOD)))
+      .rejects.toThrow('NEXT_REDIRECT:/logg-inn?aktivert=1');
   });
 
   it('refuses when the ip is over budget, without touching the token', async () => {
@@ -1846,11 +2418,22 @@ describe('setPasswordAction', () => {
     expect(state.error).toMatch(/prøv igjen/i);
   });
 
+  /**
+   * ⛔ AN EXPLICIT CALL ORDER, because `toHaveBeenCalledWith` is order-blind.
+   * The first draft asserted both calls happened and called that an ordering
+   * test — so mutation 23 (move markActivated above updateUserById) left it
+   * GREEN, and the test whose title claimed the ordering property was the one
+   * test that could not see it. The assertion that actually moved was in the
+   * failure-path test below. Measured by the review panel.
+   */
   it('★ marks the account activated only AFTER GoTrue accepted', async () => {
+    const order: string[] = [];
+    updateUserById.mockImplementation(async () => { order.push('gotrue'); return { error: null }; });
+    markActivated.mockImplementation(async () => { order.push('activated'); });
     await expect(setPasswordAction({ error: null }, form(GOOD)))
       .rejects.toThrow('NEXT_REDIRECT:/logg-inn?aktivert=1');
+    expect(order).toEqual(['gotrue', 'activated']);
     expect(updateUserById).toHaveBeenCalledWith('user-1', { password: GOOD.passord });
-    expect(markActivated).toHaveBeenCalledWith('user-1');
     expect(restoreInvite).not.toHaveBeenCalled();
   });
 });
@@ -1875,7 +2458,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/admin/quarantine';
 import { consumeInviteAttempt } from '@/lib/admin/rate-limit';
-import { markActivated, redeemInvite, restoreInvite } from '@/lib/auth/invite';
+import { markActivated, redeemInvite, restoreInvite } from '@/lib/admin/invite-tokens';
 
 export interface SetPasswordState {
   error: string | null;
@@ -1942,20 +2525,49 @@ export async function setPasswordAction(
     password: parsed.data.passord,
   });
   if (error) {
-    // The token was already spent on a failure that is not the user's fault.
-    // Give it back, or a 5xx during an incident permanently kills a live
-    // invitation and the family cannot try again.
+    // The token was spent before the outcome was known, so give it back —
+    // in BOTH branches below. A 5xx during an incident, or a rejected
+    // password, must not permanently kill a live invitation.
     await restoreInvite(parsed.data.t);
     console.error('[sett-passord] GoTrue avviste passordet:', {
       status: error.status,
       message: error.message,
     });
-    return { error: 'Kunne ikke lagre passordet. Prøv igjen om et øyeblikk.' };
+    // ⛔ CLASSIFY, don't lump. This mirrors isCredentialFailure in
+    // logg-inn/actions.ts:33, and it exists for a concrete reason: the CLOUD
+    // project's password policy is set in the dashboard and is unknown to this
+    // code (supabase/config.toml governs the LOCAL stack only). If it enforces
+    // a character class, or Supabase's leaked-password check is on, a parent
+    // typing a perfectly good 14-character passphrase gets a 422 — and the
+    // undifferentiated message tells them the system had a hiccup and to try
+    // again shortly. They retry the same passphrase, forever, then phone the
+    // school. That is exactly the "passes testing, fails for real families"
+    // outcome this task opens by trying to avoid.
+    const permanent =
+      error.status !== undefined && error.status >= 400 && error.status < 500 &&
+      error.status !== 429;
+    return {
+      error: permanent
+        ? 'Passordet ble avvist. Velg et annet passord på minst 12 tegn.'
+        : 'Kunne ikke lagre passordet. Prøv igjen om et øyeblikk.',
+    };
   }
 
   // Only now — the account is activated when GoTrue holds the password, not
   // when we asked it to.
-  await markActivated(userId);
+  //
+  // ⛔ NON-FATAL, and that is not laziness. markActivated throws on RPC error,
+  // and an uncaught throw here 500s the user AFTER the password is already set
+  // and the token already consumed. They go back to the mail, click again, and
+  // get «Lenken er ugyldig eller utløpt» — so they phone the school about a
+  // password that works, and the admin mints another credential for no reason.
+  // The activation row is bookkeeping: nothing authorizes on it, and its only
+  // consequence is that the account lingers on /admin/kontoer.
+  try {
+    await markActivated(userId);
+  } catch (cause) {
+    console.error('[sett-passord] aktivering ikke registrert (passordet ER satt):', cause);
+  }
 
   // ⛔ No session is minted here. The user goes through the REAL login path,
   // which is both the honest thing for an unauthenticated route to do and the
@@ -2212,7 +2824,7 @@ and to `PRE_AUTH_REQUIRES`:
 and bump the counter:
 
 ```typescript
-    expect(allActions.length).toBe(84);
+    expect(allActions.length).toBe(85);
 ```
 
 ⚠ `PRE_AUTH_REQUIRES` asserts against the **action body**, not against the allowlist's own string — that is deliberate, and it is what makes the exemption a condition rather than a blank cheque. Do not "simplify" it back to comparing the literal declared in that file.
@@ -2223,7 +2835,7 @@ and bump the counter:
 cd ~/dev/iqra-portal && npm test && npm run typecheck && npm run lint && npm run knip && npm run build
 ```
 
-Expected: unit up by the count from Steps 2 and 9 — **record what actually runs**. `action-guards` reports **84** actions. Build lists `/sett-passord`.
+Expected: unit up by the count from Steps 2 and 9 — **record what actually runs**. `action-guards` reports **85** actions (Task 14b took it 83 → 84). Build lists `/sett-passord`.
 
 ```bash
 git add src/app/sett-passord src/lib/admin/rate-limit.ts src/proxy.ts src/proxy.test.ts \
@@ -2243,7 +2855,7 @@ stack only and is never pushed to the cloud.
 
 No session is minted here; the user goes through the real login path.
 
-action-guards 83 -> 84, with the exemption declared and conditioned on
+action-guards 84 -> 85, with the exemption declared and conditioned on
 consumeInviteAttempt."
 ```
 
@@ -2262,7 +2874,8 @@ Create `src/lib/admin/invites.ts`:
 
 ```typescript
 import 'server-only';
-import { generateInviteToken, inviteUrl, issueInvite, validDaysUntil } from '@/lib/auth/invite';
+import { generateInviteToken, inviteUrl, validDaysUntil } from '@/lib/auth/invite';
+import { issueInvite } from '@/lib/admin/invite-tokens';
 import { buildInviteEmail } from '@/lib/varsler/invite-email';
 import { sendViaResend } from '@/lib/varsler/resend';
 import type { SendPing } from '@/lib/varsler/resend';
@@ -2381,42 +2994,9 @@ async function findAccount(userId: string): Promise<PendingAccount | null> {
 
 - [ ] **Step 1b: The single-row resolver, and the reset path it unblocks**
 
-Add to `supabase/migrations/20260808120000_invite_tokens.sql` (Task 15a), beside `invite_pending_accounts`:
+✅ **Nothing to write here — `public.invite_find_account(uuid)` ships in Task 15a's migration**, defined beside `invite_pending_accounts` with its own `revoke`/`grant` pair. This step is the explanation of *why* it exists; the SQL is at Task 15a.
 
-```sql
--- The single-account lookup. Deliberately does NOT filter on activation: this
--- is the resolver the RESET path uses (D30), and a reset is by definition for
--- someone who can already log in. invite_pending_accounts is the work queue;
--- this is the lookup. Keeping them separate is what stops the queue's filter
--- from silently becoming a precondition for issuing.
-create function public.invite_find_account(target uuid)
-returns table (
-  user_id uuid, full_name text, email text, roles text[], is_student boolean,
-  activated boolean,
-  invite_issued_at timestamptz, invite_expires_at timestamptz, invite_delivery text
-)
-language sql
-security definer
-set search_path = ''
-as $$
-  select p.id, p.full_name, u.email::text,
-         coalesce(array_agg(r.role::text order by r.role)
-                    filter (where r.role is not null), '{}'),
-         (exists (select 1 from public.students s where s.student_user_id = p.id)
-          or private.has_role(p.id, 'student')),
-         exists (select 1 from private.account_activation a where a.user_id = p.id),
-         t.issued_at, t.expires_at, t.delivery
-    from public.profiles p
-    join auth.users u on u.id = p.id
-    left join public.user_roles r on r.user_id = p.id
-    left join private.invite_tokens t on t.user_id = p.id
-   where p.id = target and u.deleted_at is null
-   group by p.id, p.full_name, u.email, t.issued_at, t.expires_at, t.delivery;
-$$;
-
-revoke execute on function public.invite_find_account(uuid) from public, anon, authenticated;
-grant execute on function public.invite_find_account(uuid) to service_role;
-```
+⛔ **It must stay in 15a and must not be moved back here.** An earlier revision defined it in this task while 15a's grant block already named it — so `revoke execute on function public.invite_find_account(uuid)` ran against a function that did not exist yet, and Task 15a's `npx supabase db reset` **aborted on its own migration**. Under `--single-transaction … ON_ERROR_STOP=1` that is not a warning, it is a dead stack three tasks before anything here runs. Same defect class as plan 3's 4-arg-function-called-with-3.
 
 `/admin/kontoer` therefore has **two** sections, and the second is D30:
 
@@ -2442,8 +3022,10 @@ vi.mock('./quarantine', () => ({
   requireAdminActor,
   createServiceRoleClient: () => ({ rpc }),
 }));
-vi.mock('@/lib/auth/invite', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/auth/invite')>('@/lib/auth/invite');
+vi.mock('@/lib/admin/invite-tokens', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/lib/admin/invite-tokens')
+  >('@/lib/admin/invite-tokens');
   return { ...actual, issueInvite };
 });
 
@@ -2538,9 +3120,13 @@ export async function revealInviteLinkAction(
   await requireStaffRole('admin');
   const userId = String(formData.get('userId') ?? '');
   if (!userId) return { error: 'Mangler konto.' };
-  const link = await revealInviteLink(userId);
-  revalidatePath('/admin/kontoer');
-  return { error: null, link };
+  // ⛔ NO revalidatePath HERE. invite_pending_accounts orders by
+  // `issued_at asc nulls first`, so issuing gives this row the largest
+  // issued_at in the table and re-sorting moves it to the BOTTOM of the page —
+  // at the exact moment the card is displaying a link that cannot be retrieved
+  // again. The queue metadata is stale for one card until the next navigation;
+  // that is the cheaper of the two.
+  return { error: null, link: await revealInviteLink(userId) };
 }
 ```
 
@@ -2559,29 +3145,82 @@ Create `src/app/(portal)/admin/kontoer/page.tsx` and `InviteCard.tsx`. The page:
 - for a pupil (`isStudent`), shows **only** «Vis engangslenke» — no e-mail button exists to click, which is D29 expressed in the UI as well as in SQL;
 - for everyone else, shows «Send invitasjon på e-post», plus «Vis engangslenke» as the fallback for an account whose address is wrong.
 
-`InviteCard.tsx` is a client component using `useActionState` for both actions. When `state.link` is present it renders the link in a `readOnly` `<input>` with a copy button and this warning:
+`InviteCard.tsx` is a client component holding **two** `useActionState` hooks. That shape needs state adjustment, and the repo has the worked answer at `LoginCard.tsx:49-76` — without it, a failed send's error renders **beneath** the one-time link produced by the other action. That is not a corner case: `NO_API_KEY` is the *expected* send failure until IQRA's Resend account exists, so it is the default experience for the whole build.
+
+```tsx
+const [sendState, sendAction, sendPending] = useActionState<InviteState, FormData>(sendInviteAction, idle);
+const [linkState, linkAction, linkPending] = useActionState<InviteState, FormData>(revealInviteLinkAction, idle);
+
+// Whichever action last produced a result owns the message area. Adjusted
+// during render, not in an effect — the repo's lint rules forbid synchronous
+// setState inside effects (LoginCard.tsx:44-46).
+const [prevSend, setPrevSend] = useState(sendState);
+const [prevLink, setPrevLink] = useState(linkState);
+const [latest, setLatest] = useState<'send' | 'link'>('send');
+if (prevSend !== sendState) { setPrevSend(sendState); setLatest('send'); }
+if (prevLink !== linkState) { setPrevLink(linkState); setLatest('link'); }
+const state = latest === 'send' ? sendState : linkState;
+```
+
+When `state.link` is present it renders the link in a `readOnly` `<input>` with a copy button and this warning:
 
 > Lenken vises bare én gang. Kopier den nå — den kan ikke hentes fram igjen, men du kan lage en ny.
 
-⚠ `formatDateNb` **throws on a `timestamptz`** (measured in plan 1). `invite_issued_at` and `invite_expires_at` are timestamptz. Format them with `new Date(value).toLocaleDateString('nb-NO')` or whatever the repo's existing timestamptz-safe helper is — **grep for how `published_at` is rendered in `admin/oppslag` and copy that**, rather than reaching for the date helper whose name looks right.
+⚠ **That copy guards the wrong direction, and the code must not.** `useActionState` state is *not* cleared by `revalidatePath` or by an RSC re-render, so the link persists in client state until the admin navigates away — a live credential left on an unattended screen. Clear it on unmount, and do not rely on the warning to be the whole control.
+
+⛔ **Two rules for the list, both measured by the review panel.**
+
+**Key on the account, never the index.** `invite_pending_accounts` orders `issued_at asc nulls first`, so issuing an invite moves that row from the never-invited block to the very end. With an index key, `useActionState` state stays bound to the *position* — and the one-time link for one pupil renders inside the card labelled with another pupil's name and e-mail.
+
+```tsx
+{accounts.map((account) => (
+  <InviteCard key={account.userId} account={account} />
+))}
+```
+
+**Use the repo's date helpers, and use the right one.** `formatDateNb` **throws** on a timestamptz — it builds `` new Date(`${v}T12:00:00Z`) `` (`dates.ts:8-13`), so a timestamptz yields `…+00:00T12:00:00Z` → Invalid Date → `Intl` throws. But the fallback an earlier draft suggested, `toLocaleDateString('nb-NO')`, is documented as a bug in this repo at `dates.ts:26`:
+
+> `timeZone` is NOT optional. The server runs UTC in production, so omitting it would stamp every message with the runner's clock…
+
+An invite issued at 00:30 Oslo time would render as the previous day. The real pair is at `src/components/announcements/AnnouncementList.tsx:48-49`:
+
+```tsx
+import { formatDateNb, formatDateTimeNb, osloDateOf } from '@/lib/dates';
+// date only:      formatDateNb(osloDateOf(account.invitedAt))
+// date and time:  formatDateTimeNb(account.invitedAt)
+```
+
+Use `formatDateTimeNb` here — an admin re-issuing an invite needs to tell two of them apart on the same day.
 
 - [ ] **Step 5: The nav entry**
 
-Add to `src/app/(portal)/admin/AdminNav.tsx` in the same shape as its neighbours, and update `AdminNav.test.tsx` — read it first; it asserts the full set of entries, so it fails until the new one is added there too.
+Add to `src/app/(portal)/admin/AdminNav.tsx` in the same shape as its neighbours. **Every one of the 8 existing entries carries `exact`**, and although TypeScript normalises the array-literal union so an omitted `exact` compiles and behaves as `false`, write it out — the correct behaviour should be stated, not inherited from an implicit `undefined`:
 
 ```typescript
-  { href: '/admin/kontoer', label: 'Kontoer' },
+  { href: '/admin/kontoer', label: 'Kontoer', exact: false },
 ```
+
+⛔ **`AdminNav.test.tsx` does NOT assert the entry set.** An earlier draft of this plan claimed it did, and that "it fails until the new one is added there too" — false. The file has exactly two `it()` blocks, both about `Meldinger` and `Oversikt`; adding `Kontoer` leaves it green, and an executor reading the old instruction would hunt for an assertion that does not exist. So the nav entry ships **untested unless you add the assertion** — which is precisely how `/admin/varsler` shipped green and unlooked-at. Add it:
+
+```tsx
+it('links to the accounts queue', () => {
+  render(<AdminNav pathname="/admin" />);
+  expect(screen.getByRole('link', { name: 'Kontoer' }))
+    .toHaveAttribute('href', '/admin/kontoer');
+});
+```
+
+⚠ Match the existing tests' render signature — read them first; the two current blocks show how `pathname` is passed.
 
 - [ ] **Step 6: Bump the action counter and run everything**
 
-`src/app/action-guards.test.ts`: `expect(allActions.length).toBe(86);` — two new actions on top of Task 15d's 84.
+`src/app/action-guards.test.ts`: `expect(allActions.length).toBe(87);` — two new actions on top of Task 15d's 85. ⚠ The ladder is **83 → 84 (14b) → 85 (15d) → 87 (15e)**; an earlier draft said 83 → 84 → 86, before Task 14b existed.
 
 ```bash
 cd ~/dev/iqra-portal && npm test && npm run typecheck && npm run lint && npm run knip && npm run build
 ```
 
-Expected: `action-guards` reports **86**. Build lists `/admin/kontoer`.
+Expected: `action-guards` reports **87**. Build lists `/admin/kontoer`.
 
 ⚠ If `knip` now flags `PORTAL_URL`, `InviteDelivery` or `PendingAccount`, the consumer is missing — find it rather than deleting the export.
 
@@ -2607,7 +3246,7 @@ clicking again is safe: the previous link dies at that instant.
 Resolving one account re-reads the queue rather than adding a second RPC —
 right at a few hundred rows, wrong past a thousand.
 
-action-guards 84 -> 86."
+action-guards 85 -> 87."
 ```
 
 ---
@@ -2629,7 +3268,7 @@ Expected: `db:types` produces **no diff** — every migration task already commi
 ```bash
 cd ~/dev/iqra-portal && npx supabase test db
 ```
-Expected: **935 assertions / 40 files.**
+Expected: **the total recorded in the execution ledger for Task 15b / 41 files** (≈950). ⚠ If you are reading a hard number here instead of the ledger's, the ledger was not filled in — go back and fill it.
 
 ```bash
 cd ~/dev/iqra-portal && npm test
@@ -2687,7 +3326,7 @@ create or replace function public.invite_redeem(p_token text) …
 SQL
 
 # 3. Run the affected file and READ THE INDICES.
-npx supabase test db supabase/tests/39_invite_tokens.sql
+npx supabase test db supabase/tests/40_invite_tokens.sql
 
 # 4. Restore by piping the captured definition back in.
 docker exec -i supabase_db_iqra-portal psql -U postgres -d postgres < /tmp/before.sql
@@ -2712,13 +3351,13 @@ cd ~/dev/iqra-portal
 docker exec -i supabase_db_iqra-portal psql -U postgres -d postgres <<'SQL'
 grant execute on function public.invite_redeem(text) to authenticated;
 SQL
-npx supabase test db supabase/tests/39_invite_tokens.sql   # assertion 16 must be RED
+npx supabase test db supabase/tests/40_invite_tokens.sql   # assertion 16 must be RED
 
 # restore — the inverse statement, never a definition replay
 docker exec -i supabase_db_iqra-portal psql -U postgres -d postgres <<'SQL'
 revoke execute on function public.invite_redeem(text) from authenticated;
 SQL
-npx supabase test db supabase/tests/39_invite_tokens.sql   # 16 AND 17 must be green
+npx supabase test db supabase/tests/40_invite_tokens.sql   # 16 AND 17 must be green
 ```
 
 ⚠ Two further harness corrections measured by the panel: row 14 needs `FN="private.invite_attempt_limit()"`, and row 15's affected file is **29**, not the 39 the Step 1 harness runs.
@@ -2727,21 +3366,32 @@ npx supabase test db supabase/tests/39_invite_tokens.sql   # 16 AND 17 must be g
 
 | # | Mutation | Expected to redden | Measured |
 |---|---|---|---|
-| 1 | `invite_token_hash` → `select p_token::bytea` | 39: 1, 2 | |
-| 2 | `invite_issue` upsert → `on conflict (user_id) do nothing` | 39: 4, 5 | |
-| 3 | `invite_redeem`: drop `and consumed_at is null` | 39: 6 | |
-| 4 | `invite_redeem`: drop `and expires_at > now()` | 39: 7 | |
-| 5 | ★ `invite_issue`: delete the whole D29 `if` block | 39: 8 (9 and 10 stay green — they are the controls) | |
-| 6 | ★ `invite_issue`: `s.student_user_id = target` → `true` (**over-revocation**) | 39: 10 (8 stays green) | |
-| 7 | `invite_restore`: drop the `invite_restore_window()` clause | 39: 12 | |
-| 8 | `invite_pending_accounts`: drop the `account_activation` `not exists` | 39: 14 | |
-| 9 | `invite_pending_accounts`: drop `u.deleted_at is null` | 39: 15 | |
-| 10 | `grant execute on function public.invite_redeem(text) to authenticated` | 39: 16 | |
-| 11 | `grant select on private.invite_tokens to authenticated` | 39: 17 | |
-| 12 | `invite_issue`: delete the `audit_log` insert | 39: 18 | |
-| 13 | `invite_issue`: audit `actor_id` → `null` | 39: 19 | |
-| 14 | `invite_attempt_limit()` → `100000` | 39: 21 | |
-| 15 | fingerprints: stub `invite_redeem` body to `select null::uuid` | 29: 2 | |
+⛔ **Six of the original predictions were wrong, and the review panel measured every SQL row against the live database.** The «Expected» column below is corrected; the rows marked ✔measured were run one at a time with capture → mutate → run → restore → diff. Where a mutation reddens *more* than its target, that is stated — an executor who sees an unexpected red and starts debugging a defect that is not there has lost the afternoon.
+
+⚠ The file numbers changed: the invite pgTAP file is **40**, and **39** is now D32's suppression file.
+
+| 1 | `invite_token_hash` → `select p_token::bytea` | 40: 1, 2 ✔measured | |
+| 2 | `invite_issue` upsert → `on conflict (user_id) do nothing` | 40: 4, 5 **and 11** ✔measured — and it makes assertion 7 pass for the wrong reason | |
+| 3 | `invite_redeem`: drop `and consumed_at is null` | 40: 6 ✔measured | |
+| 4 | `invite_redeem`: drop `and expires_at > now()` | 40: 7 ✔measured | |
+| 5 | ★ `invite_issue`: delete the whole D29 `if` block | 40: 8 **and 18** ✔measured. ★ Assertion 18 is a **second D29 control** and the plan did not know it: with the wall gone the refused `epost` attempt succeeds and writes a second audit row | |
+| 6 | ★ `invite_issue`: over-revoke — `(exists(…) or private.has_role(…))` → `true` | 40: 10, and 11 as a knock-on (8 stays green) | |
+| 6b | ★ `invite_issue`: drop the `p_delivery = 'epost' and` conjunct (refuse a pupil on **any** delivery) | 40: 9 (8 and 10 stay green). ⛔ Without this row assertion 9 is watched by NOTHING — the original «two mutations are enough» note was off by one, and 9 is the assertion stopping D29 from being over-applied and locking pupils out of their only path | |
+| 6c | ★ `invite_issue`: drop the `or private.has_role(target,'student')` arm | 40: the new unlinked-pupil assertion. ⛔ This is the S2 hole itself — without this row the disjunction that fixes it is untested | |
+| 7 | `invite_restore`: drop the `invite_restore_window()` clause | 40: 12 ✔measured | |
+| 8 | `invite_pending_accounts`: drop the `account_activation` `not exists` | 40: 14 ✔measured | |
+| 9 | `invite_pending_accounts`: drop `u.deleted_at is null` | 40: 15 ✔measured | |
+| 10 | `grant execute on function public.invite_redeem(text) to authenticated` | 40: 16 ✔measured. ⛔ **Restore with Step 1b's REVOKE idiom, not the definition harness** | |
+| 11 | `grant select on private.invite_tokens to authenticated` | 40: 17 ✔measured. ⛔ Step 1b idiom | |
+| 11b | `grant select on private.invite_attempts to authenticated` | 40: 17. ⛔ Measured on the ORIGINAL draft: this reddened **nothing** — the table was in no assertion at all, while `authenticated` already holds `USAGE` on schema `private` and the table stores IP addresses | |
+| 12 | `invite_issue`: delete the `audit_log` insert | 40: 18 **and 19** ✔measured (no row → no actor to read) | |
+| 13 | `invite_issue`: audit `actor_id` → `null` | 40: 19 ✔measured | |
+| 14 | `invite_attempt_limit()` → `100000` | 40: 21 ✔measured. ⚠ `FN="private.invite_attempt_limit()"` | |
+| 14b | `invite_attempt_consume`: drop `and attempted_at >= now() - v_window` from the count | 40: the new window assertion. Without it a 15-minute limiter is a **permanent per-IP ban** on a school that shares one NAT | |
+| 14c | `invite_pending_accounts`: `is_student` projection → `false` | 40: the new `is_student` assertions. ⛔ Measured on the original draft: reddened **nothing**, and every pupil card gains an e-mail button whose click returns a raw 42501 | |
+| 14d | `private.invite_ttl`: swap the two arms | 40: the new TTL-ordering assertion | |
+| 14e | ★ `private.is_guardian_of`: drop `and not suppressed` | 39: 1, 4, 5 (D32 — one clause, three surfaces) | |
+| 15 | fingerprints: stub `invite_redeem` body to `select null::uuid` | 29: 2 ✔measured. ⚠ Run **file 29**, not 40 | |
 | 16 | `buildInviteEmail`: delete the `startsWith(PORTAL_URL…)` guard | invite-email: «refuses a link that is not a set-password link» | |
 | 17 | `buildInviteEmail`: interpolate the URL into `subject` | invite-email: «never templates the subject» | |
 | 18 | `generateInviteToken`: `base64url` → `hex` | invite: «256 bits, URL-safe» | |
@@ -2749,15 +3399,33 @@ npx supabase test db supabase/tests/39_invite_tokens.sql   # 16 AND 17 must be g
 | 20 | `validDaysUntil`: `Math.ceil` → `Math.floor` | invite: «a day and a half rounds UP» | |
 | 21 | ★★ `setPasswordAction`: move `redeemInvite` **above** the zod parse | sett-passord: both «does NOT redeem» tests | |
 | 22 | ★ `setPasswordAction`: delete `await restoreInvite(...)` | sett-passord: «gives the token back» | |
-| 23 | `setPasswordAction`: move `markActivated` before `updateUserById` | sett-passord: «only AFTER GoTrue accepted» | |
+| 23 | `setPasswordAction`: move `markActivated` before `updateUserById` | sett-passord: «only AFTER GoTrue accepted» — **only after that test was rewritten to record call order**. Against the original, order-blind `toHaveBeenCalledWith` version it stayed GREEN and the assertion that moved was «gives the token back»'s `expect(markActivated).not.toHaveBeenCalled()` | |
+| 23b | `setPasswordAction`: `min(12)` → `min(6)`, message unchanged | sett-passord: the 11-character boundary case. The original short-password test pinned the MESSAGE, not the threshold | |
+| 23c | `setPasswordAction`: delete the `permanent` classifier, return the transient message always | sett-passord: «reports a rejected password as rejected» | |
+| 23d | `setPasswordAction`: let `markActivated` throw uncaught | sett-passord: «still redirects when the activation row cannot be written» | |
 | 24 | `setPasswordAction`: delete the `consumeInviteAttempt` call | sett-passord: «over budget»; **and** action-guards `PRE_AUTH_REQUIRES` | |
 | 25 | `proxy.ts`: `=== '/sett-passord'` → `.startsWith('/sett-passord')` | proxy: «exact, not a prefix» | |
 | 26 | `proxy.ts`: move the `/sett-passord` exclusion **below** `if (!user)` | proxy: the unauthenticated GET test | |
-| 27 | ★ `sendInviteEmail`: delete the `pending.isStudent` branch | invites: «refuses a pupil» (the guardian test stays green) | |
+| 27 | ★ `sendInviteEmail`: delete the `pending.isStudent` branch | invites: «refuses a pupil» (guardian stays green). ⚠ It reddens via an unhandled `TypeError` on `result.ok` — the injected `send` has no `mockResolvedValue` — not via any of the three `expect`s. Record it as such | |
+| 28 | `sendInviteEmail`/`revealInviteLink`: resolve through `listPendingAccounts` instead of `invite_find_account` | invites: the new activated-account re-issue test. ⛔ This is S1, the stopper that would have shipped Phase 5 with no password reset at all | |
+| 29 | `buildInviteEmail`: read and print an extra input field | invite-email: the `it.each` omission cases. ⛔ Against the ORIGINAL test — sentinels never passed in — this reddened nothing, which is why the test was rewritten | |
+| 30 | `proxy.ts`: drop the `referrer-policy` header from the exclusion branch | proxy: «sends no Referer» | |
+| 31 | `guardian_set_suppressed`: delete the `audit_log` insert | 39: 7 (D32) | |
 
 ⚠ **Mutation 24 is expected to redden in two suites.** If only one moves, the other assertion is weaker than it looks — investigate before writing it off.
 
-⚠ **Mutations 5 and 6 are a pair and both are required.** Deleting the D29 block reddens only the refusal; the guardian and pupil-on-screen controls stay green *by construction*. Only the over-revocation mutation can redden assertion 10. One mutation here would leave two of the three D29 assertions never watched fail — precisely the shape that let plan 3's leaking builder look covered.
+⛔ **D29 needs FOUR mutations, not the two an earlier draft claimed.** That claim was arithmetically wrong and the review panel measured it:
+
+| Mutation | 8 | 9 | 10 | unlinked |
+|---|---|---|---|---|
+| 5 — delete the `if` | **red** | green | green | green |
+| 6 — over-revoke the whole condition | green | green | **red** | green |
+| 6b — drop the `p_delivery = 'epost' and` conjunct | green | **red** | green | green |
+| 6c — drop the `or private.has_role(…)` arm | green | green | green | **red** |
+
+With only 5 and 6, assertions 9 and the unlinked-pupil case are watched by nothing — and 9 is the one that stops D29 being over-applied and locking every pupil out of their only activation path. "Two mutations are enough" was exactly the shape that let plan 3's leaking builder look covered.
+
+⛔ **Mutation 6 could not run at all as originally written.** The over-revocation makes the two `'epost'` fixture calls at the top of the file raise; they were bare `select` statements, so the transaction aborted and the measured result was **zero TAP output** — not "assertion 10 red". Fixed by making those fixture issues `'skjerm'`. If you see the file die before `ok 1`, that is this, not a defect in the wall.
 
 - [ ] **Step 3: Fill in the «Measured» column for every row**
 
@@ -2769,7 +3437,7 @@ For each: the assertion indices that **actually** went red, and — where they d
 cd ~/dev/iqra-portal && npx supabase db reset && npx supabase test db
 ```
 
-Expected: **935 / 40**, back to green. Anything else means a mutation survived the restore.
+Expected: **the Task 15b ledger total / 41**, back to green. Anything else means a mutation survived the restore.
 
 ---
 
@@ -2821,22 +3489,51 @@ Expected: **935 / 40**, back to green. Anything else means a mutation survived t
 | 9 | pupil | Follow it, set a password, log in | ★ **A pupil logs in.** D29 held: no e-mail was ever sent to them. |
 | 10 | admin | «Send invitasjon på nytt» for an already-activated guardian, then use the **old** link | The old link is dead; the new one works. This is D30's reset path, exercised. |
 
-- [ ] **Step 3: The three plan-3 leftovers nobody has clicked**
+- [ ] **Step 2b: D32 — suppression, before the guardian rows above are undone**
+
+| # | As | Do | Expect |
+|---|---|---|---|
+| 10b | admin | On a pupil with **two** guardians, set «Sperret innsyn» on one | The confirm step fires; the card shows the state. |
+| 10c | suppressed guardian | Log in | Their **other** child is fully there; the suppressed child is **gone** — no thread, no oppslag, no fravær, no karakterer. ★ One clause, five surfaces. |
+| 10d | the co-guardian | Open the same child | Unchanged. The suppression is about the person, not the child's record. |
+| 10e | admin | Clear it | Access returns. A suppression that cannot be lifted is a different bug. |
+
+⚠ 10c is the assertion that matters and it is easy to fake: check a surface **other** than messages, because `is_guardian_of` reaching attendance and grades is the claim, not just threads.
+
+- [ ] **Step 3: The rest of Phase 5 — this is the gate for the PHASE, not for this plan**
+
+⛔ Added after the review panel found the exit gate was thinner than the phase it gates. Økonomi had never logged in, no announcement had ever been published by anyone, the scheduled-publish path §5.1 calls **"the single most likely thing to be got wrong"** had never been exercised, and the disclosure block — the phase's own legal mitigation for D3/D4/D5 — had never been rendered on a screen.
 
 | # | As | Do | Expect |
 |---|---|---|---|
 | 11 | teacher | Send a message to a family | The parent's bell shows it; **the teacher's own does not**. |
 | 12 | teacher | Send ten messages in one thread | **One** bell entry, not ten (asserted in pgTAP, never clicked). |
-| 13 | admin | Open **`/admin/varsler`** | ⛔ **Built, builds clean, NOBODY HAS EVER LOOKED AT IT.** Read the numbers and judge whether they mean anything. |
+| 13 | admin | Open **`/admin/varsler`** | ⛔ Built, builds clean, **nobody has ever looked at it**. Read the numbers and judge whether they mean anything. |
+| 14 | **økonomi** | Log in | ★ The fifth role, never once exercised. Bell present; **no meldinger nav**; school-wide oppslag visible (D17 bans them from threads, §5.1 puts them in the announcement fan-out). |
+| 15 | teacher | Publish a **class** announcement | Appears for the class's families and nobody else. |
+| 16 | admin | Publish a **school-wide** announcement | Reaches every role in row 14's list. No e-mail is sent (D12). |
+| 17 | teacher | Schedule an announcement for ~2 minutes ahead, then wait for the drain | ★ It fans out **at** `published_at`, not at creation. §5.1's most-likely-to-be-wrong path. |
+| 18 | teacher | Open the read-tracking list on a class containing a **protected** pupil | The pupil is **omitted** *and* the denominator is reduced. §7 calls both "security controls, not polish". |
+| 19 | admin | Open one thread via `admin/meldinger/[threadId]` | Exactly **one** `admin.threads.viewed` audit row. Then the teacher opens the same thread → **no** new row. |
+| 20 | parent, pupil, teacher | Read the disclosure block on a thread screen | All **three** versions render, and each says what §4.2's copy says. ⚠ §12 Q3 lists that copy as **still open** — see Step 5. |
+| 21 | parent | «Min profil» → turn the e-mail ping off | It persists; the in-app varsel still arrives (opting out stops the mail, never the varsel). |
+| 22 | pupil | Try to reach a `kontor` thread | Refused (D19). |
 
-- [ ] **Step 4: The two things that have no local symptom**
+- [ ] **Step 4: The things that have no local symptom**
 
 - [ ] After the first deploy, read the **first real Vercel Cron invocation's status** off the log. A permanent 401 from a scheme-casing mismatch is invisible locally.
 - [ ] Confirm Vercel accepted the **15-minute** interval in `vercel.json` rather than silently coercing it.
 - [ ] `CRON_SECRET` and `RESEND_API_KEY` are set in Vercel for Production **and** Preview.
 - [ ] Resend **log retention is at minimum** — an invite link in a provider log is a live credential.
+- [ ] **Vercel's own log retention / log drains.** Sharper than Resend's: the token is in the request line and the query string of every `/sett-passord` request, so the platform log sees it on *every* hit, not once per send. The review panel found the plan hardened the provider's logs and ignored its own.
+- [ ] **Supabase log settings.** The plaintext token is an RPC bind parameter. Locally `pg_stat_statements` captured zero rows matching a test token and `log_statement = ddl`, but the cloud settings are unverified.
+- [ ] ★ **Does the reset end the victim's session?** D30 sells re-invitation as the password reset, and a reset's one job in an incident is ending the attacker's access. Leave a second browser signed in as the guardian, re-invite them, complete it, then refresh that second browser. **Expect: signed out.** If it is still signed in, `setPasswordAction` must also revoke the user's sessions — or D30 is not a reset. (PLAUSIBLE only; GoTrue's behaviour here was not tested.)
 
-- [ ] **Step 5: Record the outcome, then finish the branch**
+- [ ] **Step 5: The gate item that is not a click**
+
+- [ ] ⛔ **§12 Q3 — the user's own edit of the three disclosure drafts, and the board's sign-off before pilot.** The spec lists it as *"still open, and still on the critical path for tasks 10–12"*, and §4.2 insists the copy and the policies are **one change, never two**. Row 20 renders whatever copy is in the code; this item is whether that copy is the copy IQRA has agreed to. **Phase 5 should not be declared complete with its own DPIA mitigation unreviewed.**
+
+- [ ] **Step 6: Record the outcome, then finish the branch**
 
 Once every row above is green, Phase 5 is complete. Use `superpowers:finishing-a-development-branch` to decide how `feat/phase-5-meldinger` is integrated.
 
@@ -2846,14 +3543,17 @@ Once every row above is green, Phase 5 is complete. Use `superpowers:finishing-a
 
 Filled in **during** execution, not after. One row per task: the measured counts, every deviation from this plan, and — for Task 16b — the assertion indices that actually reddened.
 
-| Task | Commit | pgTAP | unit | api | Notes / deviations |
+⚠ The pgTAP/unit/api columns below are **expectations, not results** — overwrite each with what the run actually printed. Where they differ, the measured number is the true one and the difference is the finding. The unit column is left blank from 15c on because the plan does not predict it: Task 15c says «count what runs».
+
+| Task | Commit | pgTAP (exp.) | unit (exp.) | api (exp.) | Notes / deviations |
 |---|---|---|---|---|---|
-| 14 | | 913 | 636 | 377 | |
-| 15a | | 932 | 636 | 377 | |
-| 15b | | 935 | 636 | 377 | |
-| 15c | | 935 | | 377 | |
-| 15d | | 935 | | 377 | |
-| 15e | | 935 | | 377 | |
+| 14 | | 913 / 39 | 636 | 377 | comment-only migration; no assertion moves |
+| 14b | | 921 / 40 | 636 | 377 | D32. +8 in the new `39_guardian_suppression.sql`; +1 marker (95 → 96); action-guards 83 → 84 |
+| 15a | | 921 + `<N>` / 41 | 636 | 377 | `<N>` = counted plan of `40_invite_tokens.sql`; **≈26** (19 pre-review + Step 4b's ~7), so ≈947 — **not** the 940 an earlier draft predicted |
+| 15b | | 15a + 3 / 41 | 636 | 377 | `plan(<N>)` → `plan(<N>+3)`; markers 96 → 106 |
+| 15c | | = 15b | | 377 | |
+| 15d | | = 15b | | 377 | action-guards 84 → 85 |
+| 15e | | = 15b | | 377 | action-guards 85 → 87 |
 | 16 | | | | | |
 | 16b | | | | | |
 | 16c | | | | | |
@@ -2900,6 +3600,25 @@ Recorded so no later session re-litigates it:
 - `plan(19)` runs exactly 19 and `plan(22)` exactly 22, all green. `throws_ok(…, '42501', …)` matches the errcode actually raised. No polymorphic-`is()` type failure.
 - Full suite after all three migrations: **935 assertions / 40 files** — the predicted number, exactly.
 - Fingerprint arithmetic **95 → 103** is right; all 8 markers appear verbatim in `pg_get_functiondef`, each dot-qualified or carrying an operator, none duplicated within its body.
+
+⚠ **Those two figures are measurements of a tree without Task 14b, and they stay as measured.** D32 was decided *after* this lens ran, and it adds a test file (+8 assertions, +1 file) and one fingerprint marker ahead of every invite migration. The numbers the executor should see are therefore **≈950 / 41** and **96 → 106**; 935 / 40 and 95 → 103 remain the correct record of what was actually run on 2026-08-06. Nothing about the measurement was invalidated — the offset is the whole difference.
+
+⚠ **≈, not =.** Beyond D32's +8, Task 15a Step 4b adds about seven assertions that this lens never saw, because they cover SQL the review itself introduced. The exact total is whatever `plan()` counts at execution.
+
+⛔ **Three of the ten markers are NOT covered by the "appear verbatim in `pg_get_functiondef`" verification above**, and this is the one place that gap matters: the fingerprint assertion compares against the *generated* definition, not against the migration source. Unverified:
+
+| Marker | On | From | Present in the plan's SQL at |
+|---|---|---|---|
+| `u.deleted_at is null` | `public.invite_redeem(text)` | H2 | line ~969 |
+| `s.student_user_id = p.id` | `public.invite_pending_accounts()` | M7 | line ~1064 |
+| `not suppressed` | `private.is_guardian_of(uuid,uuid)` | D32 / Task 14b | Task 14b Step 1 |
+
+Each is present verbatim in the SQL this plan tells you to write, so the expected outcome is that all three survive round-tripping. **Confirm it rather than assume it** — `pg_get_functiondef` re-emits the body as stored, and a marker that gets re-wrapped across a line break fails the `like` test while the wall it pins is perfectly intact. That failure mode reads exactly like a broken control and is not one:
+
+```bash
+cd ~/dev/iqra-portal && docker exec supabase_db_iqra-portal psql -U postgres -d postgres -tAc \
+  "select pg_get_functiondef('public.invite_redeem(text)'::regprocedure)" | grep -c 'u.deleted_at is null'
+```
 - ★ **The concurrency claim HOLDS.** Two live sessions: A held `begin; invite_redeem('race-token')` open for 3 s, B called concurrently. A → the user id, B → `NULL`, one `consumed_at`. B blocked on the row lock and EvalPlanQual rejected it. The one-statement form does what the header says.
 - `npm run db:types` generates exactly the six functions with the shapes the TypeScript consumes. `.maybeSingle()` is valid on `invite_attempt_consume`.
 - Task 14 Step 7's precondition holds (`to_regclass` returns both tables) and Step 10's `obj_description … like '%ONE OF TWO buckets%'` returns `t`.
@@ -2929,7 +3648,7 @@ Recorded so no later session re-litigates it:
 
 | # | Lens | Finding | Fix |
 |---|---|---|---|
-| H1 | security + SQL | **The "global prune" does not exist.** The `attempted_at` index comment claims one; the only `delete` is bucket-scoped, so an IP that never returns leaves a permanent row — on an unauthenticated endpoint that fails open, storing IP addresses. 5 000 rows inserted, none reachable by any prune path. | Add `public.invite_attempts_prune()` mirroring `login_attempts_prune()`, with the same revoke/grant pair. |
+| H1 | security + SQL | **The "global prune" does not exist.** The `attempted_at` index comment claims one; the only `delete` is bucket-scoped, so an IP that never returns leaves a permanent row — on an unauthenticated endpoint that fails open, storing IP addresses. 5 000 rows inserted, none reachable by any prune path. | Adds `public.invite_attempts_prune()` mirroring `login_attempts_prune()`, with the same revoke/grant pair. |
 | H2 | SQL | **`invite_redeem` has no `deleted_at` check.** Measured: an invite issued before a soft-delete still redeems, so `updateUserById` runs on an erased account and `invite_mark_activated` writes a fresh row for it. The wall exists only on the read side, while the fingerprint comment claims it protects against "a live invite path into an erased identity". | Add the check to **both** `invite_redeem` and `invite_issue`; pin `deleted_at` as a marker on redeem; assertion + mutation row. |
 | H3 | SQL | **`private.invite_attempts` is in no grant assertion.** Assertion 17's table list stops at `invite_tokens`/`account_activation`. Measured: `grant select on private.invite_attempts to authenticated` reddens **nothing**, and `authenticated` already holds `USAGE` on schema `private`. The table stores IP addresses. | Add it to assertion 17 and add the mutation row. |
 | H4 | repo | **`src/lib/auth/invite.ts` breaches the quarantine.** `quarantine.ts:13-15` says `createServiceRoleClient` is for siblings in `src/lib/admin/` only; no lint rule enforces it, so this would compile and pass CI as the first `src/lib/` module to cross it. | Move the four RPC wrappers to `src/lib/admin/invite-tokens.ts` as quarantine **category B** (the `rate-limit.ts` contract, which they satisfy verbatim). `src/lib/auth/invite.ts` keeps only the pure helpers. Also resolves K1. |
@@ -2973,7 +3692,7 @@ Recorded so no later session re-litigates it:
 | unit after 15c | 636 → 647 | **648** (`invite.test.ts` has 6 `it`s, not 5) | counted |
 | unit after all tasks | not stated | **665** before the new assertions this ledger adds | counted |
 | fingerprint entries | "six" | **five** | counted |
-| fingerprint markers | 95 → 103 | 103 **before** H2/M7 add two more → **105** | counted, then recount at execution |
+| fingerprint markers | 95 → 103 | **96 → 106** — Task 14b's `not suppressed` moves the baseline, and H2 + M7 add a marker each | counted, then recount at execution |
 | `users.ts` comment | :19-23 | **:19-24** | grep |
 | `LoginCard` `text-danger-ink` | :92 | **:93** | grep |
 | `README.md` SMTP block | :119-125 | **:119-124** | grep |
@@ -3017,3 +3736,21 @@ Also corrected: the ⚠ justifying the `revoke` lines blames `supabase_admin`'s 
 - **§12 Q3** — the user's own edit of the three disclosure drafts and the board's sign-off. On the critical path for tasks 10–12 of the *phase*, and now an explicit unchecked item in the exit gate.
 - **The phase spec still carries its `⛔ THIS DRAFT HAS NOT BEEN REVIEWED … Nothing here may be implemented yet` header**, after three code-complete plans. Task 14 is the reconciliation task and should clear it, and append D29–D32 to §1's decision table with the exception note under D12/§5.3.
 - **Vercel Cron's actual request** and the **15-minute interval** — unchanged, still blocking, still 16d items.
+
+---
+
+## Consistency pass — 2026-08-06, after the ledger was applied
+
+The review panel's ~70 findings were applied to the plan body in the preceding session. This pass re-read the **result** rather than the findings, and found that applying them had left the document internally inconsistent in five ways. None of these were in the panel's output; all five are artefacts of the edit itself.
+
+| # | What was wrong | Why it mattered | Fix |
+|---|---|---|---|
+| **C1** | ⛔ **`public.invite_find_account(uuid)` was granted in Task 15a's migration and defined in Task 15e's.** | Task 15a's `npx supabase db reset` **aborts on its own migration** — `revoke execute on function` against a function that does not exist, under `--single-transaction … ON_ERROR_STOP=1`. A dead stack three tasks before 15e runs. Same class as plan 3's 4-arg-called-with-3. | Definition moved into 15a beside `invite_pending_accounts`; 15e Step 1b keeps the rationale and states why it must not move back. |
+| **C2** | ⛔ **Task 15a's `plan(19)` is the pre-review count.** The panel added `invite_revoke`, redeem's `deleted_at` check, `invite_find_account`, prune/clear and the window clause, and specified assertions for each — none were written. Five mutation rows point at *"the new …"* assertions that do not exist. | Five ledger fixes ship with nothing watching them, and the mutation pass at 16b silently has no target. | New **Step 4b** enumerates the seven; Step 5 sets `plan()` from a count, not a literal. |
+| **C3** | Inserting Task 14b (D32) shifted every downstream count by **+8 assertions and +1 file**, and none moved: 932/40, 935/40, markers 95→103. | Every "if the total is not X, find the difference" instruction sends the executor hunting a phantom 8. | pgTAP chain → 913/39 → **921/40** → `921+<N>`/41; markers → **96 → 106**. |
+| **C4** | H2's and M7's markers were specified in the ledger but absent from Task 15b's arrays, while the ledger's own total (`103 → 105`) counted them. | The literal and the arrays disagree by two — on the file whose header records this exact defect **twice**. | Both folded into the arrays; total restated as 2+3+2+2+1 = 10. |
+| **C5** | The manifest still read "the four token RPCs", "Counter 83 → 84", and listed none of D32's six files. | The manifest is what an executor reads to know what they are building. | Seven RPCs, 83 → 87, D32's files added. |
+
+**What this pass did not do:** it did not re-verify the panel's measurements, and it deliberately left them as recorded — `935 / 40` and `95 → 103` are correct for the tree they were run against, annotated rather than overwritten. Three of the ten fingerprint markers (`u.deleted_at is null`, `s.student_user_id = p.id`, `not suppressed`) are confirmed present in the plan's SQL but **not** against `pg_get_functiondef`; that check is now an explicit instruction rather than an assumption.
+
+★ **The lesson, and it is the same one twice now.** The panel found ~70 defects the author's self-review found 3 of. This pass found 5 more that the panel could not have found — because they did not exist until its own fixes were applied. **Applying a review is an edit, and an edit needs a review.** C1 alone would have stopped execution at the first `db reset`, and it was created by the fix for S1.
