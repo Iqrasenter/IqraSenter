@@ -3966,6 +3966,18 @@ Break creation deliberately — in `20260807123000_thread_fanout.sql`, change th
 
 Expected: test 2 fails, test 3 fails, and **test 1 still passes** — which is what proves test 1 is a control over creation and not a duplicate of the others. Restore and confirm green.
 
+⛔⛔ **MEASURED 2026-08-06 — the control holds, but only ONE test reddens, not two.** Under both halves of the mutation, `the sender is never notified of their own message` fails and **test 1 still passes**, which is the property that matters. Test 2 does **not** move: `on conflict … do nothing` still creates the row on the FIRST insert, and the upsert-refresh only matters for a SECOND message, which this file never sends. D25's coalescing is covered — by pgTAP file 38's «ti meldinger gir ett varsel» — just not here. Recording that rather than letting the plan's "test 2 fails" imply coverage this file does not have.
+
+⛔ **THREE ASSERTIONS IN THE DRAFT ABOVE ARE WRONG ABOUT CORRECT BEHAVIOUR** — all three measured, all three fixed in the tree:
+
+1. **The recipient set of a teacher's message is `{guardian, pupil}`, not `{guardian}`.** A `laerer` thread admits the pupil's own login (D-5), so Yusuf's account `4444…` is notified too — correctly; they get the varsel and are still never queued for mail. An assertion of `toEqual([FORELDER])` fails, and an unscoped `.single()` over the thread's notifications returns **null** because there are two rows.
+2. **The enrolment window closes this test.** `seed.sql` enrols Klasse 1 on **2026-08-20**, which is in the FUTURE, and `private.guardian_in_class_asof` requires `enrolled_on <= published_at` — so an announcement published now reaches nobody and assertion 7 fails for a reason with nothing to do with the fan-out. Every other file in the suite expects the seeded date, so this file **opens the window itself and restores it in teardown** rather than depending on ambient state.
+3. **Assertion 8 as specified is not reachable in this suite.** «401 and not 307» needs an HTTP stack; these tests call actions and the DAL directly and the **proxy never runs in this process**, so a 307 cannot occur and asserting its absence proves nothing. The file asserts the reachable half — the handler refuses an unauthenticated GET — and names `src/proxy.test.ts` (four assertions, watched fail) as the owner of the other half.
+
+⚠ **And the teardown must delete `notifications` FIRST, by entity id.** They carry no foreign key to their entity by design, so deleting the thread does **not** cascade to them — that orphan is the one this plan creates, and a leftover row pollutes the next file's counts.
+
+⚠⚠ **`db reset` alone did not clear the GoTrue churn.** After the mutation round, every login failed with `Harness AAL2: innlogging … feilet: {}` and 7 of 8 tests went red — with the migration restored and its checksum verified, so it was not a code regression. A `supabase db reset` did **not** fix it; `docker restart supabase_auth_iqra-portal` did, immediately. Worth reaching for before diagnosing a phantom failure.
+
 - [ ] **Step 4: Commit**
 
 ```bash
