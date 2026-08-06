@@ -2193,11 +2193,13 @@ In `supabase/tests/29_definer_fingerprints.sql`, add these entries to the `defin
 That is **12 new markers** (3+3+3+1+2), so change the literal from `83` to `95`:
 
 ```sql
-  93,
+  95,
   'the fingerprint table still covers 95 (function, predicate) pairs'
 ```
 
-⚠ **Count the markers, do not reconcile the two numbers by adjusting either one** — the file's own comment records that this mistake has been made twice already, once by reading "five new functions" and writing 31. Confirm the arithmetic against the actual arrays you paste: 2 + 2 + 3 + 1 + 2 = 10.
+⛔ **THIS STEP SAID THREE DIFFERENT NUMBERS, AND TWO WERE WRONG — measured 2026-08-06.** It read «12 new markers», then showed `93,` in the code block, then closed with «2 + 2 + 3 + 1 + 2 = 10». The arrays above are what count and they sum to **3+3+3+1+2 = 12**, so the literal is **95** — which is also what this task's own heading says. Both the `93` and the `10` were stale from earlier drafts.
+
+⚠ **Count the markers, do not reconcile the numbers by adjusting either one** — the file's own comment records that this mistake has been made twice already, once by reading "five new functions" and writing 31. This step made it a third time, in the instruction telling you not to.
 
 ⚠ `plan(2)` is **unchanged** — this file asserts a count and an `is_empty`, not one assertion per pair. The suite total does not move.
 
