@@ -40,7 +40,7 @@ export function SupportSection() {
                 Vipps
               </p>
               <p className="font-heading text-xl font-extrabold text-text mb-0.5">
-                21490
+                957045
               </p>
               <p className="text-sm text-text-muted leading-snug mb-3">
                 Åpne Vipps-appen, søk på nummeret eller scan QR-koden.
@@ -48,7 +48,7 @@ export function SupportSection() {
               <div className="w-[80px] h-[80px] mx-auto rounded-lg border border-border/30 overflow-hidden">
                 <Image
                   src="/images/qr-stott-oss.png"
-                  alt="QR-kode for Vipps nummer 21490"
+                  alt="QR-kode for Vipps nummer 957045"
                   width={80}
                   height={80}
                   className="w-full h-full object-contain"

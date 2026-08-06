@@ -178,7 +178,7 @@ export default function StottOssPage() {
                     Vipps
                   </p>
                   <p className="font-heading text-5xl lg:text-6xl font-extrabold text-white tabular-nums mb-2">
-                    21490
+                    957045
                   </p>
                   <p className="text-sm text-white/70 leading-relaxed mb-6">
                     Åpne Vipps-appen, søk på nummeret
@@ -189,7 +189,7 @@ export default function StottOssPage() {
                   <div className="w-[120px] h-[120px] bg-white rounded-2xl p-2 shadow-lg mx-auto transition-transform duration-300 group-hover:scale-105">
                     <Image
                       src="/images/qr-stott-oss.png"
-                      alt="QR-kode for Vipps nummer 21490"
+                      alt="QR-kode for Vipps nummer 957045"
                       width={120}
                       height={120}
                       className="w-full h-full object-contain rounded-lg"
