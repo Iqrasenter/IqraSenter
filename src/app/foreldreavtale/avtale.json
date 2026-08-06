@@ -1,0 +1,82 @@
+{
+  "versjon": "2026-08-22",
+  "sections": [
+    {
+      "title": "Innledning",
+      "intro": "Denne avtalen er bindende og skal regulere de forpliktelsene partene har til hverandre. Dersom en av partene bryter ett eller flere av vilkårene i avtalen, kan den andre parten kreve avtalen hevet."
+    },
+    {
+      "title": "Foresattes plikter",
+      "items": [
+        "Sørge for at eleven møter opp til undervisning til riktig tid",
+        "Sørge for at eleven har med seg skrivesaker, oppfølgingshefter og pensumbøker",
+        "Sitte med eleven hver dag for å lese Quran og/eller Nuuraaniyah",
+        "Sørge for at eleven gjør lekser og leverer inn oppgaver",
+        "Melde fra om fravær så snart som mulig og senest en halv time før undervisninger starter",
+        "Gjøre seg kjent med og følge alle Iqras retningslinjer og regler. Disse reglene omfatter tre hovedområder: 1) Fravær, 2) Foreldrenes plikter, 3) Orden- og oppførselsregler",
+        "Møte opp til foreldresamtaler og foreldremøter",
+        "Samarbeide med læreren om elevens læring og utvikling",
+        "Vise respekt overfor lærere, foreldre og andre han/hun kommer i kontakt med i Iqra",
+        "Erstatte eventuelle skader eleven påfører Iqras inventar eller utstyr",
+        "Betale skolepengene i tide slik at Iqra blir i stand til å møte sine forpliktelser overfor utleier og dekke andre faste utgifter"
+      ]
+    },
+    {
+      "title": "Betaling",
+      "items": [
+        "Pris for en skoleplass er kr. 700 per måned per elev",
+        "Familier med tre eller flere elever ved skolen får kr. 100 i søskenrabatt per elev. Prisen blir da kr. 600 per måned for hver av elevene i familien",
+        "Eksempel: 1 elev kr. 700, 2 elever kr. 1 400, 3 elever kr. 1 800, 4 elever kr. 2 400 per måned",
+        "Rabatten gjelder så lenge familien har tre eller flere elever ved skolen. Slutter en elev slik at familien får færre enn tre, går prisen tilbake til kr. 700 per elev fra påfølgende måned",
+        "Skolepengene betales alle måneder gjennom hele året fra januar til desember",
+        "Betalingsfristen er den 1. hver måned",
+        "Faktura sendes på e-post fremover, og vil også være tilgjengelig i foreldreportalen. AvtaleGiro avsluttes",
+        "Skolepengene betales med bankoverføring til Iqras konto. KID-nummeret som står på fakturaen må alltid oppgis",
+        "Foresatt er selv ansvarlig for at skolepengene betales innen fristen",
+        "Iqra krever ikke purregebyr, forsinkelsesrenter eller andre gebyrer ved forsinket betaling"
+      ]
+    },
+    {
+      "title": "Varsling og kommunikasjon",
+      "items": [
+        "Varsler om betaling og manglende betaling sendes på e-post og i foreldreportalen. Begge regnes som skriftlig varsel etter denne avtalen",
+        "Foresatte er ansvarlige for at e-postadresse og telefonnummer registrert hos Iqra til enhver tid er oppdatert",
+        "Alle varsler Iqra har sendt, er synlige for foresatte i foreldreportalen"
+      ]
+    },
+    {
+      "title": "Manglende betaling",
+      "items": [
+        "Er skolepengene ikke betalt innen den 15. i måneden, sendes en skriftlig purring. Iqra krever ikke purregebyr",
+        "Er beløpet fortsatt ubetalt, sendes flere påminnelser i løpet av perioden",
+        "Ved manglende betaling ut over 2 måneder sendes varsel om at skoleplassen kan bli sagt opp. Samtidig kreves forskuddsbetaling for 3 måneder",
+        "Foresatte som har mottatt et slikt varsel kan beholde skoleplassen ved å betale hele det utestående beløpet, eller ved å inngå en nedbetalingsavtale med skolen",
+        "Ved manglende betaling ut over 3 måneder blir skoleplassen sagt opp, og plassen gis til neste elev på ventelista",
+        "Skoleplassen blir også sagt opp dersom en inngått nedbetalingsavtale ikke følges",
+        "Det kan søkes om skoleplass på nytt når det utestående er betalt",
+        "Ta kontakt med skolen så tidlig som mulig dersom dere får problemer med å betale. Vi finner løsninger sammen — men bare hvis vi vet om det"
+      ]
+    },
+    {
+      "title": "Innmeldingsgebyr",
+      "intro": "Nye foreldre skal betale et innmeldingsgebyr på kr. 1500 som skal dekke administrasjonskostnader. Gebyret er et engangsbeløp per familie og faktureres ved innmelding."
+    },
+    {
+      "title": "Oppsigelse av skoleplassen",
+      "items": [
+        "Det er 1 måneds oppsigelse regnet fra den 1. hver måned. Skolepengene må betales i oppsigelsestiden regnet fra den 1. hver måned. Skolepengene må betales selv om eleven slutter før oppsigelsestidens utløp"
+      ]
+    },
+    {
+      "title": "Opphør av kontrakten",
+      "intro": "Dersom det foreligger gyldig grunn, kan begge parter si opp skolekontrakten uten at oppsigelsesfristen må overholdes. Slik grunn foreligger for skolen spesielt ved:",
+      "items": [
+        "Alvorlig brudd på denne kontrakten eller på skolens reglement",
+        "Medbringelse, nytelse eller distribusjon av narkotika, alkohol eller rusmidler",
+        "Tilstrekkelig mistanke om straffbare handlinger på skolen eller utenfor denne",
+        "Utestående betaling av skolepenger eller andre gebyrer eller utlegg til tross for purring",
+        "Dersom et tillitsfullt samarbeid mellom lærere, foreldre/foresatte og eleven ikke lenger er mulig"
+      ]
+    }
+  ]
+}

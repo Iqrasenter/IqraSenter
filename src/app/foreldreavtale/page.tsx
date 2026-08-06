@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Download, ArrowRight } from "lucide-react";
+import avtale from "./avtale.json";
 import { EditorialPageHeader } from "@/components/EditorialPageHeader";
 import { EditorialLabel } from "@/components/EditorialLabel";
 import { FadeIn } from "@/components/FadeIn";
@@ -23,85 +24,26 @@ export const metadata: Metadata = {
 const GOOGLE_FORM_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLSfIx6QIDKrNGCkfhp5G0bqfY1HZmu0qWGxj0s5Pd_8WcP1QWg/viewform";
 
+/**
+ * The agreement text lives in ./avtale.json, not here.
+ *
+ * scripts/generate-foreldreavtale-pdf.mjs renders the printable PDF from that
+ * same file. The PDF is what many parents actually read and keep, and it is the
+ * wording an oppsigelse of a skoleplass would be argued against — so page and
+ * PDF disagreeing is the one failure this document cannot have. One source.
+ *
+ * Bump `versjon` in avtale.json on every wording change: the Google Form records
+ * WHEN a family accepted but not WHAT, so the stamp is the only thing tying an
+ * acceptance to the terms that were on screen.
+ */
 type Section = {
   title: string;
   intro?: string;
   items?: string[];
 };
 
-const SECTIONS: Section[] = [
-  {
-    title: "Innledning",
-    intro:
-      "Denne avtalen er bindende og skal regulere de forpliktelsene partene har til hverandre. Dersom en av partene bryter ett eller flere av vilkårene i avtalen, kan den andre parten kreve avtalen hevet.",
-  },
-  {
-    title: "Foresattes plikter",
-    items: [
-      "Sørge for at eleven møter opp til undervisning til riktig tid",
-      "Sørge for at eleven har med seg skrivesaker, oppfølgingshefter og pensumbøker",
-      "Sitte med eleven hver dag for å lese Quran og/eller Nuuraaniyah",
-      "Sørge for at eleven gjør lekser og leverer inn oppgaver",
-      "Melde fra om fravær så snart som mulig og senest en halv time før undervisninger starter",
-      "Gjøre seg kjent med og følge alle Iqras retningslinjer og regler. Disse reglene omfatter tre hovedområder: 1) Fravær, 2) Foreldrenes plikter, 3) Orden- og oppførselsregler",
-      "Møte opp til foreldresamtaler og foreldremøter",
-      "Samarbeide med læreren om elevens læring og utvikling",
-      "Vise respekt overfor lærere, foreldre og andre han/hun kommer i kontakt med i Iqra",
-      "Erstatte eventuelle skader eleven påfører Iqras inventar eller utstyr",
-      "Betale skolepengene i tide slik at Iqra blir i stand til å møte sine forpliktelser overfor utleier og dekke andre faste utgifter",
-    ],
-  },
-  {
-    title: "Betaling",
-    items: [
-      "Pris for en skoleplass er kr. 700 per måned per elev",
-      "Det gis ikke søskenrabatt",
-      "Vi tilbyr kun Avtalegiro som eneste betalingsmåte",
-      "Foresatte som ikke allerede betaler med Avtalegiro må tegne en avtalegiro. Linken kan dere få tilsendt i egen melding. Du må signere med Bank ID for å identifisere deg",
-      "For de som ikke allerede bruker Avtalegiro som betalingsmetode, må skoleavgiften betales til Iqra sin konto ettersom det kan ta inntil 4 uker før avtalen er klar",
-      "De som allerede betaler med Avtalegiro må øke terminbeløpet iht. de nye satsene",
-      "Betalingsfristen er den 1. hver måned",
-      "Foresatt er selv ansvarlig for å påse at skolepengene trekkes fra konto hver måned",
-      "Dersom det av ulike grunner ikke skjer trekk, blir det sendt en faktura med en betalingsfrist på 2 uker",
-      "Skolepengene justeres hvert år i henhold til konsumprisindeksen",
-      "Skolepengene betales alle måneder gjennom hele året fra januar til desember",
-    ],
-  },
-  {
-    title: "Manglende betaling",
-    items: [
-      "Det blir sendt ut et betalingsvarsel ved manglende betaling etter den 15. i måneden",
-      "Ved manglende betaling ut over 2 måneder vil det bli sendt ut et varsel om forskuddsbetaling på 6 måneder og oppsigelse av skoleplassen",
-      "Ved manglende betaling ut over 3 måneder vil skoleplassen bli sagt opp",
-      "Det kan søkes om skoleplass på nytt etter at det utestående er betalt",
-      "Foresatte som har mottatt varsel om oppsigelse av skoleplassen kan beholde skoleplassen ved å betale det utestående i sin helhet, eller inngå en nedbetalingsavtale med skolen",
-      "Skoleplassen blir sagt opp dersom en inngått nedbetalingsavtale ikke følges, og plassen gis til neste elev fra ventelista",
-    ],
-  },
-  {
-    title: "Innmeldingsgebyr",
-    intro:
-      "Nye foreldre skal betale et innmeldingsgebyr på kr. 1500 som skal dekke administrasjonskostnader.",
-  },
-  {
-    title: "Oppsigelse av skoleplassen",
-    items: [
-      "Det er 1 måneds oppsigelse regnet fra den 1. hver måned. Skolepengene må betales i oppsigelsestiden regnet fra den 1. hver måned. Skolepengene må betales selv om eleven slutter før oppsigelsestidens utløp",
-    ],
-  },
-  {
-    title: "Opphør av kontrakten",
-    intro:
-      "Dersom det foreligger gyldig grunn, kan begge parter si opp skolekontrakten uten at oppsigelsesfristen må overholdes. Slik grunn foreligger for skolen spesielt ved:",
-    items: [
-      "Alvorlig brudd på denne kontrakten eller på skolens reglement",
-      "Medbringelse, nytelse eller distribusjon av narkotika, alkohol eller rusmidler",
-      "Tilstrekkelig mistanke om straffbare handlinger på skolen eller utenfor denne",
-      "Utestående betaling av skolepenger eller andre gebyrer eller utlegg til tross for purring",
-      "Dersom et tillitsfullt samarbeid mellom lærere, foreldre/foresatte og eleven ikke lenger er mulig",
-    ],
-  },
-];
+const AVTALE_VERSJON: string = avtale.versjon;
+const SECTIONS: Section[] = avtale.sections;
 
 export default function ForeldreavtalePage() {
   return (
@@ -138,6 +80,13 @@ export default function ForeldreavtalePage() {
                 <Download size={16} aria-hidden="true" />
                 Last ned avtalen (PDF)
               </a>
+              <p className="mt-3 lg:mt-5 text-xs lg:text-sm text-text-muted">
+                Versjon{" "}
+                <time dateTime={AVTALE_VERSJON} className="tabular-nums">
+                  {AVTALE_VERSJON}
+                </time>{" "}
+                · gjelder fra skolestart høsten 2026
+              </p>
             </FadeIn>
           </div>
         </div>
