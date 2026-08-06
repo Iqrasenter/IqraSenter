@@ -3437,7 +3437,20 @@ npx supabase test db supabase/tests/40_invite_tokens.sql   # 16 AND 17 must be g
 
 With only 5 and 6, assertions 9 and the unlinked-pupil case are watched by nothing — and 9 is the one that stops D29 being over-applied and locking every pupil out of their only activation path. "Two mutations are enough" was exactly the shape that let plan 3's leaking builder look covered.
 
-⛔ **Mutation 6 could not run at all as originally written.** The over-revocation makes the two `'epost'` fixture calls at the top of the file raise; they were bare `select` statements, so the transaction aborted and the measured result was **zero TAP output** — not "assertion 10 red". Fixed by making those fixture issues `'skjerm'`. If you see the file die before `ok 1`, that is this, not a defect in the wall.
+⛔ **Mutation 6 could not run at all as originally written — and the fix recorded here was ALSO wrong.** Re-measured at execution 2026-08-06.
+
+The ledger said: the over-revocation makes the `'epost'` fixture calls raise, so make them `'skjerm'`. **That does not help.** Replacing the whole condition with `true` refuses **every** delivery, `'skjerm'` included — so the first bare `select public.invite_issue(…)` in the fixture still aborts the transaction and the run reports `planned 27 tests but ran 0`. Task 15a's fixture already uses `'skjerm'` and it died anyway.
+
+⚠ **And a mutation that aborts the file looks EXACTLY like a survivor** to any harness that greps for `# Failed test` — there are no failures because there are no tests. Mine reported «SURVIVED» until the raw output was read. **Any mutation harness on this project must treat `but ran 0` as a distinct third outcome**, never fold it into «no failures».
+
+**The correct mutation keeps the delivery conjunct and over-revokes only the pupil test:**
+
+```sql
+-- from:  if p_delivery = 'epost' and (exists (…students…) or private.has_role(…))
+-- to:    if p_delivery = 'epost' and true
+```
+
+Measured: **reddens 10 and 12**, file runs 23 of 27. Assertion 10 («a guardian CAN be invited by e-mail») is the one it exists to watch, and it is now genuinely watched.
 
 - [ ] **Step 3: Fill in the «Measured» column for every row**
 
@@ -3561,7 +3574,7 @@ Filled in **during** execution, not after. One row per task: the measured counts
 |---|---|---|---|---|---|
 | 14 | `9505cd8` (portal) · `6fcf898` (docs) | **913 / 39 ✔measured** | not run | not run | ✅ DONE 2026-08-06. Types unchanged, as predicted. **2 deviations:** Step 9's «no output» grep was unsatisfiable (its own Steps 3–4 write «Brevo» three times) → replaced with live-claim markers, measured empty. D5's **decision** cell also marked (plan corrected only its rationale, leaving the stale claim in the column a decision table is skimmed by). ⚠ Docker died twice mid-run — a **concurrent Claude session** was restarting it; the `db reset` seed completed anyway (profiles=7 students=5 classes=2 user_roles=8) |
 | 14b | `3f6656c` | **938 / 40 ✔measured** | **642 / 58 ✔** | not run | ✅ DONE 2026-08-06. **25 assertions, not 8; SEVEN clauses, not one; markers 95 → 102, not 96.** Two findings changed the task — see «Task 14b as executed» below. action-guards 83 → 84 as predicted. Every clause mutation-verified. knip's only error is `scripts/fiken-probe.mjs`, a foreign untracked file |
-| 15a | | **938** + `<N>` / 41 | 642 | 377 | ⚠ baseline is 14b's **measured 938**, not the predicted 921. `<N>` = counted plan of `40_invite_tokens.sql`, **≈26** → ≈**964** |
+| 15a | `538a786` | **965 / 41 ✔measured** | 642 ✔ | not run | ✅ DONE 2026-08-06. `plan(27)` — 19 base + 7 ledger + 1 for `invite_revoke`. Ledger item **d** (rate-limit window) moved to 15b: `private.invite_attempt_window` does not exist yet. Nine mutations run; **M6 as specified cannot run at all** — see below |
 | 15b | | 15a + 3 / 41 | 642 | 377 | `plan(<N>)` → `plan(<N>+3)`; markers **102 → 112** (14b added 7, not 1) |
 | 15c | | = 15b | | 377 | |
 | 15d | | = 15b | | 377 | action-guards 84 → 85 |
@@ -3815,3 +3828,33 @@ Every clause was mutated one at a time, capture → mutate → run → restore �
 ### Deliberately not fixed, and named rather than folded in
 
 `public.announcement_read_status` counts suppressed guardians in its `has_read` and `reachable` columns. That is **teacher-facing** and leaks nothing to the suppressed parent: a stale `announcement_reads` row from before suppression can still read as "the family has read it", and a pupil whose only guardian is suppressed still counts as reachable. It is an accuracy bug in an exit-gated Phase-5 surface, not a privacy hole. Recorded in the migration header and here; **not** silently expanded into.
+
+
+---
+
+## Task 15a as executed
+
+Executed 2026-08-06, portal `538a786`. **pgTAP 938 → 965 (`plan(27)`), typecheck clean, unit 642 unchanged, lint 0 errors, build clean.**
+
+Every claim the task is built on was verified against the live database before a line was written, and all held exactly: `private.audit` rejects the `admin.` namespace; `extensions.digest` is reachable under `search_path = ''` (returns 32 bytes); `private.has_role(uid uuid, r text)`; seven seeded `@test.local` accounts; and `unlinkStudentLoginAction`'s own comment still says it *"Deliberately does NOT revoke the student role"* — so the D29 disjunction is genuinely load-bearing, not defensive.
+
+### 27 assertions, not 19
+
+The extra eight are the ledger's, which added SQL to the migration and never the assertions to watch it:
+
+| # | Watches | Mutation that reddens it |
+|---|---|---|
+| 11 | **S2** — an *unlinked* pupil (role `student`, no `students` row) is still refused `epost` | M6c (drop the `or has_role` arm) |
+| 15, 16 | **M7** — `is_student` true for a pupil **and** false for a guardian | constant-`false` reddens 15, constant-`true` reddens 16 |
+| 23 | **M8** — `invite_ttl('skjerm') < invite_ttl('epost')` | swap the arms |
+| 24 | **H2** — a token issued *before* a soft-delete does not redeem after | drop redeem's `deleted_at` check |
+| 25, 26 | **S1** — `invite_find_account` resolves an ACTIVATED account, and re-issuing to one mints a working link (D30's whole reset path) | — |
+| 27 | `invite_revoke` kills the link **and** leaves an audit row | delete the audit insert |
+
+⚠ Ledger item **d** (the rate-limiter window) is **not** here — `private.invite_attempt_window` is created by Task 15b. It moves there.
+
+### The mutation pass, and a harness defect worth keeping
+
+Nine mutations run, capture → mutate → run → restore → verify-restore. Eight behaved; the ninth exposed a defect in **my own harness** rather than in the code — see the corrected Mutation 6 above. The lesson generalises past this file: **`Tests=0` is not `no failures`.** A mutation that makes a fixture raise aborts the transaction before `ok 1`, and every grep-for-`# Failed`-lines harness will call that a survivor.
+
+★ Note that M5 (deleting the whole `if`) reddens **8, 11 and 21** — three assertions, including the audit count, because with the wall gone the refused `epost` attempt succeeds and writes a second audit row. The plan predicted 8 and 18 (old numbering). The third was not predicted; **read the indices, not the pass/fail**.
