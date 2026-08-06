@@ -308,6 +308,8 @@ Replace the **decision cell** of D6 (`:18`) with:
 **Two private buckets by audience** — `assignments` and `submissions`, both created in Phase 4. ⛔ **Corrected 2026-08-04:** this read «Three private buckets … Phase 5 adds `announcements`»; §12 Q14 = (a) ruled that bucket out and Phase 5 shipped without it.
 ```
 
+⚠ **DEVIATION AT EXECUTION 2026-08-06 — D5's decision cell is corrected too.** As written, this step marks D6's correction in its **decision** cell but D5's only in its **rationale** cell, leaving D5's decision cell still asserting «Attachments on announcements/posts are approved but land in Phase 5» with no marker on it. A reader skimming the decision column — which is how a decision table is read — would come away with exactly the stale fact this task exists to remove. D5's decision cell now opens `⛔ **REVERSED — see the rationale cell.**` and quotes the original wording as the historical record, matching D6's shape.
+
 Replace `:203` with:
 
 ```markdown
@@ -394,11 +396,17 @@ Replace with:
 
 - [ ] **Step 9: Verify nothing still claims Brevo or a third bucket**
 
+⛔ **CORRECTED AT EXECUTION 2026-08-06 — the original check was unsatisfiable.** It grepped for *any* mention of «brevo» and expected **no output**, but Steps 3 and 4 of this same task deliberately write the name three times: `docs/spec.md:149` («superseded … the provider is Resend») and `README.md:120-121` («Brevo ble vurdert og forkastet fordi gratisnivået stempler …»). A step cannot demand the absence of a string its own sibling steps are required to add. Following it literally would mean deleting exactly the rejection reasoning the plan wanted preserved.
+
+What Step 9 actually means is «nothing still **claims** Brevo is the provider», so grep for the live-claim markers instead:
+
 ```bash
-cd ~/dev/iqra-portal && git grep -n -i "brevo" -- . ':!docs/phase-5-communication-spec-DRAFT.md' ':!docs/phase-5-open-decisions.md' ':!docs/phase-5-review-2026-08-04.md' ':!docs/economy-integrations-research.md'
+cd ~/dev/iqra-portal && git grep -n -i "smtp-relay\.brevo\.com\|Brevo DPA\|Brevo som e-postleverandør\|via Brevo\|Brevo-dashbordet\|Brevo-nøkkel" -- . ':!docs/phase-5-communication-spec-DRAFT.md' ':!docs/phase-5-open-decisions.md' ':!docs/phase-5-review-2026-08-04.md' ':!docs/economy-integrations-research.md'
 ```
 
-Expected: **no output.** The four excluded files are historical records that deliberately retain the old name — the spec §14.3, the decisions log, the review and the economy research all narrate *why* Brevo was rejected, and rewriting them would destroy the reasoning.
+Expected: **no output** — measured empty after Steps 3, 4 and 8. The four excluded files are historical records that deliberately retain the old name — the spec §14.3, the decisions log, the review and the economy research all narrate *why* Brevo was rejected, and rewriting them would destroy the reasoning.
+
+⚠ The bare `-i "brevo"` grep is still worth running **by eye**: every hit must be a rejection or supersession, never an instruction. Three hits is correct here; a fourth means someone reinstated it.
 
 ```bash
 cd ~/dev/iqra-portal && git grep -n "announcements.*bucket\|third bucket\|tredje bucket" -- supabase/ src/
@@ -3547,7 +3555,7 @@ Filled in **during** execution, not after. One row per task: the measured counts
 
 | Task | Commit | pgTAP (exp.) | unit (exp.) | api (exp.) | Notes / deviations |
 |---|---|---|---|---|---|
-| 14 | | 913 / 39 | 636 | 377 | comment-only migration; no assertion moves |
+| 14 | `9505cd8` (portal) · `6fcf898` (docs) | **913 / 39 ✔measured** | not run | not run | ✅ DONE 2026-08-06. Types unchanged, as predicted. **2 deviations:** Step 9's «no output» grep was unsatisfiable (its own Steps 3–4 write «Brevo» three times) → replaced with live-claim markers, measured empty. D5's **decision** cell also marked (plan corrected only its rationale, leaving the stale claim in the column a decision table is skimmed by). ⚠ Docker died twice mid-run — a **concurrent Claude session** was restarting it; the `db reset` seed completed anyway (profiles=7 students=5 classes=2 user_roles=8) |
 | 14b | | 921 / 40 | 636 | 377 | D32. +8 in the new `39_guardian_suppression.sql`; +1 marker (95 → 96); action-guards 83 → 84 |
 | 15a | | 921 + `<N>` / 41 | 636 | 377 | `<N>` = counted plan of `40_invite_tokens.sql`; **≈26** (19 pre-review + Step 4b's ~7), so ≈947 — **not** the 940 an earlier draft predicted |
 | 15b | | 15a + 3 / 41 | 636 | 377 | `plan(<N>)` → `plan(<N>+3)`; markers 96 → 106 |
