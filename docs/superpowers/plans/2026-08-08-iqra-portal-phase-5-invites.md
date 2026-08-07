@@ -3579,10 +3579,62 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | 15c | `3828d0b` | 969 / 41 (unchanged) | **670 / 61 ✔measured** | not run | ✅ DONE 2026-08-06. Unit 642 → 670 (+28), not the plan's «636 → 647». knip at baseline. ⛔ The plan's own subject-templating test would have thrown against its own template — see below |
 | 15d | `c387b87` | 969 / 41 (unchanged) | **685 / 62 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **85** as predicted. Build lists `/sett-passord`. Four proxy mutations + one action-guards mutation all reddened the intended test |
 | 15e | `fa03466` | 969 / 41 (unchanged) | **698 / 63 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **87** as predicted. Build lists `/admin/kontoer`. ⚠ «Finn en konto» takes a USER ID — see the open item below |
-| 16 | | | | | |
-| 16b | | | | | |
-| 16c | | | | | |
-| 16d | | | | | |
+| 16 | `3f8100e` · `721e195` | **969 / 41 ✔measured** | **698 / 63 ✔measured**, and **identical under `TZ=UTC`** | **379 / 15 ✔measured, 0 failed** | ✅ DONE 2026-08-07. Types: no diff. tsc 0 · lint **0 errors / 5 warnings** · knip baseline · build lists `/sett-passord`, `/admin/kontoer` **and all three `/okonomi` routes** · audit green, allowlist empty. api is **379**, not the plan's 377 — the two new økonomi assertions. **Three deviations, all below.** |
+| 16b | `721e195` | — | — | — | ◐ PARTIAL 2026-08-07. The **økonomi announcement surface is done: 4 mutations, 4/4 as predicted**, incl. one SQL mutation (økonomi → `[]`). The plan's own remaining mutation-table rows are still unmeasured. |
+| 16c | `721e195` | — | — | — | ◐ PARTIAL 2026-08-07. `web-design-guidelines` run over the four new **økonomi** files: one finding, fixed (nav item repeated the portal name; no other role's nav does). `/sett-passord` + `/admin/kontoer` still to audit. ⚠ Pre-existing, NOT changed: `AnnouncementList.tsx:35`'s flex child has no `min-w-0` and titles may be 140 chars — shared by five roles, so it belongs to 16c proper, not a drive-by edit. |
+| 16d | | | | | ⛔ NOT STARTED — needs the user. Guide written for them at `docs/fase-5-gjennomgang.md` (portal repo). |
+
+### Task 16 as executed — three deviations
+
+**1. ⛔ A stale assertion, invisible until the api suite actually ran.** Task 14b
+added `suppressed` to the guardian projection for D32; `school-core.test.ts`'s
+`toEqual` is an **exact-shape** comparison and still pinned the old four keys.
+The api suite had not been run since 14b (ledger rows 14b → 15e all say «not
+run»), so nothing caught it. Pinned to `false` rather than removed from the
+comparison: the value a guardian is created with **is** the security claim.
+
+**2. ⛔ Lint was double-counting — 10 warnings, not 5.** ESLint was also linting
+`.claude/worktrees/hetzner-deploy/`, a **full second checkout of this repo**.
+Beyond the noise, a branch checked out there contributes its **own** errors to
+this branch's gate — CI could fail on code not in the tree under test.
+`.claude/**` added to `globalIgnores`.
+
+**3. ⛔⛔ `/okonomi/oppslag` did not exist**, while `reads_announcement_row`
+lists `economy` in its `cls is null` arm and the bell links every role to
+`${roleHome}/oppslag`. A notification the recipient could not open. Built in
+this task (list + detail + `OkonomiNav` — the fifth role had **no nav at all**
+since Phase 2) rather than deferred, because it is the last hole in «all five
+roles work» and 16d row 14 gates exactly this.
+
+### ⚠ The api suite is LOAD-FRAGILE on this box — budget for it
+
+**4 cores.** 100 api tests carry explicit 20–120 s timeouts because they make
+many sequential logins. Measured across four runs on 2026-08-07:
+
+| load | outcome |
+|---|---|
+| ~21 | 3 tests blew their declared buckets |
+| ~102 (Chrome open) | **7 of 11 in one file failed — including the unmutated baseline** |
+| ~6 (quiet) | **379 / 379, zero failures, 1084 s** |
+
+⛔ **A timeout then abandons cleanup and poisons a LATER file.**
+`assignments-actions` timed out inside `saveReview`; `assignments-core` then
+failed three assertions with `expected 'vurdert' to be 'levert'` — a hand-in
+left reviewed. Those read exactly like regressions in untouched code.
+**Diagnostic: durations matching declared timeout buckets + a failure set that
+changes between runs + zero assertion failures = environment, not regression.**
+Check `uptime` and `sysctl -n hw.ncpu` before believing an api failure.
+★ This is the concrete argument for the roadmap's deferred **«cloud DEV project
++ `test:api` in CI»** item.
+
+### ⚠ `service_role` cannot INSERT announcements — seed through the actions
+
+Only **DELETE, SELECT** are granted (the grant firewall). A scaffolding insert
+dies with **`permission denied for table announcements`** — a GRANT error, not
+RLS (which says *new row violates row-level security policy*). The asymmetry is
+the trap: the `afterEach` DELETE works fine. Seed via
+`admin/oppslag/actions.ts` (`classId: ''` = school-wide) and
+`laerer/oppslag/actions.ts`.
 
 ### Review ledger
 
