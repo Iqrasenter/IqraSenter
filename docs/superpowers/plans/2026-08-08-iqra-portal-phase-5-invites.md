@@ -3580,8 +3580,47 @@ Filled in **during** execution, not after. One row per task: the measured counts
 | 15d | `c387b87` | 969 / 41 (unchanged) | **685 / 62 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **85** as predicted. Build lists `/sett-passord`. Four proxy mutations + one action-guards mutation all reddened the intended test |
 | 15e | `fa03466` | 969 / 41 (unchanged) | **698 / 63 ✔measured** | not run | ✅ DONE 2026-08-06. action-guards **87** as predicted. Build lists `/admin/kontoer`. ⚠ «Finn en konto» takes a USER ID — see the open item below |
 | 16 | `3f8100e` · `721e195` | **969 / 41 ✔measured** | **698 / 63 ✔measured**, and **identical under `TZ=UTC`** | **379 / 15 ✔measured, 0 failed** | ✅ DONE 2026-08-07. Types: no diff. tsc 0 · lint **0 errors / 5 warnings** · knip baseline · build lists `/sett-passord`, `/admin/kontoer` **and all three `/okonomi` routes** · audit green, allowlist empty. api is **379**, not the plan's 377 — the two new økonomi assertions. **Three deviations, all below.** |
-| 16b | `721e195` | — | — | — | ◐ PARTIAL 2026-08-07. The **økonomi announcement surface is done: 4 mutations, 4/4 as predicted**, incl. one SQL mutation (økonomi → `[]`). The plan's own remaining mutation-table rows are still unmeasured. |
-| 16c | `721e195` | — | — | — | ◐ PARTIAL 2026-08-07. `web-design-guidelines` run over the four new **økonomi** files: one finding, fixed (nav item repeated the portal name; no other role's nav does). `/sett-passord` + `/admin/kontoer` still to audit. ⚠ Pre-existing, NOT changed: `AnnouncementList.tsx:35`'s flex child has no `min-w-0` and titles may be 140 chars — shared by five roles, so it belongs to 16c proper, not a drive-by edit. |
+| 16b | `721e195` · `3a229d7` | **971 / 41 ✔** (969 + 2 new) | 698 / 63 ✔ | — | ✅ DONE 2026-08-07. **28 mutations: 14 TS + 10 SQL + 4 økonomi.** Every intended assertion moved. **★ Found both arms of `is_student` unwitnessed** — two new assertions (17, 18) close it. Three predictions named too few assertions (22 → 2, 21 → 3, 23 → 3). Two named skips below. |
+| 16c | `721e195` · `0133f91` | — | — | — | ✅ DONE 2026-08-07. Audited the four økonomi files, `/sett-passord`, `/admin/kontoer` and the login banner. **Four findings, all fixed:** nav item repeated the portal name; «Til innlogging» had no focus ring; the one-time-link row did not wrap at 375 px; «Kopier» was silent. Tokens all verified to exist (no repeat of plan 3's phantom `text-muted-foreground`); `Button` already defaults to `type="button"`; `role="alert"`/`role="status"` correct. ⚠ Named skip: `AnnouncementList.tsx:35` lacks `min-w-0` — shared by five roles, own round. |
+
+### Task 16b as executed — what the mutations actually found
+
+**★★ BOTH ARMS OF `is_student` WERE INDIVIDUALLY UNWITNESSED.** The projection
+in `invite_pending_accounts` is `exists(students row) or has_role('student')`,
+and fixture user 003 satisfies **both** — so assertions 15 and 16 stayed green
+with *either* arm replaced by `false`. Measured, not reasoned: both survived
+alone; only replacing the whole disjunction reddened anything.
+
+⛔ They are **not** redundant — they cover different people. The first is a
+linked pupil; the second is the S2 case, where the role remains after the
+`students` row is gone. Lose the `has_role` arm and an unlinked pupil's card on
+`/admin/kontoer` gets its e-mail button back, whose click returns a raw 42501 —
+exactly the failure the projection's own comment claims to prevent.
+
+Closed with one assertion per arm: **17** an unlinked pupil (005, now in the
+queue via the `skjerm` delivery D29 permits for pupils) and **18** the mirror
+(008, `students` row without the role — reachable whenever a role is revoked
+while the login link stays). Each arm now reddens on its own. pgTAP 969 → 971.
+
+⚠ **A reused token name aborted the whole file and pointed at the wrong line.**
+`c2-token-f` is taken further down; `private.invite_tokens` has a UNIQUE index
+on `token_hash`, so the duplicate raised at the *later* call — 24 of 32 ran and
+the error cited line 297, not the insert that caused it.
+
+**Named skips, with reasons (§8 requires these be stated):**
+
+1. **Row 14b survives alone, correctly.** `invite_attempt_consume` deletes rows
+   older than the window and then counts rows newer than it — exact
+   complements, so either clause alone enforces the limit. Removing **both**
+   reddens assertion 33 (verified), and both are pinned in file 29, which is
+   the only thing that can see one vanish.
+2. **Row 11b** (`grant select on private.invite_attempts`) reddens nothing, as
+   the panel already measured — the table is in no assertion. Left as-is.
+
+**Three predictions named too few assertions.** Row 22 reddens 2 tests, rows 21
+and 23 redden 3 each. The intended assertion moved in every case, but the extra
+reds are additional guards the plan did not know about — read the names, not
+the count.
 | 16d | | | | | ⛔ NOT STARTED — needs the user. Guide written for them at `docs/fase-5-gjennomgang.md` (portal repo). |
 
 ### Task 16 as executed — three deviations
