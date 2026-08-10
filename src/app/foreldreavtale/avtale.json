@@ -16,6 +16,8 @@
         "Gjøre seg kjent med og følge alle Iqras retningslinjer og regler. Disse reglene omfatter tre hovedområder: 1) Fravær, 2) Foreldrenes plikter, 3) Orden- og oppførselsregler",
         "Møte opp til foreldresamtaler og foreldremøter",
         "Samarbeide med læreren om elevens læring og utvikling",
+        "Laste ned skoleportalen og slå på varslinger, slik at beskjeder fra skolen kommer fram",
+        "Følge med på og holde seg oppdatert på informasjonen administrasjonen sender ut på WhatsApp og i skoleportalen",
         "Vise respekt overfor lærere, foreldre og andre han/hun kommer i kontakt med i Iqra",
         "Erstatte eventuelle skader eleven påfører Iqras inventar eller utstyr",
         "Betale skolepengene i tide slik at Iqra blir i stand til å møte sine forpliktelser overfor utleier og dekke andre faste utgifter"
@@ -32,8 +34,7 @@
         "Betalingsfristen er den 1. hver måned",
         "Faktura sendes på e-post fremover, og vil også være tilgjengelig i foreldreportalen. AvtaleGiro avsluttes",
         "Skolepengene betales med bankoverføring til Iqras konto. KID-nummeret som står på fakturaen må alltid oppgis",
-        "Foresatt er selv ansvarlig for at skolepengene betales innen fristen",
-        "Iqra krever ikke purregebyr, forsinkelsesrenter eller andre gebyrer ved forsinket betaling"
+        "Foresatt er selv ansvarlig for at skolepengene betales innen fristen"
       ]
     },
     {
@@ -47,7 +48,7 @@
     {
       "title": "Manglende betaling",
       "items": [
-        "Er skolepengene ikke betalt innen den 15. i måneden, sendes en skriftlig purring. Iqra krever ikke purregebyr",
+        "Er skolepengene ikke betalt innen den 15. i måneden, sendes en skriftlig purring",
         "Er beløpet fortsatt ubetalt, sendes flere påminnelser i løpet av perioden",
         "Ved manglende betaling ut over 2 måneder sendes varsel om at skoleplassen kan bli sagt opp. Samtidig kreves forskuddsbetaling for 3 måneder",
         "Foresatte som har mottatt et slikt varsel kan beholde skoleplassen ved å betale hele det utestående beløpet, eller ved å inngå en nedbetalingsavtale med skolen",
@@ -60,6 +61,15 @@
     {
       "title": "Innmeldingsgebyr",
       "intro": "Nye foreldre skal betale et innmeldingsgebyr på kr. 1500 som skal dekke administrasjonskostnader. Gebyret er et engangsbeløp per familie og faktureres ved innmelding."
+    },
+    {
+      "title": "Bidrag til kjøp av eget lokale",
+      "intro": "Iqra arbeider for å kjøpe eget lokale. Alle foresatte er med på å finansiere kjøpsprosjektet.",
+      "items": [
+        "Bidraget er kr. 22 000 per familie, uavhengig av hvor mange elever familien har ved skolen, og betales i løpet av to år",
+        "Foresatte inngår en nedbetalingsordning med administrasjonen om hvordan beløpet skal fordeles i toårsperioden",
+        "Bidraget kommer i tillegg til skolepengene og faktureres etter den avtalte nedbetalingsordningen"
+      ]
     },
     {
       "title": "Oppsigelse av skoleplassen",
