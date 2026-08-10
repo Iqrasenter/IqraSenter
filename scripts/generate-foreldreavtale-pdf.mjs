@@ -8,17 +8,26 @@
  * of a skoleplass would be argued against. A PDF disagreeing with the page is
  * worse than no PDF at all.
  *
- * Output goes to docs/, deliberately NOT public/ — anything in public/ is live on
- * the website the moment it is deployed.
+ * By default output goes to docs/ with an UTKAST stamp, deliberately NOT public/ —
+ * anything in public/ is live on the website the moment it is deployed.
  *
- * Usage:  node scripts/generate-foreldreavtale-pdf.mjs
+ * ⛔ --endelig is what publishes. It writes public/foreldreavtale.pdf, which is the
+ * file the page's «Last ned avtalen (PDF)» button serves, and drops the UTKAST
+ * stamp. Nothing else updates that file, so a text change merged without re-running
+ * this leaves the page stating the new terms while the download hands over the old
+ * ones — the single failure this document cannot have. Publishing is a deliberate
+ * flag rather than the default so that regenerating a draft can never publish by
+ * accident.
+ *
+ * Usage:  node scripts/generate-foreldreavtale-pdf.mjs [--endelig]
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 
+const FINAL = process.argv.includes('--endelig');
 const AVTALE = 'src/app/foreldreavtale/avtale.json';
-const OUT = 'docs/foreldreavtale-UTKAST.pdf';
+const OUT = FINAL ? 'public/foreldreavtale.pdf' : 'docs/foreldreavtale-UTKAST.pdf';
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 if (!existsSync(CHROME)) {
@@ -82,7 +91,7 @@ const html = `<!doctype html>
   <h1>Foreldreavtale</h1>
   <p class="meta">Avtale mellom Iqra Læring og Aktivitetssenter og foresatte ·
      <b>Versjon ${esc(versjon)}</b> · gjelder fra skolestart høsten 2026</p>
-  <p class="draft">UTKAST — til gjennomgang av staben. Ikke publisert og ikke gjeldende ennå.</p>
+  ${FINAL ? '' : '<p class="draft">UTKAST — til gjennomgang av staben. Ikke publisert og ikke gjeldende ennå.</p>'}
   <p class="lede">Denne avtalen er bindende og må leses og bekreftes før skoleplassen er endelig.
      Bekreftelse skjer via skjemaet på iqrasenter.no/foreldreavtale.</p>
 </header>
@@ -128,4 +137,8 @@ execFileSync(
 
 console.log(`✅ ${OUT}`);
 console.log(`   versjon ${versjon} · ${sections.length} seksjoner`);
-console.log(`   Marked UTKAST, and written outside public/ — nothing is published.`);
+console.log(
+  FINAL
+    ? `   ENDELIG — no UTKAST stamp, written to public/. This IS the file parents download.`
+    : `   Marked UTKAST, and written outside public/ — nothing is published.`,
+);
