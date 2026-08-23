@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
-import { NAV_ITEMS, SITE } from "@/lib/constants";
+import { Menu, X, LogIn } from "lucide-react";
+import { NAV_ITEMS, PORTAL_URL, SITE } from "@/lib/constants";
 
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -49,7 +49,7 @@ export function Navbar() {
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.href}
@@ -65,8 +65,9 @@ export function Navbar() {
           </div>
 
           {/* Desktop Right Side (CTA + Socials) */}
-          <div className="hidden md:flex items-center gap-4">
-            <div className="flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-3 xl:gap-4">
+            {/* Socials stand down below xl so the two CTAs keep their room */}
+            <div className="hidden xl:flex items-center gap-3">
               <a
                 href={SITE.social.facebook}
                 target="_blank"
@@ -90,6 +91,13 @@ export function Navbar() {
                 </svg>
               </a>
             </div>
+            <a
+              href={PORTAL_URL}
+              className="inline-flex items-center gap-1.5 px-4 py-2 border border-primary/30 text-primary font-heading font-medium text-sm rounded-full transition-colors duration-200 cursor-pointer hover:bg-primary/5 hover:border-primary/60"
+            >
+              <LogIn size={16} strokeWidth={2} aria-hidden="true" />
+              Logg inn
+            </a>
             <Link
               href="/stott-oss"
               className="inline-flex items-center px-6 py-2 bg-accent text-white font-heading font-medium text-sm rounded-full transition-all duration-200 cursor-pointer btn-magnetic hover:bg-accent-light shadow-md"
@@ -99,7 +107,7 @@ export function Navbar() {
           </div>
 
           {/* Mobile Right Side */}
-          <div className="flex md:hidden items-center gap-3">
+          <div className="flex lg:hidden items-center gap-3">
             <div className="flex items-center gap-2">
               <a
                 href={SITE.social.facebook}
@@ -136,7 +144,7 @@ export function Navbar() {
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden pb-4 pt-2 border-t border-border/20 px-4 bg-white/95 backdrop-blur-md rounded-b-2xl overscroll-contain">
+          <div className="lg:hidden pb-4 pt-2 border-t border-border/20 px-4 bg-white/95 backdrop-blur-md rounded-b-2xl overscroll-contain">
             <div className="flex flex-col gap-2">
               {NAV_ITEMS.map((item) => (
                 <Link
@@ -151,7 +159,14 @@ export function Navbar() {
                 </Link>
               ))}
 
-              <div className="flex justify-center border-t border-border/10 pt-4 mt-2">
+              <div className="flex flex-col gap-2 border-t border-border/10 pt-4 mt-2">
+                <a
+                  href={PORTAL_URL}
+                  className="inline-flex w-full items-center justify-center gap-1.5 px-5 py-3 border border-primary/30 text-primary font-heading font-medium text-sm rounded-full transition-colors duration-200 cursor-pointer hover:bg-primary/5 hover:border-primary/60"
+                >
+                  <LogIn size={16} strokeWidth={2} aria-hidden="true" />
+                  Logg inn
+                </a>
                 <Link
                   href="/stott-oss"
                   className="w-full text-center px-5 py-3 bg-accent text-white font-heading font-medium text-sm rounded-full transition-all duration-200 cursor-pointer btn-magnetic hover:bg-accent-light shadow-md"

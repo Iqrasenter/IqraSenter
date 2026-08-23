@@ -17,6 +17,9 @@ export const SITE = {
   },
 } as const;
 
+/** Elev-, foresatt- og ansattportalen. Egen app på eget subdomene. */
+export const PORTAL_URL = "https://portal.iqrasenter.no";
+
 export const NAV_ITEMS = [
   { label: "Siste Nytt", href: "/sistenytt" },
   { label: "Nettbutikk", href: "/nettbutikk" },

@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 };
 
 const GOOGLE_FORM_URL =
-  "https://docs.google.com/forms/d/e/1FAIpQLSfIx6QIDKrNGCkfhp5G0bqfY1HZmu0qWGxj0s5Pd_8WcP1QWg/viewform";
+  "https://docs.google.com/forms/d/e/1FAIpQLSenPcdDjskImTmPErM670_QGbnw2jl4fbCWk2eDmk_MecjQ2A/viewform";
 
 /**
  * The agreement text lives in ./avtale.json, not here.
