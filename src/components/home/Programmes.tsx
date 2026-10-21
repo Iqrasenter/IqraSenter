@@ -66,7 +66,7 @@ export function Programmes() {
                 <Link href="/om-oss">
                   Bli kjent med helgeskolen
                   <span aria-hidden="true">
-                    ↗
+                    →
                   </span>
                 </Link>
               </div>
@@ -88,7 +88,7 @@ export function Programmes() {
                 <Link href="/om-oss">
                   Utforsk fritidsaktivitetene
                   <span aria-hidden="true">
-                    ↗
+                    →
                   </span>
                 </Link>
               </div>
@@ -110,7 +110,7 @@ export function Programmes() {
                 <Link href="/kontakt">
                   Spør oss om kurs
                   <span aria-hidden="true">
-                    ↗
+                    →
                   </span>
                 </Link>
               </div>
@@ -118,7 +118,7 @@ export function Programmes() {
             <Link className="admissions-link" href="/bli-medlem">
               Slik blir du medlem
               <span aria-hidden="true">
-                ↗
+                →
               </span>
             </Link>
           </div>

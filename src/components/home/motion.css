@@ -1,0 +1,64 @@
+/* Motion for the homepage: transform and opacity only.
+   Reduced-motion visitors never get the .has-motion class (see HomeMotion). */
+
+.iqra-home.has-motion .rv {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.iqra-home.has-motion .rv.in {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 700ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--rv-delay, 0ms),
+    transform 700ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--rv-delay, 0ms);
+}
+
+/* The two hero photos settle in from a slightly closer crop. The masthead
+   clips overflow, so each picture grows only outward from its outer edge. */
+@keyframes iqra-settle {
+  from { transform: scale(1.06); }
+  to   { transform: scale(1); }
+}
+.iqra-home .masthead img {
+  animation: iqra-settle 1600ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  transform-origin: 0 50%;
+}
+.iqra-home .masthead img + img {
+  transform-origin: 100% 50%;
+}
+
+/* Feedback on controls */
+.iqra-home .button,
+.iqra-home .text-action,
+.iqra-home .action,
+.iqra-home .link,
+.iqra-home .portal {
+  transition: transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.iqra-home .button:active,
+.iqra-home .action:active {
+  transform: scale(0.97);
+}
+.iqra-home .link span[aria-hidden="true"],
+.iqra-home .button span[aria-hidden="true"],
+.iqra-home .action span[aria-hidden="true"],
+.iqra-home .text-action span[aria-hidden="true"] {
+  display: inline-block;
+  transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.iqra-home .link:hover span[aria-hidden="true"],
+.iqra-home .button:hover span[aria-hidden="true"],
+.iqra-home .action:hover span[aria-hidden="true"],
+.iqra-home .text-action:hover span[aria-hidden="true"] {
+  transform: translateX(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iqra-home .masthead img { animation: none; }
+  .iqra-home .button:active,
+  .iqra-home .action:active { transform: none; }
+  .iqra-home .link:hover span[aria-hidden="true"],
+  .iqra-home .button:hover span[aria-hidden="true"],
+  .iqra-home .action:hover span[aria-hidden="true"],
+  .iqra-home .text-action:hover span[aria-hidden="true"] { transform: none; }
+}

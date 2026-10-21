@@ -82,8 +82,11 @@ export const TESTIMONIALS = [
 export const NEWS = [
   {
     title: "Iqra Sommerskole 2026",
+    cardTitle: "Sommerskole 2026",
     excerpt:
       "Iqra Senter inviterer til en lærerik og minnerik sommer! En hel måned fylt med islamsk undervisning, lek, uteaktiviteter og turer — en flott mulighet for barna til å lære, vokse og knytte nye vennskap i trygge og inspirerende omgivelser.",
+    cardExcerpt:
+      "Program og praktisk informasjon om tilbudet fra 29. juni til 30. juli.",
     date: "2026-06-18",
     image: "/images/sommerskole-2026.webp",
     imagePosition: "center top",
@@ -102,6 +105,7 @@ export const NEWS = [
   },
   {
     title: "Tusen takk for en fantastisk sommerfest!",
+    cardTitle: "En sommerfest å huske.",
     excerpt:
       "Tusen takk til alle som deltok på Iqras sommerfest! Vi hadde en fantastisk dag med stort oppmøte, herlig fellesskap og masse glede. Barna og ungdommene imponerte med sine fremføringer, vi hadde inspirerende taler, ansiktsmaling, fotball, stikkball, sang, lek og nydelig mat. En stor takk til alle frivillige, foreldre og medlemmer som gjorde dagen så vellykket — sammen skaper vi et trygt og inkluderende fellesskap for våre barn og unge.",
     cardExcerpt:
@@ -123,6 +127,7 @@ export const NEWS = [
   },
   {
     title: "Nye utgivelser: To nye barnebøker",
+    cardTitle: "To nye barnebøker",
     excerpt:
       "Vi har gleden av å presentere to nye barnebøker med fokus på islamsk barneoppdragelse. Bøkene er nå til salgs i vår nettbutikk og hos våre utsalgssteder.",
     date: "2026-02-26",

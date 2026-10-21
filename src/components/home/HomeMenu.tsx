@@ -41,7 +41,7 @@ export function HomeMenu() {
           Logg inn ↗
         </a>
         <a href="#stott-iqra">
-          Støtt oss ↗
+          Støtt oss ↓
         </a>
       </nav>
     </details>

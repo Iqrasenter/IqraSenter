@@ -17,7 +17,7 @@ export function CopyAccount() {
   return (
     <div className="copy-control">
       <button type="button" className="action" onClick={copy} aria-describedby="open-copy-status">
-        Kopier kontonummer <span aria-hidden="true">↗</span>
+        Kopier kontonummer
       </button>
       <p id="open-copy-status" className="copy-status" role="status" aria-live="polite">{status}</p>
     </div>

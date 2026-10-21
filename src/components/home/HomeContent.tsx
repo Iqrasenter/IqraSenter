@@ -3,11 +3,17 @@ import Link from "next/link";
 import { Programmes } from "./Programmes";
 import { HomeMenu } from "./HomeMenu";
 import { CopyAccount } from "./CopyAccount";
+import { homeNews, newsBlurb, newsDate, newsLeadPhoto, newsTitle } from "./news";
+import { HomeMotion } from "./HomeMotion";
 import "./home.css";
+import "./motion.css";
 
 export function HomeContent() {
+  const { lead, deskTop, deskBottom } = homeNews();
+  const leadPhoto = newsLeadPhoto(lead);
   return (
     <div className="iqra-home" id="top">
+      <HomeMotion />
     <div className="finish a">
       <aside className="announcement">
         <Link href="/foreldreavtale">
@@ -15,7 +21,7 @@ export function HomeContent() {
             Til foreldre og foresatte av nye elever
           </span>
           <strong>
-            Les og bekreft foreldreavtalen ↗
+            Les og bekreft foreldreavtalen →
           </strong>
         </Link>
       </aside>
@@ -45,7 +51,7 @@ export function HomeContent() {
             Logg inn ↗
           </a>
           <a className="button" href="#stott-iqra">
-            Støtt oss ↗
+            Støtt oss ↓
           </a>
         </div>
         <HomeMenu />
@@ -66,7 +72,7 @@ export function HomeContent() {
               <Link className="button" href="/bli-medlem">
                 Bli medlem
                 <span className="arrow" aria-hidden="true">
-                  ↗
+                  →
                 </span>
               </Link>
             </div>
@@ -112,7 +118,7 @@ export function HomeContent() {
               <Link className="link filled" href="/sistenytt">
                 Se alle nyheter
                 <span aria-hidden="true">
-                  ↗
+                  →
                 </span>
               </Link>
             </div>
@@ -120,23 +126,21 @@ export function HomeContent() {
           <div className="newsroom-grid">
             <article className="lead-story">
               <Link href="/sistenytt">
-                <Image src="/images/home/summer-editorial.webp" width={1200} height={1600} alt="Barn og familier samlet ute under Iqras sommerfest" sizes="(max-width: 700px) 100vw, 60vw" />
+                <Image src={leadPhoto.src} width={1200} height={1600} alt={leadPhoto.alt} sizes="(max-width: 700px) 100vw, 60vw" />
                 <div className="lead-body">
                   <h3>
-                    En sommerfest
-                    <br />
-                    å huske.
+                    {newsTitle(lead)}
                   </h3>
-                  <time dateTime="2026-06-14">
-                    14. juni 2026
+                  <time dateTime={lead.date}>
+                    {newsDate(lead)}
                   </time>
                   <p>
-                    Fremføringer, lek og fellesskap. Takk til alle som gjorde sommerfesten til en dag fylt med glede.
+                    {newsBlurb(lead)}
                   </p>
                   <span className="link">
-                    Se tilbake på dagen
+                    Les mer
                     <span aria-hidden="true">
-                      ↗
+                      →
                     </span>
                   </span>
                 </div>
@@ -144,41 +148,39 @@ export function HomeContent() {
             </article>
             <aside className="news-desk" aria-label="Flere nyheter">
               <article className="desk-story">
-                <time dateTime="2026-06-18">
-                  18. juni 2026
+                <time dateTime={deskTop.date}>
+                  {newsDate(deskTop)}
                 </time>
                 <Link href="/sistenytt">
                   <h3>
-                    Sommerskole 2026
+                    {newsTitle(deskTop)}
                   </h3>
                 </Link>
                 <p>
-                  Program og praktisk informasjon om tilbudet fra 29. juni til 30. juli.
+                  {newsBlurb(deskTop)}
                 </p>
                 <Link className="link" href="/sistenytt">
-                  Om sommerskolen
+                  Les mer
                   <span aria-hidden="true">
-                    ↗
+                    →
                   </span>
                 </Link>
               </article>
               <article className="desk-story desk-book">
-                <Image src="/images/books-combined.webp" width={1169} height={800} alt="Omslagene til Iqras to Tarbiyah-bøker" sizes="(max-width: 700px) 100vw, 60vw" />
+                <Image src={deskBottom.image} width={1169} height={800} alt="" sizes="(max-width: 700px) 100vw, 60vw" />
                 <div>
-                  <time dateTime="2026-02-26">
-                    26. februar 2026
+                  <time dateTime={deskBottom.date}>
+                    {newsDate(deskBottom)}
                   </time>
-                  <Link href="/nettbutikk">
+                  <Link href="/sistenytt">
                     <h3>
-                      To nye
-                      <br />
-                      barnebøker
+                      {newsTitle(deskBottom)}
                     </h3>
                   </Link>
-                  <Link className="link" href="/nettbutikk">
-                    Se bøkene
+                  <Link className="link" href="/sistenytt">
+                    Les mer
                     <span aria-hidden="true">
-                      ↗
+                      →
                     </span>
                   </Link>
                 </div>
@@ -186,7 +188,7 @@ export function HomeContent() {
               <Link className="link" href="/sistenytt">
                 Flere historier fra Iqra
                 <span aria-hidden="true">
-                  ↗
+                  →
                 </span>
               </Link>
             </aside>
@@ -216,7 +218,7 @@ export function HomeContent() {
               <Link className="action button" href="/om-oss">
                 Bli kjent med Iqra
                 <span aria-hidden="true">
-                  ↗
+                  →
                 </span>
               </Link>
             </div>
@@ -304,10 +306,10 @@ export function HomeContent() {
             </p>
             <div className="actions">
               <Link className="button" href="/bli-medlem">
-                Bli med i Iqra ↗
+                Bli med i Iqra →
               </Link>
               <Link className="text-action" href="/kontakt">
-                Kontakt oss ↗
+                Kontakt oss →
               </Link>
             </div>
           </div>
@@ -322,7 +324,7 @@ export function HomeContent() {
         <div className="footer-grid">
           <div className="identity">
             <Link className="logo" href="/" aria-label="Iqra – hjem">
-              <Image src="/images/logo-wide.webp" alt="Iqra Læring og Aktivitetssenter" width={1024} height={289} unoptimized sizes="186px" />
+              <Image src="/images/logo-wide-light.webp" alt="Iqra Læring og Aktivitetssenter" width={1024} height={289} unoptimized sizes="186px" />
             </Link>
             <p>
               Et trygt fellesskap i Oslo
