@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useRef, type KeyboardEvent, type MouseEvent } from "react";
 
-export function HomeMenu() {
+export type MenuLink = { href: string; label: string; current?: boolean };
+
+export function HomeMenu({ links }: { links: MenuLink[] }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const onKeyDown = (event: KeyboardEvent<HTMLDetailsElement>) => {
     if (event.key !== "Escape" || !menu.current) return;
@@ -17,32 +19,22 @@ export function HomeMenu() {
     <details className="mobile-menu" ref={menu} onKeyDown={onKeyDown} onClick={closeOnNavigation}>
       <summary>
         Meny
-        <span aria-hidden="true">
-          +
-        </span>
+        <span aria-hidden="true">+</span>
       </summary>
       <nav aria-label="Hovedmeny mobil">
-        <a href="#nyheter">
-          Siste nytt
-        </a>
-        <Link href="/nettbutikk">
-          Nettbutikk
-        </Link>
-        <Link href="/bli-medlem">
-          Bli medlem / opptak
-        </Link>
-        <a href="#om-iqra">
-          Om oss
-        </a>
-        <a href="#kontakt">
-          Kontakt oss
-        </a>
-        <a href="https://portal.iqrasenter.no">
-          Logg inn ↗
-        </a>
-        <a href="#stott-iqra">
-          Støtt oss ↓
-        </a>
+        {links.map((link) => {
+          const plain = link.href.startsWith("#") || link.href.startsWith("http");
+          const aria = link.current ? ("page" as const) : undefined;
+          return plain ? (
+            <a key={link.label} href={link.href} aria-current={aria}>
+              {link.label}
+            </a>
+          ) : (
+            <Link key={link.label} href={link.href} aria-current={aria}>
+              {link.label}
+            </Link>
+          );
+        })}
       </nav>
     </details>
   );

@@ -38,11 +38,18 @@ export function newsBlurb(item: NewsItem, max = 150) {
 }
 
 // Edited versions of the photos, used where a story's own picture has one.
-const EDITED_PHOTO: Record<string, string> = {
-  "/images/sommerfest-1.webp": "/images/home/summer-editorial.webp",
+const EDITED_PHOTO: Record<string, { src: string; alt: string }> = {
+  "/images/sommerfest-1.webp": {
+    src: "/images/home/summer-editorial.webp",
+    alt: "Barn og familier samlet ute under Iqras sommerfest",
+  },
 };
 
 export function newsLeadPhoto(item: NewsItem) {
-  const alt = "gallery" in item ? item.gallery[0].alt : item.title;
-  return { src: EDITED_PHOTO[item.image] ?? item.image, alt };
+  return (
+    EDITED_PHOTO[item.image] ?? {
+      src: item.image,
+      alt: "gallery" in item ? item.gallery[0].alt : item.title,
+    }
+  );
 }

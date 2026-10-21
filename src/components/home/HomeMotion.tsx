@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 // Parts of each section that rise into place as it scrolls into view.
 // Nothing is hidden until this has run, so the page reads fine without script.
-const TARGETS = [
+const HOME_TARGETS = [
   ".offering h2",
   ".intro-copy",
   ".programme",
@@ -24,13 +24,13 @@ const TARGETS = [
   ".footer-grid > *",
 ].join(",");
 
-export function HomeMotion() {
+export function HomeMotion({ targets: selector = HOME_TARGETS }: { targets?: string }) {
   useEffect(() => {
     const root = document.querySelector<HTMLElement>(".iqra-home");
     if (!root) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    const targets = Array.from(root.querySelectorAll<HTMLElement>(TARGETS));
+    const targets = Array.from(root.querySelectorAll<HTMLElement>(selector));
     const perSection = new Map<Element, number>();
     targets.forEach((el) => {
       const section = el.closest("section, footer") ?? root;
@@ -76,7 +76,7 @@ export function HomeMotion() {
         el.style.removeProperty("--rv-delay");
       });
     };
-  }, []);
+  }, [selector]);
 
   return null;
 }
