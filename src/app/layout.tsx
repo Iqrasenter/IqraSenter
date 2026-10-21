@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Outfit } from "next/font/google";
 import "./globals.css";
-import { Navbar } from "@/components/Navbar";
+import { SiteShell } from "@/components/SiteShell";
 import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/JsonLd";
 
 const geist = Geist({
@@ -110,9 +110,7 @@ export default function RootLayout({
         >
           Gå til innhold
         </a>
-        <NoiseOverlay />
-        <Navbar />
-        <main id="main">{children}</main>
+        <SiteShell noise={<NoiseOverlay />}>{children}</SiteShell>
       </body>
     </html>
   );
