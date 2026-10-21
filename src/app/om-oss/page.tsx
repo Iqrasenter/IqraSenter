@@ -1,252 +1,159 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { EditorialPageHeader } from "@/components/EditorialPageHeader";
-import { SectionHeading } from "@/components/SectionHeading";
-import { PullQuote } from "@/components/PullQuote";
-import { FadeIn } from "@/components/FadeIn";
+import { SiteHeader } from "@/components/home/SiteHeader";
+import { SiteFooter } from "@/components/home/SiteFooter";
+import { HomeMotion } from "@/components/home/HomeMotion";
+import { AboutFrame } from "@/components/about/AboutFrame";
+import "@/components/home/home.css";
+import "@/components/home/motion.css";
+import "@/components/about/about.css";
 
 export const metadata: Metadata = {
   title: "Om oss",
-  description: "Lær mer om Iqra Læring og Aktivitetssenter — et samlingspunkt for hele familien med islamske studier, språkopplæring, kulturelle aktiviteter og fellesskap i Oslo.",
+  description: "Iqra er et lærings- og aktivitetssenter på Ryen i Oslo: helgeskole, turer, kurs og fester for barn, unge og hele familien.",
   alternates: {
     canonical: "https://www.iqrasenter.net/om-oss",
   },
   openGraph: {
     title: "Om Iqra Senter",
-    description: "Lær mer om Iqra Læring og Aktivitetssenter — et samlingspunkt for hele familien i Oslo.",
+    description: "Et lærings- og aktivitetssenter på Ryen i Oslo for barn, unge og hele familien.",
     url: "https://www.iqrasenter.net/om-oss",
-  }
+  },
 };
 
-const VALUES = [
-  {
-    title: "Fellesskap",
-    description:
-      "Vi bygger et varmt og støttende fellesskap der familier kan møtes, dele erfaringer og skape varige relasjoner.",
-  },
-  {
-    title: "Læring",
-    description:
-      "Gjennom helgeskole, kurs og seminarer gir vi barn, unge og voksne muligheten til å lære og vokse sammen.",
-  },
-  {
-    title: "Inkludering",
-    description:
-      "Alle er velkomne hos oss, uansett bakgrunn og alder. Vi skaper et trygt rom der mangfold er en styrke.",
-  },
-  {
-    title: "Glede",
-    description:
-      "Aktiviteter, utflukter og sosiale arrangementer fyller senteret med latter, energi og gode minner for hele familien.",
-  },
-];
-
-const MILESTONES = [
-  {
-    label: "Grunnlagt",
-    description:
-      "Iqra Læring og Aktivitetssenter ble stiftet med en visjon om å skape et samlingspunkt for familier i Oslo.",
-  },
-  {
-    label: "Første helgeskole",
-    description:
-      "Vi startet vår helgeskole med fokus på språk, kultur og islamske studier for barn og unge.",
-  },
-  {
-    label: "Nye lokaler",
-    description:
-      "Vi flyttet inn i våre nåværende lokaler i Ryenstubben 2, med åtte rom og plass til hele fellesskapet.",
-  },
-  {
-    label: "200+ medlemmer",
-    description:
-      "Et voksende fellesskap med over 200 medlemmer som deltar aktivt i våre programmer og arrangementer.",
-  },
-];
+const REVEAL = [
+  ".chapter-text > *",
+  ".school-photos figure",
+  ".trips-photo",
+  ".courses-photo",
+  ".party-photo",
+  ".facts",
+  ".close-photo",
+  ".close-text > *",
+  ".footer-grid > *",
+].join(",");
 
 export default function OmOssPage() {
   return (
-    <>
-      <EditorialPageHeader
-        title="Om"
-        highlight="oss"
-        subtitle="Et samlingspunkt for hele familien — med kunnskap, kultur og fellesskap i hjertet av Oslo."
-      />
-
-      {/* ===== INTRO — Bento Grid ===== */}
-      <section className="py-4 lg:py-10">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4">
-            {/* Card A — Intro text + PullQuote */}
-            <FadeIn className="lg:col-span-2">
-              <div className="relative rounded-2xl bg-white overflow-hidden p-5 lg:p-8 card-pop h-full flex flex-col">
-                <div className="pattern-islamic absolute inset-0" />
-                <p className="relative text-text-muted text-xs lg:text-lg leading-relaxed">
-                  Iqra læring og aktivitetssenter er et samlingspunkt for hele
-                  familien, sentralt i Oslo. Vi tilbyr helgeskole med språk,
-                  kultur og tradisjon, samt kurs, seminarer og
-                  fritidsaktiviteter gjennom hele året. Vårt mål er å bygge et
-                  sterkt, inkluderende fellesskap der alle føler seg velkomne —
-                  uansett bakgrunn og alder.
-                </p>
-                <div className="relative mt-4 lg:mt-6">
-                  <PullQuote text="Vi tror på kraften i læring, samhold og glede." />
-                </div>
-              </div>
-            </FadeIn>
-
-            {/* Card B — Image */}
-            <FadeIn delay={0.1} className="lg:col-span-1">
-              <div className="relative rounded-2xl overflow-hidden aspect-[4/3] lg:aspect-auto lg:h-full min-h-[180px]">
-                <Image
-                  src="/images/iqrany3.webp"
-                  alt="Fellesskap hos Iqra Senter"
-                  fill
-                  className="object-cover"
-                  style={{ objectPosition: 'center 30%' }}
-                  quality={80}
-                  sizes="(max-width: 1024px) 100vw, 33vw"
-                  placeholder="blur"
-                  blurDataURL="data:image/webp;base64,UklGRnAAAABXRUJQVlA4IGQAAAAwAgCdASoKAAoAAUAmJagCdLoAAnPNdH2rAAD+5TVySKsrBR5Jl8G+toM2KcTmU2u7vOWCcIJWzhNie/3lxCHPrnf7GO/vwJ9qvGuGqARe9r9ykTsb2opIrxZNvYzPXoEjC4AA"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-              </div>
-            </FadeIn>
+    <div className="iqra-home about-page" id="top">
+      <a className="skip" href="#main">
+        Gå til innhold
+      </a>
+      <SiteHeader variant="page" current="Om oss" />
+      <main id="main">
+        {/* Hero: Iqra in one frame. The picker previews the four chapters below. */}
+        <section className="hero" aria-labelledby="hero-title">
+          <div className="hero-text">
+            <h1 id="hero-title">Dette er Iqra.</h1>
+            <p>Et lærings- og aktivitetssenter på Ryen i Oslo, for barn, unge og hele familien. Her lærer og leker vi sammen.</p>
           </div>
-        </div>
-      </section>
+          <AboutFrame />
+        </section>
 
-      {/* ===== VALUES — Compact Icon Cards ===== */}
-      <section className="py-6 lg:py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <FadeIn>
-            <SectionHeading
-              title="Det vi"
-              highlight="står for"
-              centered={false}
-            />
-          </FadeIn>
-
-          <div className="mt-5 lg:mt-8 grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-            {VALUES.map((value, index) => {
-              return (
-                <FadeIn key={value.title} delay={index * 0.05}>
-                  <div className="rounded-2xl bg-white card-pop p-4 lg:p-6 h-full">
-                    <h3 className="font-heading text-xs lg:text-lg font-bold text-text">
-                      {value.title}
-                    </h3>
-                    <p className="mt-1 lg:mt-2 text-[10px] lg:text-sm text-text-muted leading-relaxed">
-                      {value.description}
-                    </p>
-                  </div>
-                </FadeIn>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== TIMELINE — Connected Milestones ===== */}
-      <section className="py-6 lg:py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <FadeIn>
-            <h2 className="font-heading text-2xl lg:text-4xl font-bold text-text mb-6 lg:mb-10">
-              Vår reise
+        {/* The weekend school, on green. Text left, two photographs stepped right. */}
+        <section className="chapter school" id="helgeskolen" aria-labelledby="skole-title">
+          <div className="chapter-text">
+            <h2 id="skole-title">
+              Helgeskolen vår.
             </h2>
-          </FadeIn>
-
-          {/* Desktop — horizontal timeline */}
-          <div className="hidden lg:block">
-            <div className="relative">
-              <div className="absolute top-4 left-0 right-0 h-[2px] bg-border" />
-              <div className="grid grid-cols-4 gap-6">
-                {MILESTONES.map((milestone, index) => (
-                  <FadeIn key={milestone.label} delay={index * 0.1}>
-                    <div>
-                      <div className="relative z-10 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold mb-4 shadow-md">
-                        {index + 1}
-                      </div>
-                      <div className="rounded-2xl bg-white card-pop p-5">
-                        <span className="text-xs font-semibold uppercase tracking-wider text-accent">
-                          Steg {index + 1}
-                        </span>
-                        <h3 className="mt-2 font-heading text-lg font-bold text-text">
-                          {milestone.label}
-                        </h3>
-                        <p className="mt-2 text-sm text-text-muted leading-relaxed">
-                          {milestone.description}
-                        </p>
-                      </div>
-                    </div>
-                  </FadeIn>
-                ))}
-              </div>
-            </div>
+            <p>Barn og unge lærer språk, kultur og tradisjon, og leser Koranen sammen. Undervisningen er praktisk, og vennskap oppstår underveis.</p>
+            <p>Skolen er et samarbeid med hjemmet. Foreldrene møtes på foreldremøter, og vi har en egen avtale med hver familie.</p>
           </div>
-
-          {/* Mobile — vertical timeline */}
-          <div className="lg:hidden">
-            <div className="relative pl-8">
-              <div className="absolute left-[13px] top-0 bottom-0 w-[2px] bg-border" />
-              <div className="space-y-3">
-                {MILESTONES.map((milestone, index) => (
-                  <FadeIn key={milestone.label} delay={index * 0.08}>
-                    <div className="relative">
-                      <div className="absolute -left-8 top-3 z-10 w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold shadow-md">
-                        {index + 1}
-                      </div>
-                      <div className="rounded-xl bg-white card-pop p-3">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-accent">
-                          Steg {index + 1}
-                        </span>
-                        <h3 className="mt-1 font-heading text-xs font-bold text-text">
-                          {milestone.label}
-                        </h3>
-                        <p className="mt-1 text-[10px] text-text-muted leading-relaxed">
-                          {milestone.description}
-                        </p>
-                      </div>
-                    </div>
-                  </FadeIn>
-                ))}
-              </div>
-            </div>
+          <div className="school-photos">
+            <figure>
+              <Image src="/images/stottoss1.webp" alt="Elever i et klasserom på helgeskolen" width={1200} height={900} sizes="(max-width: 1100px) 55vw, 30vw" />
+            </figure>
+            <figure>
+              <Image src="/images/home/kurs-editorial.webp" alt="En elev skriver i notatboken sin ved pulten" width={1299} height={1211} sizes="(max-width: 1100px) 40vw, 22vw" />
+            </figure>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ===== CTA ===== */}
-      <section className="py-6 lg:py-12 relative">
-        <div className="pattern-islamic absolute inset-0 pointer-events-none" />
-        <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
-          <FadeIn>
-            <h2 className="font-heading text-2xl lg:text-5xl font-bold text-text">
-              Bli en del av fellesskapet
+        {/* Trips, on white: one tall photograph to the edge, the text beside it. */}
+        <section className="chapter trips" id="turene" aria-labelledby="tur-title">
+          <figure className="trips-photo">
+            <Image src="/images/home/forest-editorial.webp" alt="Barn går på sti i skogen" width={1086} height={1448} sizes="(max-width: 1100px) 100vw, 50vw" />
+          </figure>
+          <div className="chapter-text">
+            <h2 id="tur-title">
+              Ute i skogen.
             </h2>
-            <p className="mt-2 lg:mt-4 text-xs lg:text-lg text-text-muted max-w-xl mx-auto">
-              Meld deg inn og gi familien din et sted med læring, mestring og
-              moro — sammen med andre.
-            </p>
-            <div className="mt-5 lg:mt-10 flex flex-col sm:flex-row gap-3 lg:gap-4 justify-center">
-              <Link
-                href="/bli-medlem"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl cursor-pointer text-base"
-              >
-                Bli medlem i dag
-                <ArrowRight size={18} />
+            <p>Skogstur med niste i snøen, hyttetur med overnatting og piknik i parken. Barna kommer hjem slitne og glade.</p>
+            <figure className="small-photo">
+              <Image src="/images/stottoss5.webp" alt="Barn og voksne gjør klart til piknik i parken" width={1200} height={900} sizes="(max-width: 500px) 90vw, 440px" />
+            </figure>
+          </div>
+        </section>
+
+        {/* Courses and competitions, on mint: text across the top, two photographs below. */}
+        <section className="chapter courses" id="kursene" aria-labelledby="kurs-title">
+          <div className="chapter-text">
+            <h2 id="kurs-title">
+              For alle aldre.
+            </h2>
+            <p>Vi holder kurs og seminarer for foreldre og voksne i språk, kultur, barneoppdragelse og personlig utvikling. For barna har vi Koran-konkurranse, og diplomer for innsatsen.</p>
+          </div>
+          <figure className="courses-photo">
+            <Image src="/images/iqrany4.webp" alt="Elever viser frem diplomene sine" width={1200} height={1600} sizes="(max-width: 760px) 45vw, 38vw" />
+          </figure>
+          <figure className="courses-photo wide">
+            <Image src="/images/stottoss4.webp" alt="Deltakere på kurs rundt et bord med læreren" width={1200} height={900} sizes="(max-width: 760px) 45vw, 52vw" />
+          </figure>
+        </section>
+
+        {/* Celebrations, on deep green: the stage photograph across, the summer school's facts beside the text. */}
+        <section className="chapter party" id="festene" aria-labelledby="fest-title">
+          <figure className="party-photo">
+            <Image src="/images/home/stage-editorial.webp" alt="Jenter fra helgeskolen står på scenen under sommerfesten" width={1672} height={941} sizes="(max-width: 1340px) 96vw, 1260px" />
+          </figure>
+          <div className="party-grid">
+            <div className="chapter-text">
+              <h2 id="fest-title">
+                Vi feirer sammen.
+              </h2>
+              <p>På sommerfesten fremfører barna på scenen, og det er taler, ansiktsmaling, fotball, sang og god mat. Om sommeren holder vi også sommerskole med undervisning, lek og turer.</p>
+            </div>
+            <dl className="facts">
+              <div>
+                <dt>Sommerskolen 2026</dt>
+                <dd>29. juni – 30. juli</dd>
+              </div>
+              <div>
+                <dt>Når</dt>
+                <dd>Mandag–torsdag kl. 11–16</dd>
+              </div>
+              <div>
+                <dt>For hvem</dt>
+                <dd>Elever og barn på ventelisten</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        {/* Close: support or get in touch. */}
+        <section className="close" aria-labelledby="close-title">
+          <figure className="close-photo">
+            <Image src="/images/home/summer-editorial.webp" alt="Jenter fra helgeskolen samlet i skolegården" width={1086} height={1448} sizes="(max-width: 500px) 90vw, 480px" />
+          </figure>
+          <div className="close-text">
+            <h2 id="close-title">
+              Bli en del av Iqra.
+            </h2>
+            <p>En gave, stor eller liten, blir til flere turer, kurs og fester for barna. Eller ta kontakt, så forteller vi mer.</p>
+            <div className="close-actions">
+              <Link className="button" href="/stott-oss">
+                Støtt Iqra <span aria-hidden="true">→</span>
               </Link>
-              <Link
-                href="/kontakt"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 border border-border hover:border-primary text-text font-semibold rounded-xl transition-all duration-200 cursor-pointer text-base"
-              >
-                Kontakt oss
+              <Link className="link" href="/kontakt">
+                Kontakt oss <span aria-hidden="true">→</span>
               </Link>
             </div>
-          </FadeIn>
-        </div>
-      </section>
-    </>
+          </div>
+        </section>
+      </main>
+      <SiteFooter />
+      <HomeMotion targets={REVEAL} />
+    </div>
   );
 }

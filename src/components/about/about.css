@@ -1,0 +1,134 @@
+/* The Om oss page (design study "B2 · Dette er Iqra", docs/design/about-page-study).
+   Header and footer come from home.css; every rule here is limited to .about-page.
+   Each of the four things Iqra does is a chapter with its own field colour. */
+
+.iqra-home.about-page {
+  --a-green: #153f32;
+  --a-deep: #0e2d25;
+  --a-paper: #faf8f4;
+  --a-white: #fff;
+  --a-g4: #a9c3b2;
+  --a-mint: #d5e6bb;
+  --a-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  background: var(--a-paper);
+  color: var(--a-green);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.about-page main > section { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
+.about-page h1,
+.about-page h2,
+.about-page h3 { font-weight: 500; color: inherit; font-family: inherit; }
+.about-page h1 { font-size: clamp(60px, 8vw, 124px); letter-spacing: -0.055em; line-height: 0.98; }
+.about-page h2 { font-size: clamp(42px, 5vw, 76px); letter-spacing: -0.05em; line-height: 1; }
+.about-page dl,
+.about-page dd { margin: 0; }
+.about-page :is(a, button):focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+
+.about-page .button { display: inline-flex; align-items: center; justify-content: center; gap: 16px; min-height: 56px; padding: 16px 24px; background: var(--a-green); color: #fff; font-weight: 500; font-size: 17px; white-space: nowrap; text-decoration: none; transition: background 0.18s, transform 0.16s var(--a-ease); }
+.about-page .button:hover { background: var(--a-deep); }
+.about-page .button:active { transform: scale(0.97); }
+.about-page .link { display: inline-flex; align-items: center; gap: 20px; min-height: 48px; font-weight: 500; font-size: 17px; text-decoration: none; }
+.about-page .link:hover { text-decoration: underline; text-underline-offset: 5px; }
+.about-page :is(.button, .link) span[aria-hidden] { display: inline-block; font-size: 1.15em; line-height: 1; transition: transform 0.18s var(--a-ease); }
+.about-page .button:hover span[aria-hidden] { transform: translateX(4px); }
+.about-page .link:hover span[aria-hidden] { transform: translateX(3px); }
+
+@keyframes about-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes about-settle { from { transform: scale(1.06); } to { transform: scale(1); } }
+@keyframes about-drift { from { transform: scale(1.04); } to { transform: scale(1.1) translate3d(-1.5%, -1%, 0); } }
+
+/* ---------- Hero: headline, then one frame with a picker for the four chapters ---------- */
+.about-page .hero { padding-top: 56px; padding-bottom: 120px; }
+.about-page .hero-text { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: end; margin-bottom: 48px; }
+.about-page .hero-text h1 { animation: about-rise 0.9s var(--a-ease) both; }
+.about-page .hero-text p { font-size: 21px; line-height: 1.5; max-width: 30em; animation: about-rise 0.9s var(--a-ease) 0.12s both; }
+
+.about-page .frame-box { --tint: var(--a-green); background: var(--tint); padding: 16px; transition: background 0.5s var(--a-ease); }
+.about-page .frame-box[data-tint="trips"] { --tint: var(--a-g4); }
+.about-page .frame-box[data-tint="courses"] { --tint: var(--a-mint); }
+.about-page .frame-box[data-tint="party"] { --tint: var(--a-deep); }
+.about-page .frame { position: relative; overflow: hidden; aspect-ratio: 16 / 7; }
+.about-page .frame img { width: 100%; height: 100%; object-fit: cover; animation: about-settle 1.4s var(--a-ease) both; }
+.about-page .frame figcaption { position: absolute; left: 0; bottom: 0; background: var(--a-paper); color: var(--a-green); padding: 14px 22px; font-size: 19px; font-weight: 500; letter-spacing: -0.015em; }
+.about-page .picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+.about-page .picker button { min-height: 64px; border: 0; cursor: pointer; background: rgba(250, 248, 244, 0.14); color: var(--a-paper); font: inherit; font-size: 20px; font-weight: 500; letter-spacing: -0.02em; transition: background 0.2s, color 0.2s, transform 0.16s var(--a-ease); }
+.about-page .picker button:hover { background: rgba(250, 248, 244, 0.26); }
+.about-page :is([data-tint="trips"], [data-tint="courses"]) .picker button { background: rgba(21, 63, 50, 0.1); color: var(--a-green); }
+.about-page :is([data-tint="trips"], [data-tint="courses"]) .picker button:hover { background: rgba(21, 63, 50, 0.18); }
+.about-page .picker button:active { transform: scale(0.97); }
+.about-page .frame-box .picker button[aria-selected="true"] { background: var(--a-paper); color: var(--a-green); }
+
+/* ---------- Chapters: shared ---------- */
+.about-page .chapter { padding-top: 140px; padding-bottom: 140px; }
+.about-page .chapter-text p { font-size: 19px; line-height: 1.6; max-width: 30em; margin-top: 24px; }
+.about-page .chapter-text p + p { margin-top: 16px; }
+.about-page .chapter figure { overflow: hidden; }
+.about-page .chapter img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.9s var(--a-ease); }
+.about-page .chapter figure:hover img { transform: scale(1.04); }
+
+/* The weekend school: green field, text left, two photographs stepped on the right */
+.about-page .school { background: var(--a-green); color: var(--a-paper); display: grid; grid-template-columns: 1fr 1.15fr; gap: 80px; align-items: center; }
+.about-page .school-photos { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: end; }
+.about-page .school-photos figure:first-child { aspect-ratio: 4 / 5; }
+.about-page .school-photos figure:last-child { aspect-ratio: 1; }
+
+/* Trips: white field, one tall photograph to the left edge */
+.about-page .trips { background: var(--a-white); display: grid; grid-template-columns: 1fr 1fr; gap: 96px; align-items: center; padding-left: 0; }
+.about-page .trips-photo { aspect-ratio: 4 / 5; max-height: 860px; }
+.about-page .small-photo { margin-top: 40px; aspect-ratio: 16 / 9; max-width: 440px; }
+
+/* Courses: mint field, text across the top, two photographs of unequal width */
+.about-page .courses { background: var(--a-mint); display: grid; grid-template-columns: 1fr 1.4fr; gap: 24px 80px; align-items: end; }
+.about-page .courses .chapter-text { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1.4fr; gap: 80px; align-items: end; margin-bottom: 56px; }
+.about-page .courses .chapter-text p { margin: 0; }
+.about-page .courses-photo { aspect-ratio: 3 / 4; }
+.about-page .courses-photo.wide { aspect-ratio: 4 / 3; }
+
+/* Celebrations: deep green, the stage photograph across, facts beside the text */
+.about-page .party { background: var(--a-deep); color: var(--a-paper); }
+.about-page .party-photo { aspect-ratio: 16 / 7; margin-bottom: 64px; }
+.about-page .party-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 80px; align-items: start; }
+.about-page .facts { display: flex; flex-direction: column; gap: 8px; }
+.about-page .facts div { background: rgba(250, 248, 244, 0.08); padding: 20px 24px; }
+.about-page .facts dt { font-size: 16px; color: var(--a-mint); }
+.about-page .facts dd { margin-top: 4px; font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
+
+/* ---------- Close ---------- */
+.about-page .close { display: grid; grid-template-columns: 1fr 1.2fr; gap: 80px; align-items: center; padding-top: 140px; padding-bottom: 140px; }
+.about-page .close-photo { overflow: hidden; max-width: 480px; }
+.about-page .close-photo img { width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover; animation: about-drift 18s linear infinite alternate; }
+.about-page .close p { font-size: 20px; margin: 24px 0 32px; max-width: 28em; }
+.about-page .close-actions { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; }
+
+@media (max-width: 1100px) {
+  .about-page :is(.hero-text, .school, .trips, .party-grid, .close) { grid-template-columns: 1fr; gap: 40px; }
+  .about-page .trips { padding-left: var(--page-gutter); }
+  .about-page .trips-photo { max-height: none; aspect-ratio: 4 / 3; }
+  .about-page .courses .chapter-text { grid-template-columns: 1fr; gap: 24px; }
+}
+@media (max-width: 760px) {
+  .about-page .hero { padding-top: 24px; padding-bottom: 80px; }
+  .about-page .hero-text { margin-bottom: 32px; gap: 20px; }
+  .about-page .hero-text p { font-size: 19px; }
+  .about-page .frame-box { padding: 8px; }
+  .about-page .frame { aspect-ratio: 4 / 5; }
+  .about-page .frame figcaption { font-size: 17px; padding: 12px 16px; right: 0; }
+  .about-page .picker { grid-template-columns: 1fr 1fr; margin-top: 8px; }
+  .about-page .picker button { min-height: 56px; font-size: 18px; }
+  .about-page :is(.chapter, .close) { padding-top: 88px; padding-bottom: 88px; }
+  .about-page .courses { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .about-page .courses .chapter-text { margin-bottom: 32px; }
+  .about-page .party-photo { aspect-ratio: 4 / 3; margin-bottom: 40px; }
+}
+@media (max-width: 500px) {
+  .about-page main > section { padding-left: 24px; padding-right: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .about-page *, .about-page *::before, .about-page *::after { animation: none !important; transition: none !important; }
+}
+
+/* Chapter titles stay on one line on the narrowest phones. */
+@media (max-width: 400px) {
+  .about-page .chapter-text h2 { font-size: 36px; }
+}

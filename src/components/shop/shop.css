@@ -1,0 +1,322 @@
+/* The Nettbutikk page: the whole shop on one screen on a desktop (mockup "D · Hylla").
+   Header and footer come from the homepage styles (home.css); everything here is limited to .shop-page. */
+
+.iqra-home.shop-page {
+  --s-green: #153f32;
+  --s-deep: #0e2d25;
+  --s-ivory: #faf8f4;
+  --s-sky: #97d2e3; /* the blue of Andre bok */
+  --s-meadow: #d4e06a; /* the grass of Første bok */
+  --s-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  background: var(--s-ivory);
+  color: var(--s-green);
+}
+
+.iqra-home.shop-page main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 18px var(--page-gutter) 32px;
+}
+.shop-page h1,
+.shop-page h2 {
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+}
+
+/* title */
+.shop-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+}
+.shop-top h1 {
+  font-size: clamp(40px, 4.6vw, 68px);
+  letter-spacing: -0.055em;
+}
+.shop-top p {
+  max-width: 30ch;
+  padding-bottom: 6px;
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+/* the three tiles */
+.shop-row {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.18fr;
+  gap: 10px;
+}
+.shop-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+}
+.shop-tile.meadow {
+  background: var(--s-meadow);
+  color: var(--s-deep);
+}
+.shop-tile.sky {
+  background: var(--s-sky);
+  color: var(--s-deep);
+}
+.shop-tile.deep {
+  background: var(--s-green);
+  color: var(--s-ivory);
+}
+.shop-cover {
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  padding: 26px 26px 10px;
+  transition: transform 0.5s var(--s-ease);
+}
+.shop-tile:hover .shop-cover {
+  transform: scale(1.03);
+}
+.shop-cap {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 20px 16px;
+  font-size: 16px;
+}
+.shop-cap strong {
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+/* how to order */
+.shop-how {
+  padding: 28px 30px 24px;
+  gap: 18px;
+  justify-content: space-between;
+}
+.shop-how h2 {
+  font-size: clamp(32px, 3vw, 46px);
+}
+.shop-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.shop-steps li {
+  font-size: clamp(20px, 1.75vw, 26px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.shop-vipps {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.shop-qr {
+  flex: none;
+  width: clamp(110px, 10vw, 150px);
+  height: auto;
+  aspect-ratio: 1;
+  padding: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+.shop-number {
+  font-size: clamp(56px, 6vw, 92px);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 1;
+  color: #d5e6bb;
+  font-variant-numeric: tabular-nums;
+}
+.shop-contact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 16px;
+  font-size: 16px;
+}
+.shop-contact a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* the button that only phones and tablets need, where a QR code is no use */
+.shop-open {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 56px;
+  margin-top: 20px;
+  padding: 16px 24px;
+  background: var(--s-meadow);
+  color: var(--s-deep);
+  font-size: 17px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: transform 0.16s var(--s-ease), background 0.18s;
+}
+.shop-open:hover {
+  background: #e2ec86;
+}
+.shop-open:active {
+  transform: scale(0.97);
+}
+
+/* a desktop window shows the whole shop at once */
+@media (min-width: 1001px) and (min-height: 700px) {
+  .shop-screen {
+    display: flex;
+    flex-direction: column;
+    height: 100svh;
+  }
+  .shop-screen main {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+/* a short desktop window: tighten the green tile so the contact line stays inside it */
+@media (min-width: 1001px) and (min-height: 700px) and (max-height: 780px) {
+  .shop-how {
+    padding: 20px 26px 14px;
+    gap: 12px;
+  }
+  .shop-steps {
+    gap: 8px;
+  }
+  .shop-qr {
+    width: 100px;
+  }
+  .shop-number {
+    font-size: 56px;
+  }
+}
+
+/* small entrances: transform and opacity only */
+@keyframes shop-rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.shop-top h1 {
+  animation: shop-rise 0.9s var(--s-ease) 0.1s both;
+}
+.shop-top p {
+  animation: shop-rise 0.9s var(--s-ease) 0.25s both;
+}
+.shop-tile {
+  animation: shop-rise 1s var(--s-ease) both;
+}
+.shop-tile:nth-child(1) {
+  animation-delay: 0.2s;
+}
+.shop-tile:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.shop-tile:nth-child(3) {
+  animation-delay: 0.4s;
+}
+.shop-how h2,
+.shop-steps li,
+.shop-vipps,
+.shop-contact {
+  animation: shop-rise 0.8s var(--s-ease) both;
+}
+.shop-how h2 {
+  animation-delay: 0.5s;
+}
+.shop-steps li:nth-child(1) {
+  animation-delay: 0.6s;
+}
+.shop-steps li:nth-child(2) {
+  animation-delay: 0.68s;
+}
+.shop-steps li:nth-child(3) {
+  animation-delay: 0.76s;
+}
+.shop-vipps {
+  animation-delay: 0.84s;
+}
+.shop-contact {
+  animation-delay: 0.95s;
+}
+
+/* narrow screens and short windows: an ordinary scrolling page */
+@media (max-width: 1000px), (max-height: 699px) {
+  .iqra-home.shop-page main {
+    display: block;
+    padding: 24px var(--page-gutter) 40px;
+  }
+  .shop-top {
+    display: block;
+    margin-bottom: 24px;
+  }
+  .shop-top p {
+    margin-top: 12px;
+    max-width: none;
+  }
+  .shop-open {
+    display: inline-flex;
+  }
+  .shop-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .shop-cover {
+    height: auto;
+    flex: none;
+    max-height: 420px;
+    padding: 20px;
+  }
+  .shop-how {
+    grid-column: 1 / -1;
+    gap: 24px;
+  }
+}
+@media (max-width: 700px) {
+  .shop-how {
+    padding: 26px 22px;
+  }
+  .shop-vipps {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .shop-cap {
+    padding: 10px 14px 14px;
+  }
+  .shop-cap strong {
+    font-size: 17px;
+  }
+}
+@media (max-width: 500px) {
+  .iqra-home.shop-page main {
+    padding: 20px 24px 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shop-page * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

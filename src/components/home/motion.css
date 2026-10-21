@@ -1,0 +1,71 @@
+/* Motion for the homepage: transform and opacity only.
+   Reduced-motion visitors never get the .has-motion class (see HomeMotion). */
+
+.iqra-home.has-motion .rv {
+  opacity: 0;
+  transform: translateY(28px);
+}
+.iqra-home.has-motion .rv.in {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 700ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--rv-delay, 0ms),
+    transform 700ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--rv-delay, 0ms);
+}
+
+/* The two hero photos settle in from a slightly closer crop, and the headline block rises.
+   Each figure clips its picture, so a photo grows only outward from its outer edge. */
+@keyframes iqra-settle {
+  from { transform: scale(1.07); }
+  to   { transform: scale(1); }
+}
+@keyframes iqra-rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: none; }
+}
+.iqra-home .hero-pair img {
+  animation: iqra-settle 1800ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.iqra-home .hero-base h1 { animation: iqra-rise 900ms cubic-bezier(0.2, 0.7, 0.3, 1) 100ms both; }
+.iqra-home .hero-base p { animation: iqra-rise 900ms cubic-bezier(0.2, 0.7, 0.3, 1) 250ms both; }
+.iqra-home .hero-action { animation: iqra-rise 900ms cubic-bezier(0.2, 0.7, 0.3, 1) 400ms both; }
+
+/* Feedback on controls */
+.iqra-home .button,
+.iqra-home .text-action,
+.iqra-home .action,
+.iqra-home .link,
+.iqra-home .portal {
+  transition: transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.iqra-home .button:active,
+.iqra-home .hero-action:active,
+.iqra-home .action:active {
+  transform: scale(0.97);
+}
+.iqra-home .link span[aria-hidden="true"],
+.iqra-home .button span[aria-hidden="true"],
+.iqra-home .action span[aria-hidden="true"],
+.iqra-home .text-action span[aria-hidden="true"] {
+  display: inline-block;
+  transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.iqra-home .link:hover span[aria-hidden="true"],
+.iqra-home .button:hover span[aria-hidden="true"],
+.iqra-home .action:hover span[aria-hidden="true"],
+.iqra-home .text-action:hover span[aria-hidden="true"] {
+  transform: translateX(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iqra-home .hero-pair img,
+  .iqra-home .hero-base h1,
+  .iqra-home .hero-base p,
+  .iqra-home .hero-action { animation: none; }
+  .iqra-home .button:active,
+  .iqra-home .action:active { transform: none; }
+  .iqra-home .link:hover span[aria-hidden="true"],
+  .iqra-home .button:hover span[aria-hidden="true"],
+  .iqra-home .action:hover span[aria-hidden="true"],
+  .iqra-home .text-action:hover span[aria-hidden="true"] { transform: none; }
+}

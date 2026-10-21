@@ -1,6 +1,9 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  turbopack: { root: path.resolve(__dirname) },
+  outputFileTracingRoot: path.resolve(__dirname),
   images: {
     remotePatterns: [
       {
@@ -15,6 +18,16 @@ const nextConfig: NextConfig = {
   },
   compress: true,
   poweredByHeader: false,
+  async redirects() {
+    return [
+      // The old interest-form page; the form now lives on /bli-medlem.
+      { source: "/bli-medlem/opptak", destination: "/bli-medlem", permanent: true },
+      // Retired pages: old news list, room rental, and per-book shop pages.
+      { source: "/aktuelt", destination: "/sistenytt", permanent: true },
+      { source: "/leie-rom", destination: "/kontakt", permanent: true },
+      { source: "/nettbutikk/:slug", destination: "/nettbutikk", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

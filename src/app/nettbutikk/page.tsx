@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { PRODUCTS } from "@/lib/constants";
-import { EditorialPageHeader } from "@/components/EditorialPageHeader";
-import { FadeIn } from "@/components/FadeIn";
-import { ProductCard } from "@/components/ProductCard";
-import { Footer } from "@/components/Footer";
-import { NettbutikkVippsAction } from "@/components/NettbutikkQRToggle";
+import { SiteHeader } from "@/components/home/SiteHeader";
+import { SiteFooter } from "@/components/home/SiteFooter";
+import "@/components/home/home.css";
+import "@/components/shop/shop.css";
 
 export const metadata: Metadata = {
   title: "Nettbutikk",
@@ -16,97 +16,89 @@ export const metadata: Metadata = {
     title: "Nettbutikk - Iqra Senter",
     description: "Kjøp islamske barnebøker og læringsmateriell fra Iqra Læring og Aktivitetssenter.",
     url: "https://www.iqrasenter.net/nettbutikk",
-  }
+  },
 };
 
-const STEPS = [
-  {
-    number: "1",
-    title: "Finn oss i Vipps",
-    description: (
-      <>
-        Åpne <span className="font-semibold text-accent">Vipps-appen</span> og søk opp nummer{" "}
-        <span className="font-data font-bold text-accent">21490</span>
-      </>
-    ),
-  },
-  {
-    number: "2",
-    title: "Velg bok",
-    description: "Skriv hvilken bok du ønsker å bestille",
-  },
-  {
-    number: "3",
-    title: "Oppgi leveringssted",
-    description: (
-      <>
-        Skriv i meldingsfeltet <span className="font-semibold text-text">hvor du vil ha den levert</span>
-      </>
-    ),
-  },
-];
+const VIPPS_LINK = "https://qr.vipps.no/vp/mSPWvQajp";
+const VIPPS_NUMBER = "21490";
 
-export default function NetbutikkPage() {
+// The names printed on the covers, in the order of PRODUCTS, and what the covers show.
+const COVERS = [
+  { tile: "meadow", name: "Første bok", alt: "Omslaget til Første bok: fire barn hopper på en grønn eng" },
+  { tile: "sky", name: "Andre bok", alt: "Omslaget til Andre bok: de samme barna på blå bakgrunn med konfetti" },
+] as const;
+
+const STEPS = ["Åpne Vipps og søk opp 21490.", "Skriv hvilken bok du vil ha.", "Skriv hvor du vil ha den levert."];
+
+export default function NettbutikkPage() {
+  const price = PRODUCTS[0].price;
+  const samePrice = PRODUCTS.every((p) => p.price === price);
+
   return (
-    <>
-      <EditorialPageHeader
-        label=""
-        title="Vår"
-        highlight="nettbutikk"
-        subtitle="Utforsk vårt utvalg av islamske barnebøker — vakre illustrasjoner og inspirerende fortellinger for de minste."
-      />
-
-      <section className="py-12 lg:py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-5xl mx-auto space-y-10">
-            {/* Books grid */}
-            <div className="grid grid-cols-2 gap-8">
-              {PRODUCTS.map((product, index) => (
-                <FadeIn key={product.slug} delay={index * 0.1}>
-                  <ProductCard product={product} />
-                </FadeIn>
-              ))}
-            </div>
-
-            {/* Redesigned Vipps ordering section */}
-            <FadeIn delay={0.2}>
-              <div className="rounded-2xl border border-border/50 bg-white p-6 md:p-10">
-                <h3 className="font-heading text-xl md:text-2xl font-bold text-text mb-2 text-center">
-                  Slik bestiller du
-                </h3>
-                <p className="text-sm text-text-muted text-center mb-8 max-w-md mx-auto">
-                  Tre enkle steg via Vipps — raskt og trygt
-                </p>
-
-                {/* Steps — vertical on mobile, horizontal on desktop */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                  {STEPS.map((step) => (
-                    <div key={step.number} className="flex md:flex-col items-start md:items-center gap-4 md:gap-3 text-left md:text-center">
-                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-white text-sm font-bold flex items-center justify-center">
-                        {step.number}
-                      </span>
-
-                      <div>
-                        <h4 className="font-heading font-bold text-text text-sm mb-1">
-                          {step.title}
-                        </h4>
-                        <p className="text-sm text-text-muted leading-relaxed">
-                          {step.description}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* QR (desktop) / Vipps link (mobile) */}
-                <NettbutikkVippsAction />
-              </div>
-            </FadeIn>
+    <div className="iqra-home shop-page" id="top">
+      <div className="shop-screen">
+        <SiteHeader variant="page" current="Nettbutikk" />
+        <main id="main">
+          <div className="shop-top">
+            <h1>Barnebøker fra Iqra.</h1>
+            <p>Tarbyah for barnetrinn elever, av Abdullahi Awil Ahmed.{samePrice ? <> {price}&nbsp;kr per bok.</> : null}</p>
+            <a className="shop-open" href={VIPPS_LINK}>
+              Åpne i Vipps
+              <span aria-hidden="true">↗</span>
+            </a>
           </div>
-        </div>
-      </section>
 
-      <Footer />
-    </>
+          <div className="shop-row">
+            {PRODUCTS.map((product, i) => {
+              const cover = COVERS[i];
+              if (!cover) return null;
+              return (
+                <article key={product.slug} className={`shop-tile ${cover.tile}`}>
+                  <Image
+                    className="shop-cover"
+                    src={product.image}
+                    alt={cover.alt}
+                    width={800}
+                    height={1135}
+                    sizes="(max-width: 700px) 50vw, 26vw"
+                    priority
+                  />
+                  <p className="shop-cap">
+                    <strong>{cover.name}</strong>
+                    <span>{product.price} kr</span>
+                  </p>
+                </article>
+              );
+            })}
+
+            <section className="shop-tile shop-how deep" aria-labelledby="how-title">
+              <h2 id="how-title">Slik bestiller du.</h2>
+              <ol className="shop-steps">
+                {STEPS.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <div className="shop-vipps">
+                <Image
+                  className="shop-qr"
+                  src="/images/qr-nettbutikk.png"
+                  alt="QR-kode som åpner Vipps-betalingen til Iqra"
+                  width={150}
+                  height={150}
+                  unoptimized
+                />
+                <p className="shop-number">{VIPPS_NUMBER}</p>
+              </div>
+              <p className="shop-contact">
+                <span>Lurer du på noe?</span>
+                <a href="tel:+4799864331">+47 998 64 331</a>
+                <a href="mailto:info@iqrasenter.net">info@iqrasenter.net</a>
+              </p>
+            </section>
+          </div>
+        </main>
+      </div>
+      <SiteFooter />
+    </div>
   );
 }

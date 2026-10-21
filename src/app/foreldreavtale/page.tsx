@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { Download, ArrowRight } from "lucide-react";
+import Image from "next/image";
 import avtale from "./avtale.json";
-import { EditorialPageHeader } from "@/components/EditorialPageHeader";
-import { EditorialLabel } from "@/components/EditorialLabel";
-import { FadeIn } from "@/components/FadeIn";
-import { Footer } from "@/components/Footer";
+import { SiteHeader } from "@/components/home/SiteHeader";
+import { SiteFooter } from "@/components/home/SiteFooter";
+import { HomeMotion } from "@/components/home/HomeMotion";
+import "@/components/home/home.css";
+import "@/components/home/motion.css";
+import "@/components/agreement/agreement.css";
 
 export const metadata: Metadata = {
   title: "Foreldreavtale",
@@ -45,119 +47,123 @@ type Section = {
 const AVTALE_VERSJON: string = avtale.versjon;
 const SECTIONS: Section[] = avtale.sections;
 
+const REVEAL = [".index", ".sheet", ".confirm .head > *", ".confirm-photo", ".footer-grid > *"].join(",");
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
 export default function ForeldreavtalePage() {
   return (
-    <>
-      <EditorialPageHeader
-        title="Foreldreavtale /"
-        highlight="Bekreftelse"
-        subtitle="Gratulerer med skoleplassen. Les avtalen nøye og bekreft."
-      />
-
-      {/* ===== INTRO ===== */}
-      <section className="py-4 lg:py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-20 items-center">
-            <FadeIn>
-              <EditorialLabel accent>Viktig</EditorialLabel>
-              <h2 className="font-heading text-lg lg:text-4xl font-bold text-text leading-tight">
-                Avtale mellom Iqra og foresatte
-              </h2>
-            </FadeIn>
-            <FadeIn delay={0.15}>
-              <p className="text-xs lg:text-lg text-text-muted leading-relaxed">
-                Denne avtalen er bindende og må leses og bekreftes før
-                skoleplassen er endelig. Les hele avtalen under, og bekreft
-                deretter via skjemaet nederst på siden. Du kan også laste ned
-                avtalen som PDF.
-              </p>
-              <a
-                href="/foreldreavtale.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 lg:mt-6 inline-flex items-center gap-2 px-4 lg:px-6 py-2 lg:py-3 text-sm lg:text-base border-2 border-border hover:border-primary text-text font-heading font-medium rounded-xl transition-colors duration-200"
-              >
-                <Download size={16} aria-hidden="true" />
-                Last ned avtalen (PDF)
+    <div className="iqra-home agreement-page" id="top">
+      <a className="skip" href="#main">
+        Gå til innhold
+      </a>
+      <SiteHeader variant="page" current="Foreldreavtale" />
+      <main id="main">
+        {/* Hero: a short welcome, the two things to do, and one photograph in an arch. */}
+        <section className="hero" aria-labelledby="hero-title">
+          <div className="hero-text">
+            <p className="kicker">Gratulerer med skoleplassen</p>
+            <h1 id="hero-title">Foreldre&shy;avtalen.</h1>
+            <p className="lead">
+              Les avtalen i ro og mak. Når dere er enige i den, bekrefter dere nederst på siden, og plassen er endelig.
+            </p>
+            <div className="hero-actions">
+              <a className="button" href="#del-1">
+                Les avtalen <span aria-hidden="true">↓</span>
               </a>
-              <p className="mt-3 lg:mt-5 text-xs lg:text-sm text-text-muted">
-                Versjon{" "}
-                <time dateTime={AVTALE_VERSJON} className="tabular-nums">
-                  {AVTALE_VERSJON}
-                </time>{" "}
-                · gjelder fra skolestart høsten 2026
-              </p>
-            </FadeIn>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== AGREEMENT SECTIONS ===== */}
-      <section className="py-4 lg:py-12 border-t border-border/50">
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-          <div className="space-y-8 lg:space-y-14">
-            {SECTIONS.map((section, i) => (
-              <FadeIn key={section.title} delay={i === 0 ? 0 : 0.05}>
-                <article>
-                  <h2 className="font-heading text-xl lg:text-3xl font-bold text-text">
-                    {section.title}
-                  </h2>
-                  <div className="mt-3 w-12 h-px bg-border" />
-                  {section.intro && (
-                    <p className="mt-4 text-sm lg:text-lg text-text-muted leading-relaxed">
-                      {section.intro}
-                    </p>
-                  )}
-                  {section.items && (
-                    <ul className="mt-4 space-y-2.5">
-                      {section.items.map((item, j) => (
-                        <li
-                          key={j}
-                          className="flex gap-3 text-sm lg:text-base text-text-body leading-relaxed"
-                        >
-                          <span
-                            aria-hidden
-                            className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                          />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-              </FadeIn>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== CONFIRM CTA ===== */}
-      <section className="py-8 lg:py-16 border-t border-border/50">
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-          <FadeIn>
-            <div className="rounded-2xl bg-primary/5 border border-border p-6 lg:p-10 text-center">
-              <h2 className="font-heading text-xl lg:text-3xl font-bold text-text">
-                Når du har lest avtalen, bekreft her
-              </h2>
-              <p className="mt-3 text-sm lg:text-lg text-text-muted leading-relaxed max-w-xl mx-auto">
-                Ved å fylle ut skjemaet bekrefter du at du har lest og godtar
-                foreldreavtalen.
-              </p>
-              <a
-                href={GOOGLE_FORM_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-6 inline-flex items-center gap-2 px-6 lg:px-8 py-3 lg:py-4 bg-accent hover:bg-accent-light text-white font-bold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg text-sm lg:text-base"
-              >
-                Bekreft foreldreavtalen
-                <ArrowRight size={16} aria-hidden="true" />
+              <a className="link" href="/foreldreavtale.pdf" target="_blank" rel="noopener noreferrer">
+                Last ned som PDF <span aria-hidden="true">↓</span>
               </a>
             </div>
-          </FadeIn>
-        </div>
-      </section>
+            <p className="version">
+              Versjon{" "}
+              <time dateTime={AVTALE_VERSJON} className="tabular">
+                {AVTALE_VERSJON}
+              </time>{" "}
+              · gjelder fra skolestart høsten 2026
+            </p>
+          </div>
+          <figure className="hero-arch">
+            <Image
+              src="/images/home/kurs-editorial.webp"
+              alt="En elev skriver i skrivebok ved pulten i klasserommet"
+              width={1300}
+              height={1211}
+              sizes="(max-width: 1100px) 90vw, 50vw"
+              priority
+            />
+          </figure>
+        </section>
 
-      <Footer />
-    </>
+        {/* The agreement: a quiet index on the left, each part as a sheet with an arched tab. */}
+        <section className="reader" aria-label="Avtaleteksten">
+          <nav className="index" aria-label="Innhold i avtalen">
+            <p className="index-title">I denne avtalen</p>
+            <ol>
+              {SECTIONS.map((section, i) => (
+                <li key={section.title}>
+                  <a href={`#del-${i + 1}`}>
+                    <span className="n">{pad(i + 1)}</span>
+                    {section.title}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          <div className="sheets">
+            {SECTIONS.map((section, i) => (
+              <article className="sheet" id={`del-${i + 1}`} key={section.title} aria-labelledby={`del-${i + 1}-title`}>
+                <span className="tab" aria-hidden="true">
+                  Del {i + 1}
+                </span>
+                <h2 id={`del-${i + 1}-title`}>{section.title}</h2>
+                {section.intro && <p className="intro">{section.intro}</p>}
+                {section.items && (
+                  <ul className="clauses">
+                    {section.items.map((item, j) => (
+                      <li key={j} className={item.startsWith("Eksempel:") ? "note" : undefined}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* Confirm: the one thing left to do, on the deep green. */}
+        <section className="confirm" id="bekreft" aria-labelledby="confirm-title">
+          <div className="confirm-main">
+            <div className="head">
+              <h2 id="confirm-title">
+                Har dere lest hele avtalen?
+              </h2>
+              <p>Ved å fylle ut skjemaet bekrefter dere at dere har lest og godtar foreldreavtalen.</p>
+            </div>
+            <div className="confirm-actions">
+              <a className="button meadow" href={GOOGLE_FORM_URL} target="_blank" rel="noopener noreferrer">
+                Bekreft foreldreavtalen <span aria-hidden="true">↗</span>
+              </a>
+              <a className="link" href="/foreldreavtale.pdf" target="_blank" rel="noopener noreferrer">
+                Last ned som PDF <span aria-hidden="true">↓</span>
+              </a>
+            </div>
+          </div>
+          <figure className="confirm-photo">
+            <Image
+              src="/images/home/summer-editorial.webp"
+              alt="Jenter fra helgeskolen poserer under et stort tre i skolegården"
+              width={1086}
+              height={1448}
+              sizes="(max-width: 1100px) 90vw, 25vw"
+            />
+          </figure>
+        </section>
+      </main>
+      <SiteFooter />
+      <HomeMotion targets={REVEAL} />
+    </div>
   );
 }

@@ -47,6 +47,7 @@ next-env.d.ts
 .claude/
 .firecrawl/
 .playwright-mcp/
+.taste-skill/
 
 # iCloud placeholder stubs left behind when a local file is evicted
 *.icloud
