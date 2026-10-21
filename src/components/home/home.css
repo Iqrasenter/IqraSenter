@@ -179,3 +179,11 @@ figcaption { display: flex; justify-content: space-between; align-items: center;
 
 /* A closed programme keeps its text out of layout, not just out of sight. */
 @scope (.iqra-home){.programme:not([open]) .programme-content{display:none}}
+
+/* The page being shown is underlined in the header menu (pages using the "page" header). */
+.iqra-home .desktop-nav a[aria-current="page"],
+.iqra-home .mobile-menu nav a[aria-current="page"] {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 8px;
+}

@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
   },
   compress: true,
   poweredByHeader: false,
+  async redirects() {
+    // The old interest-form page; the form now lives on /bli-medlem.
+    return [{ source: "/bli-medlem/opptak", destination: "/bli-medlem", permanent: true }];
+  },
   async headers() {
     return [
       {
