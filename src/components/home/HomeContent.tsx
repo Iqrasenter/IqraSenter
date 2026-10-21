@@ -6,6 +6,7 @@ import { CopyAccount } from "./CopyAccount";
 import { homeNews, newsBlurb, newsDate, newsLeadPhoto, newsTitle } from "./news";
 import { HomeMotion } from "./HomeMotion";
 import "./home.css";
+import "./hero.css";
 import "./motion.css";
 
 export function HomeContent() {
@@ -27,7 +28,7 @@ export function HomeContent() {
       </aside>
       <header className="header">
         <a className="logo" href="#top" aria-label="Iqra – hjem">
-          <Image src="/images/logo-wide.webp" alt="Iqra Læring og Aktivitetssenter" width={1024} height={289} unoptimized sizes="186px" />
+          <Image src="/images/logo-wide-light.webp" alt="Iqra Læring og Aktivitetssenter" width={1024} height={289} unoptimized sizes="186px" />
         </a>
         <nav className="desktop-nav" aria-label="Hovedmeny">
           <a href="#nyheter">
@@ -58,50 +59,33 @@ export function HomeContent() {
       </header>
     </div>
     <main id="main">
-      <div className="hero-editorial">
-        <section className="hero" aria-labelledby="hero-title">
-          <div className="masthead enter">
-            <Image src="/images/home/hero-children-editorial.webp" alt="Barn fra Iqra samles til piknik på gresset" width={1920} height={1440} sizes="(max-width: 700px) 100vw, 60vw" priority />
-            <Image src="/images/home/winter-editorial.webp" alt="Iqras fellesskap på vintertur i skogen" width={1200} height={900} sizes="(max-width: 700px) 100vw, 60vw" />
-          </div>
-          <div className="story">
-            <div className="story-copy enter delay">
-              <p className="lede">
-                Helgeskole, språk og aktiviteter for barn, unge og familier i Oslo.
-              </p>
-              <Link className="button" href="/bli-medlem">
-                Bli medlem
-                <span className="arrow" aria-hidden="true">
-                  →
-                </span>
-              </Link>
-            </div>
-            <h1 id="hero-title" className="enter delay">
-              Her vokser
-              <br />
+      <section className="hero-d" aria-labelledby="hero-title">
+        <div className="hero-pair">
+          <figure className="hero-summer">
+            <Image src="/images/home/hero-children-editorial.webp" alt="Barn fra Iqra samles til piknik på gresset" width={1448} height={1086} sizes="(max-width: 700px) 100vw, 62vw" priority />
+          </figure>
+          <figure className="hero-winter">
+            <Image src="/images/home/winter-editorial.webp" alt="Iqras fellesskap på vintertur i skogen" width={1448} height={1086} sizes="(max-width: 700px) 100vw, 38vw" priority />
+          </figure>
+        </div>
+        <div className="hero-base">
+          <div>
+            <h1 id="hero-title">
+              Her vokser <br className="hero-br" />
               vi sammen.
             </h1>
-          </div>
-          <div className="endnote enter delay-more">
-            <p className="location">
-              Et fellesskap på Ryen.
-              <br />
-              Ryenstubben 2, Oslo
-            </p>
             <p>
-              <span>
-                Læring
-              </span>
-              <span>
-                Kultur
-              </span>
-              <span>
-                Vennskap
-              </span>
+              Helgeskole, språk og aktiviteter for barn, unge og familier i Oslo.
             </p>
           </div>
-        </section>
-      </div>
+          <Link className="hero-action" href="/om-oss">
+            Bli kjent med Iqra
+            <span aria-hidden="true">
+              →
+            </span>
+          </Link>
+        </div>
+      </section>
       <Programmes />
       <div className="news-piece">
         <section className="section newsroom" id="nyheter" aria-labelledby="news-title">

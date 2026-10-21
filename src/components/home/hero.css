@@ -1,0 +1,216 @@
+/* Homepage hero ("D, the pair"): the two photographs fill the first screen side by side,
+   the header floats on them, and the headline sits on a solid green base so no face is covered.
+   Plain selectors under .iqra-home: these win over the older scoped rules in home.css. */
+
+.iqra-home {
+  --hero-green: #153f32;
+  --hero-ivory: #faf8f4;
+  --hero-deep: #0e2d25;
+  --hero-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --hero-offset: 46px; /* height of the announcement bar */
+}
+
+/* The header lives in .finish.a, right under the announcement. Here it is taken out of the flow
+   and laid over the top of the hero. */
+.iqra-home .finish.a {
+  position: relative;
+  z-index: 6;
+}
+.iqra-home .finish.a .header {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  height: 100px;
+  padding: 0 var(--page-gutter);
+  background: transparent;
+  color: var(--hero-ivory);
+  align-items: center;
+}
+.iqra-home .finish.a .header .logo img {
+  mix-blend-mode: normal;
+}
+/* On the photographs the donate button is ivory, so it does not sink into the dark trees. */
+.iqra-home .finish.a .header .button {
+  background: var(--hero-ivory);
+  color: var(--hero-green);
+}
+.iqra-home .finish.a .header .button:hover {
+  background: #fff;
+}
+.iqra-home .finish.a .header:has(.mobile-menu[open]) {
+  height: auto;
+  min-height: 100px;
+  background: var(--hero-green);
+}
+.iqra-home .finish.a .header .mobile-menu nav {
+  background: var(--hero-green);
+}
+
+.iqra-home .hero-d {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: calc(100svh - var(--hero-offset));
+  min-height: 620px;
+}
+
+.iqra-home .hero-pair {
+  position: relative;
+  display: grid;
+  grid-template-columns: 62fr 38fr;
+  gap: 8px;
+  min-height: 0;
+  background: var(--hero-ivory);
+}
+.iqra-home .hero-pair figure {
+  position: relative;
+  overflow: hidden;
+  background: var(--hero-deep);
+}
+.iqra-home .hero-pair img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.iqra-home .hero-summer img {
+  object-position: 50% 22%;
+  transform-origin: 0 50%;
+}
+.iqra-home .hero-winter img {
+  object-position: 42% 88%;
+  transform-origin: 100% 50%;
+}
+/* Neutral scrim so the menu stays readable on the photographs. */
+.iqra-home .hero-pair::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 230px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0)); /* taste-skill-ignore: neutral scrim under the header, on photographs */
+  pointer-events: none;
+}
+
+.iqra-home .hero-base {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 48px;
+  align-items: end;
+  padding: 30px var(--page-gutter) 34px;
+  background: var(--hero-green);
+  color: var(--hero-ivory);
+}
+.iqra-home .hero-base h1 {
+  font-size: min(6.6vw, 10svh);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+.iqra-home .hero-base p {
+  margin-top: 14px;
+  max-width: 60ch;
+  font-size: 20px;
+  line-height: 1.45;
+}
+.iqra-home .hero-br {
+  display: none;
+}
+.iqra-home .hero-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 36px;
+  min-height: 56px;
+  padding: 16px 24px;
+  background: var(--hero-ivory);
+  color: var(--hero-green);
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.iqra-home .hero-action:hover {
+  background: #fff;
+}
+.iqra-home .hero-action:focus-visible {
+  outline: 3px solid var(--hero-ivory);
+  outline-offset: 4px;
+}
+
+@media (max-width: 1100px) {
+  .iqra-home .hero-pair {
+    grid-template-columns: 1fr 1fr;
+    min-height: 420px;
+  }
+  .iqra-home .hero-base {
+    grid-template-columns: 1fr;
+    row-gap: 24px;
+  }
+  .iqra-home .hero-base h1 {
+    font-size: 7.4vw;
+  }
+  .iqra-home .hero-action {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Portrait tablets: the two photographs stack, so each keeps a wide, readable crop. */
+  .iqra-home .hero-pair {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
+  .iqra-home .hero-d {
+    min-height: 720px;
+  }
+  .iqra-home .hero-summer img {
+    object-position: 50% 26%;
+  }
+  .iqra-home .hero-winter img {
+    object-position: 50% 86%;
+  }
+}
+
+@media (max-width: 700px) {
+  .iqra-home {
+    --hero-offset: 76px;
+  }
+  .iqra-home .finish.a .header {
+    height: 80px;
+  }
+  .iqra-home .finish.a .header:has(.mobile-menu[open]) {
+    min-height: 80px;
+  }
+  .iqra-home .hero-d {
+    min-height: 660px;
+  }
+  .iqra-home .hero-pair {
+    grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+  .iqra-home .hero-summer img {
+    object-position: 46% 24%;
+  }
+  .iqra-home .hero-winter img {
+    object-position: 50% 90%;
+  }
+  .iqra-home .hero-br {
+    display: inline;
+  }
+  .iqra-home .hero-base {
+    padding: 26px var(--page-gutter) 28px;
+  }
+  .iqra-home .hero-base h1 {
+    font-size: 13.2vw;
+    line-height: 0.98;
+    white-space: normal;
+  }
+  .iqra-home .hero-base p {
+    font-size: 17px;
+  }
+  .iqra-home .hero-action {
+    justify-self: stretch;
+  }
+}
