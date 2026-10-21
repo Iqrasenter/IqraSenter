@@ -8,12 +8,15 @@ type Variant = "home" | "page";
 
 const PORTAL = "https://portal.iqrasenter.no";
 
-export function headerLinks(variant: Variant): { nav: MenuLink[]; portal: MenuLink; support: MenuLink } {
+// "current" names the nav link of the page being shown (page variant only). Siste nytt was the
+// first page to use this header, so it stays the default.
+export function headerLinks(variant: Variant, current = "Siste nytt"): { nav: MenuLink[]; portal: MenuLink; support: MenuLink } {
   const home = variant === "home";
+  const here = (label: string) => !home && current === label;
   return {
     nav: [
-      { href: home ? "#nyheter" : "/sistenytt", label: "Siste nytt", current: !home },
-      { href: "/nettbutikk", label: "Nettbutikk" },
+      { href: home ? "#nyheter" : "/sistenytt", label: "Siste nytt", current: here("Siste nytt") },
+      { href: "/nettbutikk", label: "Nettbutikk", current: here("Nettbutikk") },
       { href: "/bli-medlem", label: "Bli medlem / opptak" },
       { href: home ? "#om-iqra" : "/om-oss", label: "Om oss" },
       { href: home ? "#kontakt" : "/kontakt", label: "Kontakt oss" },
@@ -37,8 +40,8 @@ function NavItem({ link, className }: { link: MenuLink; className?: string }) {
   );
 }
 
-export function SiteHeader({ variant }: { variant: Variant }) {
-  const { nav, portal, support } = headerLinks(variant);
+export function SiteHeader({ variant, current }: { variant: Variant; current?: string }) {
+  const { nav, portal, support } = headerLinks(variant, current);
   const home = variant === "home";
   const logo = (
     <Image
