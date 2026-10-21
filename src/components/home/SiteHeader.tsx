@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { HomeMenu, type MenuLink } from "./HomeMenu";
 
-// "home": the homepage, where most links jump to sections further down and the logo sits on a photograph.
+// "home": the homepage, where the logo sits on a photograph.
 // "page": every other page that uses this header, where the links go to their own pages.
 // "dark": a page on a deep green field (Kontakt oss, Støtt oss): page links, with the light logo.
 type Variant = "home" | "page" | "dark";
@@ -16,14 +16,14 @@ export function headerLinks(variant: Variant, current = "Siste nytt"): { nav: Me
   const here = (label: string) => !home && current === label;
   return {
     nav: [
-      { href: home ? "#nyheter" : "/sistenytt", label: "Siste nytt", current: here("Siste nytt") },
+      { href: "/sistenytt", label: "Siste nytt", current: here("Siste nytt") },
       { href: "/nettbutikk", label: "Nettbutikk", current: here("Nettbutikk") },
       { href: "/bli-medlem", label: "Bli medlem / opptak", current: here("Bli medlem / opptak") },
-      { href: home ? "#om-iqra" : "/om-oss", label: "Om oss", current: here("Om oss") },
-      { href: home ? "#kontakt" : "/kontakt", label: "Kontakt oss" },
+      { href: "/om-oss", label: "Om oss", current: here("Om oss") },
+      { href: "/kontakt", label: "Kontakt oss" },
     ],
     portal: { href: PORTAL, label: "Logg inn ↗" },
-    support: { href: home ? "#stott-iqra" : "/stott-oss", label: home ? "Støtt oss ↓" : "Støtt oss →", current: here("Støtt oss") },
+    support: { href: "/stott-oss", label: "Støtt oss →", current: here("Støtt oss") },
   };
 }
 
