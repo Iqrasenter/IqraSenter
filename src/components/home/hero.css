@@ -12,11 +12,11 @@
 
 /* The header lives in .finish.a, right under the announcement. Here it is taken out of the flow
    and laid over the top of the hero. */
-.iqra-home .finish.a {
+.iqra-home .finish.a.is-home {
   position: relative;
   z-index: 6;
 }
-.iqra-home .finish.a .header {
+.iqra-home .finish.a.is-home .header {
   position: absolute;
   top: 100%;
   left: 0;
@@ -28,23 +28,23 @@
   color: var(--hero-ivory);
   align-items: center;
 }
-.iqra-home .finish.a .header .logo img {
+.iqra-home .finish.a.is-home .header .logo img {
   mix-blend-mode: normal;
 }
 /* On the photographs the donate button is ivory, so it does not sink into the dark trees. */
-.iqra-home .finish.a .header .button {
+.iqra-home .finish.a.is-home .header .button {
   background: var(--hero-ivory);
   color: var(--hero-green);
 }
-.iqra-home .finish.a .header .button:hover {
+.iqra-home .finish.a.is-home .header .button:hover {
   background: #fff;
 }
-.iqra-home .finish.a .header:has(.mobile-menu[open]) {
+.iqra-home .finish.a.is-home .header:has(.mobile-menu[open]) {
   height: auto;
   min-height: 100px;
   background: var(--hero-green);
 }
-.iqra-home .finish.a .header .mobile-menu nav {
+.iqra-home .finish.a.is-home .header .mobile-menu nav {
   background: var(--hero-green);
 }
 
@@ -176,12 +176,12 @@
 
 @media (max-width: 700px) {
   .iqra-home {
-    --hero-offset: 76px;
+    --hero-offset: 44px;
   }
-  .iqra-home .finish.a .header {
+  .iqra-home .finish.a.is-home .header {
     height: 80px;
   }
-  .iqra-home .finish.a .header:has(.mobile-menu[open]) {
+  .iqra-home .finish.a.is-home .header:has(.mobile-menu[open]) {
     min-height: 80px;
   }
   .iqra-home .hero-d {

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { HomeMenu, type MenuLink } from "./HomeMenu";
+import "./chrome.css";
 
 // "home": the homepage, where the logo sits on a photograph.
 // "page": every other page that uses this header, where the links go to their own pages.
@@ -55,13 +56,16 @@ export function SiteHeader({ variant, current }: { variant: Variant; current?: s
     />
   );
   return (
-    <div className={variant === "dark" ? "finish a on-dark" : "finish a"}>
-      <aside className="announcement">
-        <Link href="/foreldreavtale">
-          <span>Til foreldre og foresatte av nye elever</span>
-          <strong>Les og bekreft foreldreavtalen →</strong>
-        </Link>
-      </aside>
+    <div className={`finish a ${home ? "is-home" : "is-page"}${variant === "dark" ? " on-dark" : ""}`}>
+      {/* Only the homepage carries the parents' agreement notice; most families have already signed. */}
+      {home && (
+        <aside className="announcement">
+          <Link href="/foreldreavtale">
+            <span>Til foreldre og foresatte av nye elever</span>
+            <strong>Les og bekreft foreldreavtalen →</strong>
+          </Link>
+        </aside>
+      )}
       <header className="header">
         {home ? (
           <a className="logo" href="#top" aria-label="Iqra – hjem">

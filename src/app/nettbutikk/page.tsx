@@ -36,8 +36,8 @@ export default function NettbutikkPage() {
 
   return (
     <div className="iqra-home shop-page" id="top">
+      <SiteHeader variant="page" current="Nettbutikk" />
       <div className="shop-screen">
-        <SiteHeader variant="page" current="Nettbutikk" />
         <main id="main">
           <div className="shop-top">
             <h1>Barnebøker fra Iqra.</h1>
