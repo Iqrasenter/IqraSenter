@@ -13,12 +13,12 @@ export const metadata: Metadata = {
   title: "Bli medlem / Opptak",
   description: "Helgeskolen er full, men ventelisten er åpen. Sett barnet på ventelisten, meld familien inn som medlemmer, eller spør oss om det dere lurer på.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/bli-medlem",
+    canonical: "https://www.iqrasenter.no/bli-medlem",
   },
   openGraph: {
     title: "Bli medlem - Iqra Senter",
     description: "Helgeskolen er full, men ventelisten er åpen. Sett barnet på ventelisten eller meld familien inn som medlemmer.",
-    url: "https://www.iqrasenter.net/bli-medlem",
+    url: "https://www.iqrasenter.no/bli-medlem",
   },
 };
 

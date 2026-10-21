@@ -13,12 +13,12 @@ export const metadata: Metadata = {
   title: "Om oss",
   description: "Iqra er et lærings- og aktivitetssenter på Ryen i Oslo: helgeskole, turer, kurs og fester for barn, unge og hele familien.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/om-oss",
+    canonical: "https://www.iqrasenter.no/om-oss",
   },
   openGraph: {
     title: "Om Iqra Senter",
     description: "Et lærings- og aktivitetssenter på Ryen i Oslo for barn, unge og hele familien.",
-    url: "https://www.iqrasenter.net/om-oss",
+    url: "https://www.iqrasenter.no/om-oss",
   },
 };
 
