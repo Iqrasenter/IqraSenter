@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Outfit } from "next/font/google";
 import "./globals.css";
-import { SiteShell } from "@/components/SiteShell";
 import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/JsonLd";
 
 const geist = Geist({
@@ -110,34 +109,8 @@ export default function RootLayout({
         >
           Gå til innhold
         </a>
-        <SiteShell noise={<NoiseOverlay />}>{children}</SiteShell>
+        {children}
       </body>
     </html>
-  );
-}
-
-function NoiseOverlay() {
-  return (
-    <div
-      className="pointer-events-none fixed inset-0 z-40 h-[100dvh] w-screen opacity-[0.05]"
-      aria-hidden="true"
-    >
-      <svg className="h-full w-full" style={{ pointerEvents: "none" }}>
-        <filter id="noiseFilter">
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.65"
-            numOctaves="3"
-            stitchTiles="stitch"
-          />
-        </filter>
-        <rect
-          width="100%"
-          height="100%"
-          filter="url(#noiseFilter)"
-          style={{ pointerEvents: "none" }}
-        />
-      </svg>
-    </div>
   );
 }
