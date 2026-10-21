@@ -19,7 +19,7 @@ export function headerLinks(variant: Variant, current = "Siste nytt"): { nav: Me
       { href: home ? "#nyheter" : "/sistenytt", label: "Siste nytt", current: here("Siste nytt") },
       { href: "/nettbutikk", label: "Nettbutikk", current: here("Nettbutikk") },
       { href: "/bli-medlem", label: "Bli medlem / opptak", current: here("Bli medlem / opptak") },
-      { href: home ? "#om-iqra" : "/om-oss", label: "Om oss" },
+      { href: home ? "#om-iqra" : "/om-oss", label: "Om oss", current: here("Om oss") },
       { href: home ? "#kontakt" : "/kontakt", label: "Kontakt oss" },
     ],
     portal: { href: PORTAL, label: "Logg inn ↗" },
