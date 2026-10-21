@@ -12,7 +12,7 @@ const ITEMS = [
   { title: "Fritid", text: "Sport, leksehjelp og aktiviteter når skolen har fri.", src: "/images/home/summer-editorial.webp", width: 1086, height: 1448 },
 ];
 
-// "Dette går gaven til": one row that runs past the right edge. The arrows move it one item at a time
+// "Dette støtter du": one row that runs past the right edge. The arrows move it one item at a time
 // and fade at the ends; swipe, trackpad and keyboard scroll it too, with or without script.
 export function GiftRail() {
   const rail = useRef<HTMLUListElement>(null);
@@ -50,7 +50,7 @@ export function GiftRail() {
   return (
     <div className="goes" aria-labelledby="goes-title">
       <div className="goes-head">
-        <h2 id="goes-title">Dette går gaven til</h2>
+        <h2 id="goes-title">Dette støtter du</h2>
         <div className="goes-nav">
           <button type="button" aria-label="Forrige" aria-controls="goes-rail" disabled={ends.start} onClick={() => move(-1)}>
             <span aria-hidden="true">←</span>
