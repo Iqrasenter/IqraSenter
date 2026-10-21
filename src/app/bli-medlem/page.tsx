@@ -58,9 +58,7 @@ export default function BliMedlemPage() {
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-text">
             <h1 id="hero-title">
-              Ventelisten
-              <br />
-              er åpen.
+              Ventelisten er åpen.
             </h1>
             <p>Helgeskolen er full, men vi tar imot interessemeldinger fortløpende. Velg det som passer dere, så tar vi kontakt.</p>
             <div className="hero-actions">
@@ -89,7 +87,7 @@ export default function BliMedlemPage() {
           <div className="road-main">
             <div className="head">
               <h2 id="veien-title">Veien til en plass.</h2>
-              <p>Vi kan ikke love når en plass blir ledig. Men slik går det til.</p>
+              <p>Slik går det til. Vi kan ikke love når en plass blir ledig.</p>
             </div>
             <ol className="stops">
               {STOPS.map((s, i) => (
@@ -110,9 +108,7 @@ export default function BliMedlemPage() {
         <section className="faq" id="sporsmal" aria-labelledby="faq-title">
           <div className="head">
             <h2 id="faq-title">
-              Det dere
-              <br />
-              lurer på.
+              Det dere lurer på.
             </h2>
             <p>
               Finner dere ikke svaret?{" "}
@@ -132,9 +128,7 @@ export default function BliMedlemPage() {
         <section className="where" id="finn-oss" aria-labelledby="where-title">
           <div className="where-text">
             <h2 id="where-title">
-              Her holder
-              <br />
-              vi til.
+              Her holder vi til.
             </h2>
             <ul className="rows">
               <li>

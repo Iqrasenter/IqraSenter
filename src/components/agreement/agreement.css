@@ -129,3 +129,14 @@
   .agreement-page *::before,
   .agreement-page *::after { animation: none !important; transition: none !important; }
 }
+
+/* Section titles stay on one line on a phone. */
+@media (max-width: 500px) {
+  .agreement-page .sheet h2 { font-size: 26px; }
+  .agreement-page .confirm .head h2 { font-size: 30px; }
+}
+
+@media (max-width: 400px) {
+  .agreement-page .sheet h2 { font-size: 22px; }
+  .agreement-page .confirm .head h2 { font-size: 27px; }
+}

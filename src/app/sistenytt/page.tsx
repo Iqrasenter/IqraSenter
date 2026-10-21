@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { NewsReel } from "@/components/news/NewsReel";
 import { itemDetails, itemFit, itemLink, itemPosition, newsSections, type NewsItem } from "@/components/news/sections";
-import { newsDate } from "@/components/home/news";
+import { newsDate, newsTitle } from "@/components/home/news";
 import { SiteHeader } from "@/components/home/SiteHeader";
 import { SiteFooter } from "@/components/home/SiteFooter";
 import { HomeMotion } from "@/components/home/HomeMotion";
@@ -44,7 +44,7 @@ function Block({ item }: { item: NewsItem }) {
   );
   const text = (
     <div className="news-block-text">
-      <h2>{item.title}</h2>
+      <h2>{newsTitle(item)}</h2>
       <time dateTime={item.date}>{newsDate(item)}</time>
       <p className="news-lead">{item.excerpt}</p>
       {details.length > 0 && (
@@ -93,7 +93,7 @@ export default function SisteNyttPage() {
         </section>
 
         {photos.length > 0 ? (
-          <NewsReel title={lead.title} dateIso={lead.date} dateLabel={newsDate(lead)} text={lead.excerpt} photos={photos} />
+          <NewsReel title={newsTitle(lead)} dateIso={lead.date} dateLabel={newsDate(lead)} text={lead.excerpt} photos={photos} />
         ) : (
           <Block item={lead} />
         )}
@@ -119,7 +119,7 @@ export default function SisteNyttPage() {
                     />
                   </figure>
                   <div className="news-card-text">
-                    <h3>{item.title}</h3>
+                    <h3>{newsTitle(item)}</h3>
                     <time dateTime={item.date}>{newsDate(item)}</time>
                     <p>{item.excerpt}</p>
                   </div>
@@ -133,7 +133,7 @@ export default function SisteNyttPage() {
           <div className="inner">
             <div>
               <h2>Følg med</h2>
-              <p>Nye arrangementer og aktiviteter legges ut her og på sosiale medier.</p>
+              <p>Vi legger ut nye arrangementer og aktiviteter her og på sosiale medier.</p>
             </div>
             <div className="acts">
               <a className="news-button" href="https://www.instagram.com/iqrasenter">

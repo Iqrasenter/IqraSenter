@@ -6,9 +6,9 @@ import { useEffect, useRef, useState } from "react";
 const ITEMS = [
   { title: "Helgeskolen", text: "Koran, arabisk og islamsk etikk hver helg.", src: "/images/home/kurs-editorial.webp", width: 1299, height: 1211 },
   { title: "Korankonkurranser", text: "Barna lærer, øver og leser foran alle.", src: "/images/stottoss2.webp", width: 1200, height: 900 },
-  { title: "Avslutninger og fester", text: "Eid og skoleavslutning, med hele familien.", src: "/images/home/stage-editorial.webp", width: 1672, height: 941 },
+  { title: "Fester", text: "Eid og skoleavslutning, med hele familien.", src: "/images/home/stage-editorial.webp", width: 1672, height: 941 },
   { title: "Turer", text: "Skogen om vinteren, parken om sommeren.", src: "/images/home/winter-editorial.webp", width: 1448, height: 1086 },
-  { title: "Fellesskap", text: "Et trygt sted der barna får venner for livet.", src: "/images/home/portrait-editorial.webp", width: 1086, height: 1448 },
+  { title: "Fellesskap", text: "Et trygt sted der barna får venner.", src: "/images/home/portrait-editorial.webp", width: 1086, height: 1448 },
   { title: "Fritid", text: "Sport, leksehjelp og aktiviteter når skolen har fri.", src: "/images/home/summer-editorial.webp", width: 1086, height: 1448 },
 ];
 

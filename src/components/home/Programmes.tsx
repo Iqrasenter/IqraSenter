@@ -8,7 +8,7 @@ const choices = {
   "school": {
     "src": "/images/home/kurs-editorial.webp",
     "alt": "Bøker og notater i en undervisningssituasjon",
-    "caption": "Rom for spørsmål. Plass til å lære.",
+    "caption": "Fra undervisningen på helgeskolen.",
     "category": "Helgeskole",
     "width": 800,
     "height": 746
@@ -16,7 +16,7 @@ const choices = {
   "activities": {
     "src": "/images/home/forest-editorial.webp",
     "alt": "Barn på skogstur med Iqra",
-    "caption": "Nye opplevelser. Felles minner.",
+    "caption": "På tur i skogen.",
     "category": "Fritidsaktiviteter",
     "width": 768,
     "height": 1024
@@ -24,7 +24,7 @@ const choices = {
   "courses": {
     "src": "/images/home/stage-editorial.webp",
     "alt": "Unge deltakere på scenen under et arrangement hos Iqra",
-    "caption": "Læring i alle livets faser.",
+    "caption": "På scenen under et arrangement.",
     "category": "Kurs og seminarer",
     "width": 1600,
     "height": 900
@@ -39,12 +39,10 @@ export function Programmes() {
       <section className="offering" id="tilbud" aria-labelledby="offering-title">
         <div className="section-intro">
           <h2 id="offering-title">
-            Kunnskap som
-            <br />
-            varer.
+            Dette tilbyr vi.
           </h2>
           <p className="intro-copy">
-            Fra helgeskole og språkopplæring til turer og kurs. Hos Iqra får barn, unge og voksne lære, delta og utvikle seg sammen.
+            Helgeskole, språkopplæring, turer og kurs for barn, unge og voksne.
           </p>
         </div>
         <div className="programme-explorer">
@@ -60,7 +58,7 @@ export function Programmes() {
               </summary>
               <div className="programme-content">
                 <p>
-                  Språk, kultur og islamske studier for barn og unge. Et sted å lære, stille spørsmål og bli kjent med andre.
+                  Språk, kultur og islamske studier for barn og unge. Her kan de stille spørsmål og bli kjent med andre.
                 </p>
                 <Image className="inline-photo" src="/images/home/kurs-editorial.webp" width={800} height={746} alt="Bøker og notater i en undervisningssituasjon" loading="lazy" sizes="(max-width: 700px) 100vw, 60vw" />
                 <Link href="/om-oss">
@@ -82,7 +80,7 @@ export function Programmes() {
               </summary>
               <div className="programme-content">
                 <p>
-                  Turer, lek og aktiviteter utenfor klasserommet. Felles opplevelser som gir rom for vennskap og nye interesser.
+                  Turer, lek og aktiviteter utenfor klasserommet, med plass til vennskap og nye interesser.
                 </p>
                 <Image className="inline-photo" src="/images/home/forest-editorial.webp" width={768} height={1024} alt="Barn på skogstur med Iqra" loading="lazy" sizes="(max-width: 700px) 100vw, 60vw" />
                 <Link href="/om-oss">
@@ -104,7 +102,7 @@ export function Programmes() {
               </summary>
               <div className="programme-content">
                 <p>
-                  Ny kunnskap for flere sider av livet. Vi tilbyr kurs og seminarer om blant annet språk, kultur og barneoppdragelse.
+                  Kurs og seminarer om blant annet språk, kultur og barneoppdragelse.
                 </p>
                 <Image className="inline-photo" src="/images/home/stage-editorial.webp" width={900} height={675} alt="Unge deltakere på scenen under et arrangement hos Iqra" loading="lazy" sizes="(max-width: 700px) 100vw, 60vw" />
                 <Link href="/kontakt">

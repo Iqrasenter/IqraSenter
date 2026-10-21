@@ -138,9 +138,7 @@ export default function ForeldreavtalePage() {
           <div className="confirm-main">
             <div className="head">
               <h2 id="confirm-title">
-                Har dere lest
-                <br />
-                hele avtalen?
+                Har dere lest hele avtalen?
               </h2>
               <p>Ved å fylle ut skjemaet bekrefter dere at dere har lest og godtar foreldreavtalen.</p>
             </div>

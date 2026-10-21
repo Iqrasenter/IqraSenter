@@ -48,7 +48,7 @@ export function SupportGive() {
   return (
     <>
       <div className="give-intro">
-        <h1 id="give-title">Gaven din, rett til Ryen.</h1>
+        <h1 id="give-title">Støtt senteret vårt.</h1>
         <p className="give-lead">Den holder helgeskolen åpen. Gi én gang, eller hver måned.</p>
         <div className="give-choose" role="group" aria-label="Hvor ofte vil du gi?">
           {CHOICES.map((choice, i) => (

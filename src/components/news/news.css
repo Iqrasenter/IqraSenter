@@ -395,3 +395,7 @@
     animation: none;
   }
 }
+
+@media (max-width: 400px) {
+  .news-page .news-block-text h2 { font-size: 33px; }
+}

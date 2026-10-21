@@ -133,6 +133,7 @@ export const NEWS = [
   },
   {
     title: "Foreldremøte — Viktig beskjed til alle foreldre",
+    cardTitle: "Foreldremøte",
     excerpt:
       "Ledelsen i Iqra kaller inn alle foreldre til foreldremøte. Søndag 09.02.2025 kl. 15:30 i Iqra sine lokaler.",
     date: "2025-02-05",
@@ -141,6 +142,7 @@ export const NEWS = [
   },
   {
     title: "Intern Koran-konkurranse avsluttet",
+    cardTitle: "Koran-konkurransen er over",
     excerpt:
       "Alle deltakerne har gjort en fantastisk innsats. Gratulerer til alle som har deltatt!",
     date: "2025-01-20",
@@ -149,6 +151,7 @@ export const NEWS = [
   },
   {
     title: "Refleksjonskveld med imam Abdifataah",
+    cardTitle: "Refleksjonskveld",
     excerpt:
       "En inspirerende refleksjonskveld og workshop om egenskapene som er mest elsket av Allah.",
     date: "2025-01-04",

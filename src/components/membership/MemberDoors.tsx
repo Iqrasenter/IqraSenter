@@ -215,7 +215,7 @@ function Ask() {
 const ROOMS: Record<(typeof DOORS)[number]["id"], { title: string; text: string; body: ReactNode }> = {
   skole: { title: "Interessemelding", text: "Barnet kommer på ventelisten. Vi tar kontakt når en plass blir ledig.", body: <InterestForm /> },
   medlem: { title: "Familiemedlemskap", text: "Hele husstanden blir med på aktiviteter, kurs og arrangementer.", body: <MembershipForm /> },
-  sporsmal: { title: "Spør oss om alt", text: "Det finnes ingen dumme spørsmål. Vi svarer så godt vi kan.", body: <Ask /> },
+  sporsmal: { title: "Spør oss om alt", text: "Vi svarer så godt vi kan.", body: <Ask /> },
 };
 
 // "Hvilken dør er din?": three boxes side by side. The chosen one turns green and its room opens below.
@@ -252,7 +252,7 @@ export function MemberDoors() {
     <section className="doors-section" id="dorer" aria-labelledby="dorer-title">
       <div className="head">
         <h2 id="dorer-title">Hvilken dør er din?</h2>
-        <p>En skoleplass og et medlemskap er to forskjellige ting. Velg det som passer dere.</p>
+        <p>En skoleplass og et medlemskap er to forskjellige ting.</p>
       </div>
       <div className="doors" role="tablist" aria-label="Hva trenger dere?">
         {DOORS.map((d, i) => (

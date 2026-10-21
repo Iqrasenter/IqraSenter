@@ -25,7 +25,8 @@ export function newsDate(item: NewsItem) {
 
 // Short headline for a card: the hand-written card title if there is one.
 export function newsTitle(item: NewsItem) {
-  return "cardTitle" in item ? item.cardTitle : item.title;
+  const titles: { title: string; cardTitle?: string } = item;
+  return titles.cardTitle ?? titles.title;
 }
 
 // Short text for a card: the hand-written card text if there is one,

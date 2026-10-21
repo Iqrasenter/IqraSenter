@@ -40,8 +40,8 @@ export default function NettbutikkPage() {
         <SiteHeader variant="page" current="Nettbutikk" />
         <main id="main">
           <div className="shop-top">
-            <h1>{samePrice ? <>To barnebøker. {price}&nbsp;kr&nbsp;hver.</> : "To barnebøker."}</h1>
-            <p>Tarbyah for barnetrinn elever, av Abdullahi Awil Ahmed.</p>
+            <h1>Barnebøker fra Iqra.</h1>
+            <p>Tarbyah for barnetrinn elever, av Abdullahi Awil Ahmed.{samePrice ? <> {price}&nbsp;kr per bok.</> : null}</p>
             <a className="shop-open" href={VIPPS_LINK}>
               Åpne i Vipps
               <span aria-hidden="true">↗</span>

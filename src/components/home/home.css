@@ -187,3 +187,29 @@ figcaption { display: flex; justify-content: space-between; align-items: center;
   text-decoration-thickness: 2px;
   text-underline-offset: 8px;
 }
+
+/* Headings stay on one line. Only the page's top title (h1) may wrap to two. */
+.iqra-home .finish.b .invitation h2 { font-size: clamp(32px, 9.6vw, 64px) !important; }
+@media (max-width: 700px) {
+  .iqra-home .finish.b .invitation h2 { font-size: clamp(28px, 5.2vw, 64px) !important; }
+  .iqra-home .news-piece .lead-body h3 { max-width: none; font-size: 26px; }
+}
+@media (max-width: 500px) {
+  .iqra-home .finish.b .invitation h2 { font-size: clamp(30px, 9.6vw, 64px) !important; }
+  .iqra-home .news-piece .desk-book { grid-template-columns: minmax(90px, 34%) 1fr; gap: 14px; }
+  .iqra-home .news-piece .desk-book h3 { font-size: clamp(18px, 5.4vw, 22px); max-width: none; }
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  .iqra-home .finish.b .invitation h2 { font-size: clamp(34px, 5vw, 64px) !important; }
+}
+
+/* One size for every section title on the homepage, each on one line. The hero is the only exception. */
+.iqra-home { --hs: 64px; }
+@media (max-width: 1100px) { .iqra-home { --hs: clamp(34px, 5vw, 64px); } }
+@media (max-width: 700px) { .iqra-home { --hs: clamp(28px, 5.2vw, 64px); } }
+@media (max-width: 500px) { .iqra-home { --hs: clamp(30px, 9.6vw, 64px); } }
+.iqra-home .programmes-piece h2,
+.iqra-home .news-piece .heading h2,
+.iqra-home .about-piece .portrait h2,
+.iqra-home .support-piece .open h2,
+.iqra-home .finish.b .invitation h2 { font-size: var(--hs) !important; max-width: none; line-height: 1.05; }

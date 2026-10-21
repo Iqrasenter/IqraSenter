@@ -50,9 +50,7 @@ export function HomeContent() {
         <section className="section newsroom" id="nyheter" aria-labelledby="news-title">
           <div className="heading">
             <h2 id="news-title">
-              Fra livet
-              <br />
-              på Iqra.
+              Fra livet på Iqra.
             </h2>
             <div>
               <p>
@@ -143,20 +141,16 @@ export function HomeContent() {
           <div className="portrait-grid">
             <div className="portrait-copy">
               <h2 id="about-title">
-                Her hører
-                <br />
-                vi sammen.
+                Om Iqra.
               </h2>
               <p className="portrait-intro">
-                Iqra er et lærings- og aktivitetssenter på Ryen i Oslo. Her møtes barn, unge og familier til kunnskap, kultur og felles opplevelser.
+                Iqra er et lærings- og aktivitetssenter på Ryen i Oslo. Her møtes barn, unge og familier for å lære og for å gjøre ting sammen.
               </p>
               <p className="portrait-mission">
-                Gjennom helgeskole, kurs og aktiviteter bygger vi et inkluderende fellesskap der mennesker med ulik bakgrunn kan lære og vokse sammen.
+                Helgeskole, kurs og aktiviteter gir mennesker med ulik bakgrunn en plass å lære sammen.
               </p>
-              <p className="portrait-values">
-                Felles røtter.
-                <br />
-                Nye perspektiver.
+              <p className="portrait-mission">
+                Barna kommer til helgeskolen hver lørdag og søndag. Gjennom året arrangerer vi også turer, kurs for foreldre og fest på sommeren.
               </p>
               <Link className="action button" href="/om-oss">
                 Bli kjent med Iqra
@@ -170,7 +164,7 @@ export function HomeContent() {
                 <Image src="/images/home/portrait-editorial.webp" width={1200} height={1600} alt="En gruppe barn fra Iqra samlet i gymsalen" sizes="(max-width: 700px) 100vw, 60vw" />
               </div>
               <figcaption>
-                Fellesskapet vårt begynner med menneskene.
+                Barn fra Iqra samlet i gymsalen.
               </figcaption>
             </figure>
           </div>
@@ -181,11 +175,9 @@ export function HomeContent() {
           <div className="header">
             <h2 id="support-title">
               Støtt Iqra.
-              <br />
-              På din måte.
             </h2>
             <p>
-              En enkeltgave eller fast støtte. Bidra til et fellesskap med læring, aktiviteter og samvær for hele familien.
+              Gi én gang eller fast hver måned. Gaven går til helgeskolen og aktivitetene på Ryen.
             </p>
           </div>
           <div className="ways">
@@ -201,7 +193,7 @@ export function HomeContent() {
                   Søk på nummeret i Vipps, eller skann koden med mobilen.
                 </p>
               </div>
-              <Image className="qr" src="/images/qr-stott-oss.png" width={182} height={182} alt="Iqras eksisterende QR-kode for Vipps 957045" unoptimized sizes="186px" />
+              <Image className="qr" src="/images/qr-stott-oss.png" width={182} height={182} alt="QR-kode for Vipps til nummer 957045" unoptimized sizes="186px" />
             </section>
             <div className="ways-right">
               <section className="open-bank">
@@ -240,12 +232,10 @@ export function HomeContent() {
         <section className="invitation" aria-labelledby="invitation-title">
           <div className="invite-copy">
             <h2 id="invitation-title">
-              Et fellesskap
-              <br />
-              å vokse i.
+              Velkommen til Iqra.
             </h2>
             <p>
-              Nye venner. Nye opplevelser. Et sted å lære og være sammen, midt i Oslo.
+              Barn, unge og familier er velkomne til å lære og være sammen hos oss, midt i Oslo.
             </p>
             <div className="actions">
               <Link className="button" href="/bli-medlem">

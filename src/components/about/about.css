@@ -127,3 +127,8 @@
 @media (prefers-reduced-motion: reduce) {
   .about-page *, .about-page *::before, .about-page *::after { animation: none !important; transition: none !important; }
 }
+
+/* Chapter titles stay on one line on the narrowest phones. */
+@media (max-width: 400px) {
+  .about-page .chapter-text h2 { font-size: 36px; }
+}

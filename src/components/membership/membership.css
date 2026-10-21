@@ -245,3 +245,6 @@
   .member-page *::before,
   .member-page *::after { animation: none !important; transition: none !important; }
 }
+
+/* One line for the section title beside the photo. */
+.member-page .faq .head h2 { font-size: clamp(32px, 3.7vw, 54px); }

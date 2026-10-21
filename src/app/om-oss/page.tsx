@@ -46,7 +46,7 @@ export default function OmOssPage() {
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-text">
             <h1 id="hero-title">Dette er Iqra.</h1>
-            <p>Et lærings- og aktivitetssenter på Ryen i Oslo, for barn, unge og hele familien. Her lærer vi, leker vi og hører til.</p>
+            <p>Et lærings- og aktivitetssenter på Ryen i Oslo, for barn, unge og hele familien. Her lærer og leker vi sammen.</p>
           </div>
           <AboutFrame />
         </section>
@@ -55,11 +55,9 @@ export default function OmOssPage() {
         <section className="chapter school" id="helgeskolen" aria-labelledby="skole-title">
           <div className="chapter-text">
             <h2 id="skole-title">
-              Helgeskolen er
-              <br />
-              hjertet vårt.
+              Helgeskolen vår.
             </h2>
-            <p>Barn og unge lærer språk, kultur og tradisjon, og leser Koranen sammen. Undervisningen er praktisk og engasjerende, og vennskapene kommer av seg selv.</p>
+            <p>Barn og unge lærer språk, kultur og tradisjon, og leser Koranen sammen. Undervisningen er praktisk, og vennskap oppstår underveis.</p>
             <p>Skolen er et samarbeid med hjemmet. Foreldrene møtes på foreldremøter, og vi har en egen avtale med hver familie.</p>
           </div>
           <div className="school-photos">
@@ -79,11 +77,9 @@ export default function OmOssPage() {
           </figure>
           <div className="chapter-text">
             <h2 id="tur-title">
-              Vi lærer også
-              <br />
-              ute i skogen.
+              Ute i skogen.
             </h2>
-            <p>Skogstur med niste i snøen, hyttetur med overnatting og piknik i parken. Det er på turene vennskapene blir til, og barna kommer hjem slitne og glade.</p>
+            <p>Skogstur med niste i snøen, hyttetur med overnatting og piknik i parken. Barna kommer hjem slitne og glade.</p>
             <figure className="small-photo">
               <Image src="/images/stottoss5.webp" alt="Barn og voksne gjør klart til piknik i parken" width={1200} height={900} sizes="(max-width: 500px) 90vw, 440px" />
             </figure>
@@ -94,9 +90,7 @@ export default function OmOssPage() {
         <section className="chapter courses" id="kursene" aria-labelledby="kurs-title">
           <div className="chapter-text">
             <h2 id="kurs-title">
-              Læring for
-              <br />
-              alle aldre.
+              For alle aldre.
             </h2>
             <p>Vi holder kurs og seminarer for foreldre og voksne i språk, kultur, barneoppdragelse og personlig utvikling. For barna har vi Koran-konkurranse, og diplomer for innsatsen.</p>
           </div>
@@ -116,9 +110,7 @@ export default function OmOssPage() {
           <div className="party-grid">
             <div className="chapter-text">
               <h2 id="fest-title">
-                Og så samles
-                <br />
-                vi til fest.
+                Vi feirer sammen.
               </h2>
               <p>På sommerfesten fremfører barna på scenen, og det er taler, ansiktsmaling, fotball, sang og god mat. Om sommeren holder vi også sommerskole med undervisning, lek og turer.</p>
             </div>
@@ -146,9 +138,7 @@ export default function OmOssPage() {
           </figure>
           <div className="close-text">
             <h2 id="close-title">
-              Bli en del
-              <br />
-              av Iqra.
+              Bli en del av Iqra.
             </h2>
             <p>En gave, stor eller liten, blir til flere turer, kurs og fester for barna. Eller ta kontakt, så forteller vi mer.</p>
             <div className="close-actions">

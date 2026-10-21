@@ -182,3 +182,7 @@
 @media (prefers-reduced-motion: reduce) {
   .iqra-home.support-page .give-side { transition: none !important; }
 }
+
+@media (max-width: 400px) {
+  .iqra-home.support-page .goes-head h2 { font-size: 21px; }
+}
