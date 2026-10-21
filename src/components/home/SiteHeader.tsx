@@ -4,7 +4,8 @@ import { HomeMenu, type MenuLink } from "./HomeMenu";
 
 // "home": the homepage, where most links jump to sections further down and the logo sits on a photograph.
 // "page": every other page that uses this header, where the links go to their own pages.
-type Variant = "home" | "page";
+// "dark": a page on a deep green field (Kontakt oss): page links, with the light logo.
+type Variant = "home" | "page" | "dark";
 
 const PORTAL = "https://portal.iqrasenter.no";
 
@@ -45,7 +46,7 @@ export function SiteHeader({ variant, current }: { variant: Variant; current?: s
   const home = variant === "home";
   const logo = (
     <Image
-      src={home ? "/images/logo-wide-light.webp" : "/images/logo-wide.webp"}
+      src={variant === "page" ? "/images/logo-wide.webp" : "/images/logo-wide-light.webp"}
       alt="Iqra Læring og Aktivitetssenter"
       width={1024}
       height={289}
@@ -54,7 +55,7 @@ export function SiteHeader({ variant, current }: { variant: Variant; current?: s
     />
   );
   return (
-    <div className="finish a">
+    <div className={variant === "dark" ? "finish a on-dark" : "finish a"}>
       <aside className="announcement">
         <Link href="/foreldreavtale">
           <span>Til foreldre og foresatte av nye elever</span>
