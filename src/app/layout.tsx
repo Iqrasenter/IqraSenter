@@ -23,7 +23,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.iqrasenter.net"),
+  metadataBase: new URL("https://www.iqrasenter.no"),
   title: {
     default: "Iqra Læring og Aktivitetssenter — Læring for hele familien",
     template: "%s | Iqra Senter",
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     title: "Iqra Læring og Aktivitetssenter",
     description:
       "Læring, fellesskap og muligheter — for hele familien i Oslo.",
-    url: "https://www.iqrasenter.net",
+    url: "https://www.iqrasenter.no",
     siteName: "Iqra Senter",
     locale: "nb_NO",
     type: "website",
@@ -90,7 +90,7 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: "https://www.iqrasenter.net",
+    canonical: "https://www.iqrasenter.no",
   },
 };
 

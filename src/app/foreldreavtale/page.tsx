@@ -13,13 +13,13 @@ export const metadata: Metadata = {
   description:
     "Avtale mellom Iqra Læring og Aktivitetssenter og foresatte. Les avtalen og bekreft din skoleplass.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/foreldreavtale",
+    canonical: "https://www.iqrasenter.no/foreldreavtale",
   },
   openGraph: {
     title: "Foreldreavtale - Iqra Senter",
     description:
       "Les foreldreavtalen og bekreft skoleplassen for ditt barn hos Iqra Senter.",
-    url: "https://www.iqrasenter.net/foreldreavtale",
+    url: "https://www.iqrasenter.no/foreldreavtale",
   },
 };
 

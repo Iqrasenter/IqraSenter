@@ -13,12 +13,12 @@ export const metadata: Metadata = {
   description:
     "Gi til helgeskolen på Ryen: Vipps 957045, konto 1503.67.58535, eller fast hver måned med AvtaleGiro.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/stott-oss",
+    canonical: "https://www.iqrasenter.no/stott-oss",
   },
   openGraph: {
     title: "Støtt Iqra Senter",
     description: "Gi til helgeskolen på Ryen med Vipps, bankoverføring eller fast hver måned med AvtaleGiro.",
-    url: "https://www.iqrasenter.net/stott-oss",
+    url: "https://www.iqrasenter.no/stott-oss",
   },
 };
 

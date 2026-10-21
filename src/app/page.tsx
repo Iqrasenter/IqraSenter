@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     "Et trygt og inkluderende fellesskap med læring, fritidsaktiviteter og sosialt samvær for barn, unge og familier i Oslo.",
   alternates: {
-    canonical: "https://www.iqrasenter.net",
+    canonical: "https://www.iqrasenter.no",
   },
 };
 
