@@ -62,3 +62,15 @@
   .iqra-home .finish.a.is-page .header .mobile-menu summary { min-height: 42px; }
   .iqra-home .finish.a.is-page .header .mobile-menu[open] summary { top: 11px; }
 }
+
+/* ---------- One size for every page title ----------
+   The h1 of each inner page shares one size and, on desktop, one line. The homepage hero keeps its own. */
+.iqra-home:not(:has(.finish.a.is-home)) main h1 {
+  font-size: clamp(36px, 5vw, 80px) !important;
+  line-height: 1 !important;
+}
+@media (min-width: 701px) {
+  .iqra-home:not(:has(.finish.a.is-home)) main h1 { white-space: nowrap; }
+  /* Støtt oss keeps its title inside the narrow left column, so it may break there. */
+  .iqra-home.support-page:not(:has(.finish.a.is-home)) main h1 { white-space: normal; }
+}
