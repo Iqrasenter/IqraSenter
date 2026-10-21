@@ -1,0 +1,131 @@
+/* The Foreldreavtale page. Header and footer come from home.css; the look follows the
+   Bli medlem page (membership.css). Every rule here is limited to .agreement-page. */
+
+.iqra-home.agreement-page {
+  --a-green: #153f32;
+  --a-deep: #0e2d25;
+  --a-paper: #faf8f4;
+  --a-white: #fff;
+  --a-stone: #e3ddd1;
+  --a-soft: #4a5f57;
+  --a-g2: #2b5a49;
+  --a-g3: #5d8572;
+  --a-mint: #d5e6bb;
+  --a-meadow: #d4e06a;
+  --a-line: rgba(21, 63, 50, 0.16);
+  --a-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  background: var(--a-paper);
+  color: var(--a-green);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.agreement-page main { display: flex; flex-direction: column; }
+.agreement-page main > section { padding-left: var(--page-gutter); padding-right: var(--page-gutter); }
+.agreement-page h1,
+.agreement-page h2 { font-weight: 500; letter-spacing: -0.035em; line-height: 1.04; color: inherit; font-family: inherit; }
+.agreement-page ol,
+.agreement-page ul { list-style: none; margin: 0; padding: 0; }
+.agreement-page :is(a, button):focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+.agreement-page .tabular { font-variant-numeric: tabular-nums; }
+
+/* buttons and links */
+.agreement-page .button { display: inline-flex; align-items: center; justify-content: center; gap: 16px; min-height: 56px; padding: 16px 24px; background: var(--a-green); color: #fff; font-weight: 500; font-size: 17px; text-decoration: none; transition: background 0.18s, transform 0.16s var(--a-ease); }
+.agreement-page .button:hover { background: var(--a-deep); }
+.agreement-page .button:active { transform: scale(0.97); }
+.agreement-page .button.meadow { background: var(--a-meadow); color: var(--a-green); }
+.agreement-page .button.meadow:hover { background: #e2eb86; }
+.agreement-page .link { display: inline-flex; align-items: center; gap: 16px; min-height: 48px; font-weight: 500; font-size: 17px; text-decoration: none; }
+.agreement-page .link:hover { text-decoration: underline; text-underline-offset: 5px; }
+.agreement-page .button span[aria-hidden],
+.agreement-page .link span[aria-hidden] { display: inline-block; transition: transform 0.18s var(--a-ease); }
+.agreement-page .button:hover span[aria-hidden],
+.agreement-page .link:hover span[aria-hidden] { transform: translateY(3px); }
+.agreement-page .button.meadow:hover span[aria-hidden] { transform: translate(3px, -3px); }
+
+/* ---------- Hero ---------- */
+@keyframes agreement-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes agreement-drift { from { transform: scale(1.04); } to { transform: scale(1.1) translate3d(-1.5%, -1%, 0); } }
+.agreement-page .hero { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 64px; align-items: center; padding-top: 40px; }
+.agreement-page .hero-text { display: flex; flex-direction: column; align-items: flex-start; gap: 26px; }
+.agreement-page .kicker { font-size: 17px; font-weight: 500; padding: 6px 16px; background: var(--a-mint); animation: agreement-rise 0.9s var(--a-ease) both; }
+.agreement-page .hero h1 { font-size: clamp(52px, 6.4vw, 96px); letter-spacing: -0.055em; line-height: 0.98; animation: agreement-rise 0.9s var(--a-ease) 0.06s both; }
+.agreement-page .lead { font-size: 19px; line-height: 1.5; max-width: 38ch; animation: agreement-rise 0.9s var(--a-ease) 0.12s both; }
+.agreement-page .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; animation: agreement-rise 0.9s var(--a-ease) 0.18s both; }
+.agreement-page .version { font-size: 15px; color: var(--a-soft); animation: agreement-rise 0.9s var(--a-ease) 0.24s both; }
+.agreement-page .hero-arch { margin: 0; overflow: hidden; aspect-ratio: 4 / 5; border-radius: 999px 999px 0 0; animation: agreement-rise 1s var(--a-ease) 0.12s both; }
+.agreement-page .hero-arch img { width: 100%; height: 100%; object-fit: cover; object-position: 60% 50%; animation: agreement-drift 18s linear both alternate infinite; }
+
+/* ---------- The agreement ---------- */
+.agreement-page .reader { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 8fr); gap: 72px; align-items: start; padding-top: 120px; scroll-margin-top: 24px; }
+.agreement-page .index { position: sticky; top: 24px; min-width: 0; }
+.agreement-page .sheets { min-width: 0; }
+.agreement-page .index-title { font-size: 15px; font-weight: 500; letter-spacing: 0.02em; color: var(--a-soft); margin-bottom: 14px; }
+.agreement-page .index a { display: flex; align-items: baseline; gap: 14px; min-height: 44px; padding: 8px 0; border-top: 1px solid var(--a-line); font-size: 18px; font-weight: 500; line-height: 1.25; text-decoration: none; }
+.agreement-page .index li:last-child a { border-bottom: 1px solid var(--a-line); }
+.agreement-page .index .n { flex: none; width: 24px; font-size: 14px; font-weight: 400; color: var(--a-g3); font-variant-numeric: tabular-nums; }
+.agreement-page .index a:hover { text-decoration: underline; text-underline-offset: 5px; text-decoration-thickness: 1.5px; }
+
+.agreement-page .sheet:first-child { margin-top: 52px; }
+.agreement-page .sheet { position: relative; margin-top: 76px; padding: 44px 48px 48px; background: var(--c, var(--a-white)); scroll-margin-top: 80px; }
+.agreement-page .sheet:nth-of-type(3n + 1) { --c: var(--a-white); }
+.agreement-page .sheet:nth-of-type(3n + 2) { --c: var(--a-mint); }
+.agreement-page .sheet:nth-of-type(3n + 3) { --c: var(--a-stone); }
+.agreement-page .sheet .tab { position: absolute; top: -52px; left: 32px; height: 52px; min-width: 130px; padding: 6px 30px 0; display: flex; align-items: center; justify-content: center; background: var(--c); font-size: 16px; font-weight: 500; border-radius: 999px 999px 0 0; }
+.agreement-page .sheet h2 { font-size: clamp(30px, 3vw, 44px); letter-spacing: -0.045em; margin-bottom: 20px; }
+.agreement-page .intro { font-size: 20px; line-height: 1.55; max-width: 60ch; }
+.agreement-page .intro + .clauses { margin-top: 20px; }
+.agreement-page .clauses li { position: relative; padding: 16px 0 16px 30px; border-top: 1px solid var(--a-line); font-size: 18px; line-height: 1.6; max-width: 64ch; }
+.agreement-page .clauses li::before { content: ""; position: absolute; left: 2px; top: 27px; width: 9px; height: 9px; border-radius: 50%; background: var(--a-green); }
+.agreement-page .clauses li:first-child { border-top: 0; padding-top: 4px; }
+.agreement-page .clauses li:first-child::before { top: 15px; }
+.agreement-page .clauses li:last-child { padding-bottom: 0; }
+.agreement-page .clauses li.note { margin-top: 4px; padding: 14px 18px; border-top: 0; background: rgba(21, 63, 50, 0.08); font-size: 17px; }
+.agreement-page .clauses li.note::before { display: none; }
+.agreement-page .clauses li.note:first-child { margin-top: 0; }
+
+/* ---------- Confirm ---------- */
+.agreement-page .confirm { margin-top: 120px; padding-top: 104px; padding-bottom: 104px; background: var(--a-green); color: var(--a-paper); display: grid; grid-template-columns: minmax(0, 9fr) minmax(0, 3fr); gap: 56px; align-items: end; }
+.agreement-page .confirm .head { display: grid; grid-template-columns: auto 1fr; gap: 40px; align-items: end; margin-bottom: 48px; }
+.agreement-page .confirm .head h2 { font-size: clamp(40px, 4.6vw, 68px); letter-spacing: -0.05em; line-height: 1; }
+.agreement-page .confirm .head p { font-size: 19px; max-width: 36ch; justify-self: end; color: var(--a-mint); }
+.agreement-page .confirm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; }
+.agreement-page .confirm-photo { overflow: hidden; aspect-ratio: 3 / 4; margin: 0; }
+.agreement-page .confirm-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; transition: transform 0.8s var(--a-ease); }
+.agreement-page .confirm-photo:hover img { transform: scale(1.04); }
+
+/* ---------- Tablet ---------- */
+@media (max-width: 1100px) {
+  .agreement-page .hero { grid-template-columns: minmax(0, 1fr); gap: 48px; }
+  .agreement-page .hero-arch { aspect-ratio: 16 / 11; border-radius: 999px 999px 0 0; max-width: 640px; }
+  .agreement-page .reader { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .agreement-page .index { position: static; }
+  .agreement-page .index ol { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+  .agreement-page .index ol::-webkit-scrollbar { display: none; }
+  .agreement-page .index a { border: 0; background: var(--a-white); padding: 8px 18px; min-height: 48px; font-size: 16px; white-space: nowrap; align-items: center; }
+  .agreement-page .index li:last-child a { border: 0; }
+  .agreement-page .index .n { width: auto; }
+  .agreement-page .confirm { grid-template-columns: minmax(0, 1fr); }
+  .agreement-page .confirm-photo { aspect-ratio: 16 / 9; }
+}
+@media (max-width: 800px) {
+  .agreement-page .confirm .head { grid-template-columns: 1fr; gap: 16px; }
+  .agreement-page .confirm .head p { justify-self: start; }
+  .agreement-page .sheet { padding: 36px 32px 40px; }
+}
+@media (max-width: 500px) {
+  .agreement-page main > section { padding-left: 20px; padding-right: 20px; }
+  .agreement-page .hero { padding-top: 28px; gap: 40px; }
+  .agreement-page .hero h1 { font-size: 15vw; }
+  .agreement-page .reader { padding-top: 88px; }
+  .agreement-page .sheet { margin-top: 68px; padding: 30px 20px 32px; }
+  .agreement-page .sheet .tab { left: 16px; height: 44px; top: -44px; padding: 4px 22px 0; min-width: 0; font-size: 15px; }
+  .agreement-page .intro { font-size: 18px; }
+  .agreement-page .clauses li { font-size: 17px; padding-left: 26px; }
+  .agreement-page .confirm { margin-top: 88px; padding-top: 80px; padding-bottom: 80px; }
+  .agreement-page .confirm-actions .button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agreement-page *,
+  .agreement-page *::before,
+  .agreement-page *::after { animation: none !important; transition: none !important; }
+}
