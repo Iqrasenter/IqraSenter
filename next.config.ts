@@ -19,8 +19,14 @@ const nextConfig: NextConfig = {
   compress: true,
   poweredByHeader: false,
   async redirects() {
-    // The old interest-form page; the form now lives on /bli-medlem.
-    return [{ source: "/bli-medlem/opptak", destination: "/bli-medlem", permanent: true }];
+    return [
+      // The old interest-form page; the form now lives on /bli-medlem.
+      { source: "/bli-medlem/opptak", destination: "/bli-medlem", permanent: true },
+      // Retired pages: old news list, room rental, and per-book shop pages.
+      { source: "/aktuelt", destination: "/sistenytt", permanent: true },
+      { source: "/leie-rom", destination: "/kontakt", permanent: true },
+      { source: "/nettbutikk/:slug", destination: "/nettbutikk", permanent: true },
+    ];
   },
   async headers() {
     return [
