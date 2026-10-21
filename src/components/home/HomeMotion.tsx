@@ -64,10 +64,15 @@ export function HomeMotion({ targets: selector = HOME_TARGETS }: { targets?: str
     };
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
+    // A page that fits one screen may never scroll, so check again once images and fonts have settled the layout.
+    window.addEventListener("load", schedule);
+    const settle = window.setTimeout(schedule, 1500);
     schedule();
 
     return () => {
       cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
+      window.removeEventListener("load", schedule);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       root.classList.remove("has-motion");

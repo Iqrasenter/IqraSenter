@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { Navbar } from "./Navbar";
 
 // Pages that bring their own header, footer and main element.
-const OWN_CHROME = new Set(["/", "/sistenytt", "/nettbutikk", "/bli-medlem", "/kontakt", "/foreldreavtale", "/om-oss"]);
+const OWN_CHROME = new Set(["/", "/sistenytt", "/nettbutikk", "/bli-medlem", "/kontakt", "/foreldreavtale", "/om-oss", "/stott-oss"]);
 
 export function SiteShell({ children, noise }: { children: ReactNode; noise: ReactNode }) {
   const pathname = usePathname();

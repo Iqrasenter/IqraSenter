@@ -4,7 +4,7 @@ import { HomeMenu, type MenuLink } from "./HomeMenu";
 
 // "home": the homepage, where most links jump to sections further down and the logo sits on a photograph.
 // "page": every other page that uses this header, where the links go to their own pages.
-// "dark": a page on a deep green field (Kontakt oss): page links, with the light logo.
+// "dark": a page on a deep green field (Kontakt oss, Støtt oss): page links, with the light logo.
 type Variant = "home" | "page" | "dark";
 
 const PORTAL = "https://portal.iqrasenter.no";
@@ -23,7 +23,7 @@ export function headerLinks(variant: Variant, current = "Siste nytt"): { nav: Me
       { href: home ? "#kontakt" : "/kontakt", label: "Kontakt oss" },
     ],
     portal: { href: PORTAL, label: "Logg inn ↗" },
-    support: { href: home ? "#stott-iqra" : "/stott-oss", label: home ? "Støtt oss ↓" : "Støtt oss →" },
+    support: { href: home ? "#stott-iqra" : "/stott-oss", label: home ? "Støtt oss ↓" : "Støtt oss →", current: here("Støtt oss") },
   };
 }
 
