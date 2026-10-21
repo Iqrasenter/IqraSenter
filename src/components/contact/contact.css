@@ -82,8 +82,9 @@
 .iqra-home.contact-page .addr .addr-to { font-size: 1.28em; letter-spacing: -0.03em; line-height: 1.15; margin-bottom: 0.35em; }
 .iqra-home.contact-page .stamp-slot,
 .iqra-home.contact-page .stamp { position: absolute; top: 9%; right: 7%; width: 20%; aspect-ratio: 100 / 126; }
-.iqra-home.contact-page .stamp-slot { background: var(--slot); }
+.iqra-home.contact-page .stamp-slot { opacity: 0.32; }
 .iqra-home.contact-page .stamp { opacity: 0; transform: rotate(-3deg); transform-origin: 50% 50%; }
+.iqra-home.contact-page .stamp-slot svg,
 .iqra-home.contact-page .stamp svg,
 .iqra-home.contact-page .postmark svg { display: block; width: 100%; height: 100%; }
 .iqra-home.contact-page .postmark { position: absolute; top: 4.5%; right: 22%; width: 40%; aspect-ratio: 340 / 200; color: var(--c-green); opacity: 0; mix-blend-mode: multiply; transform: rotate(-8deg); transform-origin: 70% 50%; pointer-events: none; }
@@ -107,7 +108,7 @@
 .iqra-home.contact-page .env[data-stamp="on"] .env-hint { opacity: 0; }
 
 /* The flap side: lining, letter, pocket, flap */
-.iqra-home.contact-page .env-in { position: absolute; inset: 0; background: var(--env-in); }
+.iqra-home.contact-page .env-in { position: absolute; inset: 0; background: var(--env-in); transition: opacity 0.4s; }
 .iqra-home.contact-page .env-letter {
   position: absolute; left: 5%; right: 5%; bottom: 0; z-index: 2; overflow: hidden;
   background: var(--c-paper); color: var(--c-green); padding: clamp(22px, 5vw, 40px);
@@ -133,10 +134,10 @@
 .iqra-home.contact-page .send:active { transform: scale(0.97); }
 .iqra-home.contact-page .send span[aria-hidden] { display: inline-block; transition: transform 0.18s var(--c-ease); }
 .iqra-home.contact-page .send:hover span[aria-hidden] { transform: translateX(4px); }
-.iqra-home.contact-page .env-pocket { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.iqra-home.contact-page .env-pocket { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: opacity 0.4s; }
 .iqra-home.contact-page .env-pocket::before { content: ""; position: absolute; inset: 0; background: var(--env-out-2); clip-path: polygon(0 0, 50% 54%, 100% 0, 100% 100%, 0 100%); }
 .iqra-home.contact-page .env-pocket i { position: absolute; inset: 0; background: var(--env-out); clip-path: polygon(-0.3% 100.3%, 50% 54%, 100.3% 100.3%); }
-.iqra-home.contact-page .env-flap { position: absolute; left: 0; right: 0; top: 0; height: 54%; z-index: 4; transform-origin: 50% 0; transform-style: preserve-3d; transform: perspective(1500px) rotateX(0deg); transition: transform 0.75s var(--c-flap-ease), z-index 0s 0.37s; }
+.iqra-home.contact-page .env-flap { position: absolute; left: 0; right: 0; top: 0; height: 54%; z-index: 4; transform-origin: 50% 0; transform-style: preserve-3d; transform: perspective(1500px) rotateX(0deg); transition: transform 0.75s var(--c-flap-ease), z-index 0s 0.37s, opacity 0.4s; }
 .iqra-home.contact-page .env[data-flap="open"] .env-flap { transform: perspective(1500px) rotateX(180deg); z-index: 1; }
 .iqra-home.contact-page .flap-out,
 .iqra-home.contact-page .flap-in { position: absolute; inset: 0; clip-path: polygon(-0.3% -0.3%, 100.3% -0.3%, 50% 100%); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
@@ -178,7 +179,15 @@
   .iqra-home.contact-page .mid { flex: none; padding: 0 0 12px; }
   .iqra-home.contact-page .mail:has(.mail-stage[data-open]) .lead { opacity: 1; }
 }
+@media (min-width: 501px) and (max-width: 1000px) {
+  /* A smaller envelope with the address in the middle, so the closed envelope is not mostly empty */
+  .iqra-home.contact-page .mail { --env-max: 600px; }
+  .iqra-home.contact-page .addr { bottom: auto; top: 50%; transform: translateY(-50%); font-size: max(15px, 3.5cqw); }
+}
 @media (max-width: 500px) {
+  /* On a phone the letter takes nearly the whole width; the lifted flap and pocket would only stick out as slivers */
+  .iqra-home.contact-page .env-letter { left: -12px; right: -12px; padding: 20px 18px; }
+  .iqra-home.contact-page .env[data-letter="out"] :is(.env-in, .env-pocket, .env-flap) { opacity: 0; }
   .iqra-home.contact-page .hero { padding-inline: 24px; }
   .iqra-home.contact-page .addr { bottom: 10%; }
   .iqra-home.contact-page .stamp-slot,

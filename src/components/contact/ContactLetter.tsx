@@ -29,11 +29,13 @@ for (let j = 0; j < 12; j++) PERF.push({ x: 0, y: (j + 0.5) * 10.5 }, { x: 100, 
 
 const FONT = { fontFamily: "'Iqra General Sans', Arial, sans-serif" } as const;
 
-function Stamp() {
+// The stamp: green perforated frame, white panel, the globe from the logo. The logo is cropped with a
+// clip path (not a nested svg) so it stays inside the panel in every browser and at every size.
+function Stamp({ id }: { id: string }) {
   return (
     <svg viewBox="0 0 100 126" aria-hidden="true" focusable="false">
       <defs>
-        <mask id="contact-perf" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="126">
+        <mask id={id} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="126">
           <rect width="100" height="126" fill="#fff" />
           <g fill="#000">
             {PERF.map((c, i) => (
@@ -41,13 +43,16 @@ function Stamp() {
             ))}
           </g>
         </mask>
+        <clipPath id={`${id}-logo`}>
+          <rect x="15" y="12" width="70" height="76" />
+        </clipPath>
       </defs>
-      <g mask="url(#contact-perf)">
+      <g mask={`url(#${id})`}>
         <rect width="100" height="126" fill="#153f32" />
-        <rect x="6" y="6" width="88" height="114" fill="#faf8f4" />
-        <svg x="15" y="12" width="70" height="76" viewBox="0 0 268 289">
-          <image href={LOGO} x="0" y="0" width="1024" height="289" style={{ mixBlendMode: "multiply" }} />
-        </svg>
+        <rect x="6" y="6" width="88" height="114" fill="#fff" />
+        <g clipPath={`url(#${id}-logo)`}>
+          <image href={LOGO} x="15" y="12" width="267.5" height="75.5" preserveAspectRatio="none" />
+        </g>
         <text x="50" y="106" textAnchor="middle" style={FONT} fontWeight="500" fontSize="16" letterSpacing="1.2" fill="#153f32">
           IQRA
         </text>
@@ -297,9 +302,11 @@ export function ContactLetter() {
                 <p>Ryenstubben 2</p>
                 <p>0679 Oslo</p>
               </div>
-              <div className="stamp-slot" />
+              <div className="stamp-slot">
+                <Stamp id="contact-perf-slot" />
+              </div>
               <div className="stamp">
-                <Stamp />
+                <Stamp id="contact-perf" />
               </div>
               <div className="postmark">
                 <Postmark day={date.day} year={date.year} />
