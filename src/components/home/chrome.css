@@ -1,0 +1,64 @@
+/* Header chrome shared by every page that uses SiteHeader.
+   Homepage: the parents' agreement notice sits above the header, as one sideways-scrolling line on phones.
+   Every other page: the header is sticky on a solid background, so it stays on top of the page and never
+   lies over the text. The hero rules in hero.css are limited to .is-home. */
+
+/* ---------- Announcement (homepage only) ---------- */
+@media (max-width: 700px) {
+  .iqra-home .finish.a .announcement { padding: 0; }
+  .iqra-home .finish.a .announcement > a {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 14px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0 24px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .iqra-home .finish.a .announcement > a::-webkit-scrollbar { display: none; }
+  .iqra-home .finish.a .announcement strong { font-size: 14px; }
+}
+
+/* ---------- Sticky header on the other pages ---------- */
+:root:has(.finish.a.is-page) { scroll-padding-top: 100px; }
+.iqra-home .finish.a.is-page {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: #faf8f4;
+  border-bottom: 1px solid rgba(21, 63, 50, 0.14);
+}
+.iqra-home .finish.a.is-page.on-dark { border-bottom-color: rgba(250, 248, 244, 0.16); }
+.iqra-home .finish.a.is-page .header {
+  min-height: 84px;
+  padding-block: 12px;
+  align-items: center;
+}
+.iqra-home .finish.a.is-page .header:has(.mobile-menu[open]) {
+  max-height: 100svh;
+  overflow-y: auto;
+}
+.iqra-home .finish.a.is-page .header .mobile-menu[open] summary { top: 15px; }
+.iqra-home .finish.a.is-page:not(.on-dark) .header .mobile-menu nav { background: #faf8f4; }
+
+/* The "Meny" button is a visible button, not bare text. */
+.iqra-home .finish.a .header .mobile-menu summary {
+  min-height: 46px;
+  padding: 0 16px;
+  gap: 14px;
+  border: 1.5px solid currentColor;
+  font-weight: 500;
+}
+.iqra-home .finish.a .header .mobile-menu summary span { font-size: 24px; line-height: 1; }
+
+@media (max-width: 700px) {
+  :root:has(.finish.a.is-page) { scroll-padding-top: 76px; }
+  .iqra-home .finish.a.is-page .header { min-height: 68px; }
+  .iqra-home .finish.a.is-page .header .logo img { width: 140px; }
+  .iqra-home .finish.a.is-page .header .mobile-menu summary { min-height: 42px; }
+  .iqra-home .finish.a.is-page .header .mobile-menu[open] summary { top: 11px; }
+}

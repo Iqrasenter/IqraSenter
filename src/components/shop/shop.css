@@ -183,7 +183,7 @@
   .shop-screen {
     display: flex;
     flex-direction: column;
-    height: 100svh;
+    height: calc(100svh - 85px); /* the sticky header is 84px plus its 1px border */
   }
   .shop-screen main {
     flex: 1;
