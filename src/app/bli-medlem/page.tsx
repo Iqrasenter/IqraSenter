@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGES } from "@/lib/seo";
 import Image from "next/image";
 import { SiteHeader } from "@/components/home/SiteHeader";
 import { SiteFooter } from "@/components/home/SiteFooter";
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
     canonical: "https://www.iqrasenter.no/bli-medlem",
   },
   openGraph: {
+    images: OG_IMAGES,
     title: "Bli medlem - Iqra Senter",
     description: "Helgeskolen er full, men ventelisten er åpen. Sett barnet på ventelisten eller meld familien inn som medlemmer.",
     url: "https://www.iqrasenter.no/bli-medlem",

@@ -1,0 +1,39 @@
+/* Privacy and terms pages. Header and footer come from home.css; every rule here is limited to .legal-page. */
+
+.iqra-home.legal-page {
+  --l-green: #153f32;
+  --l-paper: #faf8f4;
+  --l-soft: #4a5f57;
+  --l-line: rgba(21, 63, 50, 0.16);
+  background: var(--l-paper);
+  color: var(--l-green);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.legal-page main { padding: clamp(40px, 7vh, 88px) var(--page-gutter) clamp(72px, 10vh, 120px); }
+.legal-page h1,
+.legal-page h2 { font-family: inherit; font-weight: 500; letter-spacing: -0.035em; line-height: 1.05; color: inherit; }
+.legal-page .legal-meta { margin-top: 20px; font-size: 16px; color: var(--l-soft); }
+.legal-page .legal-body { max-width: 68ch; margin-top: clamp(32px, 5vh, 56px); }
+.legal-page h2 { margin: clamp(36px, 5vh, 52px) 0 12px; font-size: clamp(24px, 2.2vw, 32px); }
+.legal-page h2:first-child { margin-top: 0; }
+.legal-page p,
+.legal-page li { font-size: 18px; line-height: 1.65; }
+.legal-page p + p { margin-top: 12px; }
+.legal-page ul { margin: 12px 0 0; padding-left: 1.2em; }
+.legal-page li + li { margin-top: 6px; }
+.legal-page .legal-body a,
+.legal-page .legal-link { text-decoration: underline; text-underline-offset: 4px; }
+.legal-page .legal-body a:hover,
+.legal-page .legal-link:hover { text-decoration-thickness: 2px; }
+.legal-page .legal-body a:focus-visible,
+.legal-page .legal-link:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+.legal-page .legal-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.legal-page table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 16px; }
+.legal-page th,
+.legal-page td { padding: 10px 12px 10px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--l-line); }
+.legal-page th { font-weight: 500; }
+@media (max-width: 700px) {
+  .legal-page p,
+  .legal-page li { font-size: 17px; }
+}

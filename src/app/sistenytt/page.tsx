@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGES } from "@/lib/seo";
 import Image from "next/image";
 import Link from "next/link";
 import { NewsReel } from "@/components/news/NewsReel";
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
     canonical: "https://www.iqrasenter.no/sistenytt",
   },
   openGraph: {
+    images: OG_IMAGES,
     title: "Siste Nytt hos Iqra Senter",
     description: "Hold deg oppdatert med siste nyheter, arrangementer og aktiviteter fra Iqra Læring og Aktivitetssenter i Oslo.",
     url: "https://www.iqrasenter.no/sistenytt",
