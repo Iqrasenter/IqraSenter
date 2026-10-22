@@ -6,8 +6,8 @@ export function OrganizationJsonLd() {
     "@type": "EducationalOrganization",
     name: SITE.name,
     alternateName: SITE.shortName,
-    url: "https://www.iqrasenter.net",
-    logo: "https://www.iqrasenter.net/images/logo.png",
+    url: "https://www.iqrasenter.no",
+    logo: "https://www.iqrasenter.no/images/logo.png",
     description: SITE.description,
     address: {
       "@type": "PostalAddress",
@@ -40,7 +40,7 @@ export function WebSiteJsonLd() {
     "@type": "WebSite",
     name: SITE.name,
     alternateName: SITE.shortName,
-    url: "https://www.iqrasenter.net",
+    url: "https://www.iqrasenter.no",
     inLanguage: "nb",
     publisher: {
       "@type": "EducationalOrganization",

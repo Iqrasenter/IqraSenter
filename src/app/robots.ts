@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
             allow: "/",
             disallow: "/api/",
         },
-        sitemap: "https://www.iqrasenter.net/sitemap.xml",
+        sitemap: "https://www.iqrasenter.no/sitemap.xml",
     };
 }

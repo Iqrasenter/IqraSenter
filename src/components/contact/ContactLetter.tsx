@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 
 const FORMSPREE_ID = process.env.NEXT_PUBLIC_FORMSPREE_ID || "";
@@ -195,6 +196,7 @@ export function ContactLetter() {
   }
 
   async function post(data: FormData): Promise<boolean> {
+    if (!FORMSPREE_ID) return false;
     try {
       const res = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, { method: "POST", body: data, headers: { Accept: "application/json" } });
       return res.ok;
@@ -328,15 +330,15 @@ export function ContactLetter() {
                   <div className="letter-fields">
                     <div className="field">
                       <label htmlFor="k-navn">Navn</label>
-                      <input className="input" id="k-navn" name="name" type="text" autoComplete="name" placeholder="Ditt fulle navn" required ref={nameRef} />
+                      <input className="input" id="k-navn" name="name" maxLength={100} type="text" autoComplete="name" placeholder="Ditt fulle navn" required ref={nameRef} />
                     </div>
                     <div className="field">
                       <label htmlFor="k-epost">E-postadresse</label>
-                      <input className="input" id="k-epost" name="email" type="email" autoComplete="email" spellCheck={false} placeholder="din@epost.no" required />
+                      <input className="input" id="k-epost" name="email" maxLength={254} type="email" autoComplete="email" spellCheck={false} placeholder="din@epost.no" required />
                     </div>
                     <div className="field">
                       <label htmlFor="k-melding">Melding</label>
-                      <textarea className="input" id="k-melding" name="message" rows={4} placeholder="Skriv det du lurer på …" required />
+                      <textarea className="input" id="k-melding" name="message" maxLength={2000} rows={4} placeholder="Skriv det du lurer på …" required />
                     </div>
                   </div>
                   {error && (
@@ -349,6 +351,9 @@ export function ContactLetter() {
                       Send brevet <span aria-hidden="true">→</span>
                     </button>
                   </div>
+                  <p className="privacy-note">
+                    Hva vi lagrer, står i <Link href="/personvern">personvern</Link>.
+                  </p>
                 </form>
               </div>
               <div className="env-pocket">

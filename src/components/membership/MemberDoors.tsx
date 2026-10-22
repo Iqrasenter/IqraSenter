@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 
 const FORMSPREE_ID = process.env.NEXT_PUBLIC_FORMSPREE_ID || "";
@@ -20,6 +21,10 @@ function useFormspree(subject: string) {
   const [error, setError] = useState("");
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!FORMSPREE_ID) {
+      setError("Skjemaet er ikke klart ennå. Ring eller send oss en e-post i stedet.");
+      return;
+    }
     setStatus("sending");
     setError("");
     const data = new FormData(e.currentTarget);
@@ -77,6 +82,9 @@ function Foot({ label, sending, error, note }: { label: string; sending: boolean
           {sending ? "Sender …" : label} <span aria-hidden="true">→</span>
         </button>
         <p className="form-note">{note}</p>
+        <p className="privacy-note">
+          Hva vi lagrer, står i <Link href="/personvern">personvern</Link>.
+        </p>
       </div>
     </>
   );
@@ -92,7 +100,7 @@ function InterestForm() {
       <input type="text" name="_gotcha" className="trap" tabIndex={-1} autoComplete="off" aria-hidden="true" />
       <div className="field wide">
         <label htmlFor="barn-navn">Barnets fulle navn</label>
-        <input className="input" id="barn-navn" name="child_name" type="text" autoComplete="name" required />
+        <input className="input" id="barn-navn" name="child_name" maxLength={100} type="text" autoComplete="name" required />
       </div>
       <div className="field">
         <label htmlFor="barn-fodt">Fødselsdato</label>
@@ -111,15 +119,15 @@ function InterestForm() {
       </div>
       <div className="field">
         <label htmlFor="for-epost">Foresattes e-post</label>
-        <input className="input" id="for-epost" name="email" type="email" autoComplete="email" spellCheck={false} placeholder="forelder@epost.no" required />
+        <input className="input" id="for-epost" name="email" maxLength={254} type="email" autoComplete="email" spellCheck={false} placeholder="forelder@epost.no" required />
       </div>
       <div className="field">
         <label htmlFor="for-tlf">Foresattes telefon</label>
-        <input className="input" id="for-tlf" name="parent_phone" type="tel" autoComplete="tel" placeholder="+47 XXX XX XXX" required />
+        <input className="input" id="for-tlf" name="parent_phone" maxLength={30} type="tel" autoComplete="tel" placeholder="+47 XXX XX XXX" required />
       </div>
       <div className="field wide">
         <label htmlFor="adresse">Adresse</label>
-        <input className="input" id="adresse" name="address" type="text" autoComplete="street-address" placeholder="Gateadresse, postnummer og sted" required />
+        <input className="input" id="adresse" name="address" maxLength={200} type="text" autoComplete="street-address" placeholder="Gateadresse, postnummer og sted" required />
       </div>
       <fieldset className="choice-group wide">
         <legend>Samtykker du til at barnet ditt kan bli fotografert eller filmet?</legend>
@@ -134,7 +142,7 @@ function InterestForm() {
           <Choice name="has_special_needs" value="Ja" onChange={() => setNeeds(true)} />
           <Choice name="has_special_needs" value="Nei" defaultChecked onChange={() => setNeeds(false)} />
         </div>
-        {needs && <textarea className="input extra" name="special_needs_details" rows={3} placeholder="Beskriv eventuelle behov her…" aria-label="Beskriv spesielle behov" />}
+        {needs && <textarea className="input extra" name="special_needs_details" maxLength={1000} rows={3} placeholder="Beskriv eventuelle behov her…" aria-label="Beskriv spesielle behov" />}
       </fieldset>
       <fieldset className="choice-group wide">
         <legend>Kan barnet ditt flytende arabisk?</legend>
@@ -164,19 +172,19 @@ function MembershipForm() {
       <input type="text" name="_gotcha" className="trap" tabIndex={-1} autoComplete="off" aria-hidden="true" />
       <div className="field wide">
         <label htmlFor="m-navn">Fullt navn</label>
-        <input className="input" id="m-navn" name="name" type="text" autoComplete="name" required />
+        <input className="input" id="m-navn" name="name" maxLength={100} type="text" autoComplete="name" required />
       </div>
       <div className="field">
         <label htmlFor="m-epost">E-postadresse</label>
-        <input className="input" id="m-epost" name="email" type="email" autoComplete="email" spellCheck={false} placeholder="din@epost.no" required />
+        <input className="input" id="m-epost" name="email" maxLength={254} type="email" autoComplete="email" spellCheck={false} placeholder="din@epost.no" required />
       </div>
       <div className="field">
         <label htmlFor="m-tlf">Telefon</label>
-        <input className="input" id="m-tlf" name="phone" type="tel" autoComplete="tel" placeholder="+47 XXX XX XXX" required />
+        <input className="input" id="m-tlf" name="phone" maxLength={30} type="tel" autoComplete="tel" placeholder="+47 XXX XX XXX" required />
       </div>
       <div className="field wide">
         <label htmlFor="m-adresse">Adresse</label>
-        <input className="input" id="m-adresse" name="address" type="text" autoComplete="street-address" placeholder="Gateadresse, postnummer og sted" required />
+        <input className="input" id="m-adresse" name="address" maxLength={200} type="text" autoComplete="street-address" placeholder="Gateadresse, postnummer og sted" required />
       </div>
       <div className="field">
         <label htmlFor="m-antall">Antall familiemedlemmer</label>
@@ -184,7 +192,7 @@ function MembershipForm() {
       </div>
       <div className="field wide">
         <label htmlFor="m-melding">Melding (valgfritt)</label>
-        <textarea className="input" id="m-melding" name="message" rows={3} placeholder="Er det noe du vil fortelle oss?" />
+        <textarea className="input" id="m-melding" name="message" maxLength={2000} rows={3} placeholder="Er det noe du vil fortelle oss?" />
       </div>
       <Foot label="Send inn søknad" sending={status === "sending"} error={error} note="Fødselsnummer tas med ved oppmøte. Vi samler ikke inn sensitive opplysninger her." />
     </form>

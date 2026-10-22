@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGES } from "@/lib/seo";
 import Image from "next/image";
 import { PRODUCTS } from "@/lib/constants";
 import { SiteHeader } from "@/components/home/SiteHeader";
@@ -10,12 +11,13 @@ export const metadata: Metadata = {
   title: "Nettbutikk",
   description: "Kjøp islamske barnebøker og læringsmateriell fra Iqra Læring og Aktivitetssenter. Vakre illustrasjoner og inspirerende fortellinger.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/nettbutikk",
+    canonical: "https://www.iqrasenter.no/nettbutikk",
   },
   openGraph: {
+    images: OG_IMAGES,
     title: "Nettbutikk - Iqra Senter",
     description: "Kjøp islamske barnebøker og læringsmateriell fra Iqra Læring og Aktivitetssenter.",
-    url: "https://www.iqrasenter.net/nettbutikk",
+    url: "https://www.iqrasenter.no/nettbutikk",
   },
 };
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGES } from "@/lib/seo";
 import { SiteHeader } from "@/components/home/SiteHeader";
 import { SiteFooter } from "@/components/home/SiteFooter";
 import { HomeMotion } from "@/components/home/HomeMotion";
@@ -13,12 +14,13 @@ export const metadata: Metadata = {
   description:
     "Gi til helgeskolen på Ryen: Vipps 957045, konto 1503.67.58535, eller fast hver måned med AvtaleGiro.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/stott-oss",
+    canonical: "https://www.iqrasenter.no/stott-oss",
   },
   openGraph: {
+    images: OG_IMAGES,
     title: "Støtt Iqra Senter",
     description: "Gi til helgeskolen på Ryen med Vipps, bankoverføring eller fast hver måned med AvtaleGiro.",
-    url: "https://www.iqrasenter.net/stott-oss",
+    url: "https://www.iqrasenter.no/stott-oss",
   },
 };
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGES } from "@/lib/seo";
 import { SiteHeader } from "@/components/home/SiteHeader";
 import { SiteFooter } from "@/components/home/SiteFooter";
 import { ContactLetter } from "@/components/contact/ContactLetter";
@@ -10,12 +11,13 @@ export const metadata: Metadata = {
   title: "Kontakt",
   description: "Ta kontakt med Iqra Læring og Aktivitetssenter. Vi svarer gjerne på dine spørsmål om våre tilbud, aktiviteter og medlemskap.",
   alternates: {
-    canonical: "https://www.iqrasenter.net/kontakt",
+    canonical: "https://www.iqrasenter.no/kontakt",
   },
   openGraph: {
+    images: OG_IMAGES,
     title: "Kontakt Iqra Senter",
     description: "Ta kontakt med Iqra Læring og Aktivitetssenter. Vi svarer gjerne på dine spørsmål om våre tilbud.",
-    url: "https://www.iqrasenter.net/kontakt",
+    url: "https://www.iqrasenter.no/kontakt",
   },
 };
 

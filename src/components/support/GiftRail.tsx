@@ -4,12 +4,12 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
 const ITEMS = [
-  { title: "Helgeskolen", text: "Koran, arabisk og islamsk etikk hver helg.", src: "/images/home/kurs-editorial.webp", width: 1299, height: 1211 },
-  { title: "Korankonkurranser", text: "Barna lærer, øver og leser foran alle.", src: "/images/editorial/stottoss2.webp", width: 1200, height: 900 },
-  { title: "Fester", text: "Eid og skoleavslutning, med hele familien.", src: "/images/home/stage-editorial.webp", width: 1672, height: 941 },
-  { title: "Turer", text: "Skogen om vinteren, parken om sommeren.", src: "/images/home/winter-editorial.webp", width: 1448, height: 1086 },
-  { title: "Fellesskap", text: "Et trygt sted der barna får venner.", src: "/images/home/portrait-editorial.webp", width: 1086, height: 1448 },
-  { title: "Fritid", text: "Sport, leksehjelp og aktiviteter når skolen har fri.", src: "/images/home/summer-editorial.webp", width: 1086, height: 1448 },
+  { title: "Helgeskolen", text: "Koran, arabisk og islamsk etikk hver helg.", alt: "En elev skriver i en arabisk skrivebok ved pulten", src: "/images/home/kurs-editorial.webp", width: 1299, height: 1211 },
+  { title: "Korankonkurranser", text: "Barna lærer, øver og leser foran alle.", alt: "Barn og unge står på rekke i en gymsal og leser for de andre", src: "/images/editorial/stottoss2.webp", width: 1200, height: 900 },
+  { title: "Fester", text: "Eid og skoleavslutning, med hele familien.", alt: "Barn og ungdom på scenen under en fest", src: "/images/home/stage-editorial.webp", width: 1672, height: 941 },
+  { title: "Turer", text: "Skogen om vinteren, parken om sommeren.", alt: "Barn sitter i snøen i skogen med varm drikke", src: "/images/home/winter-editorial.webp", width: 1448, height: 1086 },
+  { title: "Fellesskap", text: "Et trygt sted der barna får venner.", alt: "Gutter står smilende på rekke foran en trevegg i gymsalen", src: "/images/home/portrait-editorial.webp", width: 1086, height: 1448 },
+  { title: "Fritid", text: "Sport, leksehjelp og aktiviteter når skolen har fri.", alt: "Barn sitter i gresset og spiser is i sola", src: "/images/home/summer-editorial.webp", width: 1086, height: 1448 },
 ];
 
 // "Dette støtter du": one row that runs past the right edge. The arrows move it one item at a time
@@ -63,7 +63,7 @@ export function GiftRail() {
       <ul className="goes-rail" id="goes-rail" ref={rail} tabIndex={0} aria-label="Det gaven holder i gang">
         {ITEMS.map((item) => (
           <li key={item.title}>
-            <Image src={item.src} alt="" width={item.width} height={item.height} sizes="136px" />
+            <Image src={item.src} alt={item.alt} width={item.width} height={item.height} sizes="136px" />
             <div>
               <h3>{item.title}</h3>
               <p>{item.text}</p>

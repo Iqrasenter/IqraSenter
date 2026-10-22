@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { CookieSettingsButton } from "@/components/consent/CookieSettingsButton";
 
 // The footer shared by the homepage and the pages that use the new header.
 export function SiteFooter() {
@@ -72,6 +73,11 @@ export function SiteFooter() {
           <p>
             © 2026 Iqra Læring og Aktivitetssenter
           </p>
+          <nav className="legal-links" aria-label="Personvern og vilkår">
+            <Link href="/personvern">Personvern</Link>
+            <Link href="/vilkar">Vilkår</Link>
+            <CookieSettingsButton>Cookie-innstillinger</CookieSettingsButton>
+          </nav>
           <a href="https://www.idweb.no">
             Nettsiden er laget av IDweb ↗
           </a>

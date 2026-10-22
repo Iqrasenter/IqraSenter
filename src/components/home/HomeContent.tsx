@@ -108,7 +108,7 @@ export function HomeContent() {
                 </Link>
               </article>
               <article className="desk-story desk-book">
-                <Image src={deskBottom.image} width={1169} height={800} alt="" sizes="(max-width: 700px) 100vw, 60vw" />
+                <Image src={deskBottom.image} width={1169} height={800} alt="Forsidene på barnebøkene Tarbiyah for barnetrinn elever, første og andre bok" sizes="(max-width: 700px) 100vw, 60vw" />
                 <div>
                   <time dateTime={deskBottom.date}>
                     {newsDate(deskBottom)}
