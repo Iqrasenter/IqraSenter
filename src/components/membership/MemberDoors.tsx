@@ -233,11 +233,26 @@ export function MemberDoors() {
   const [entered, setEntered] = useState(0);
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  const scrollToRoom = useRef(false);
+
   function choose(i: number, focus = false) {
     setOpen(i);
     setEntered((n) => n + 1);
     if (focus) tabs.current[i]?.focus();
   }
+
+  // On a phone the boxes stack above the form, so the chosen room opens off-screen. Bring it into view.
+  function pick(i: number) {
+    scrollToRoom.current = window.matchMedia("(max-width: 900px)").matches;
+    choose(i);
+  }
+
+  useEffect(() => {
+    if (!scrollToRoom.current) return;
+    scrollToRoom.current = false;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(`rom-${DOORS[open].id}`)?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [open, entered]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -276,7 +291,7 @@ export function MemberDoors() {
             aria-controls={`rom-${d.id}`}
             aria-selected={open === i}
             tabIndex={open === i ? 0 : -1}
-            onClick={() => choose(i)}
+            onClick={() => pick(i)}
             onKeyDown={(e) => onKey(e, i)}
           >
             <span className="door-name">{d.name}</span>
