@@ -60,7 +60,7 @@
 .member-page .print { overflow: hidden; margin: 0; }
 .member-page .print img { width: 100%; height: 100%; object-fit: cover; }
 .member-page .print.wide { aspect-ratio: 16 / 11; animation: member-rise 1s var(--m-ease) 0.12s both; }
-.member-page .print.wide img { animation: member-drift 18s linear both alternate infinite; }
+.member-page .print.wide img { object-position: 50% 78%; animation: member-drift 18s linear both alternate infinite; }
 .member-page .print.tall { position: absolute; left: 0; bottom: 0; width: 32%; aspect-ratio: 3 / 4; padding: 10px; background: var(--m-paper); animation: member-lift 1.1s var(--m-ease) 0.35s both; }
 .member-page .print.tall img { object-position: 50% 35%; }
 

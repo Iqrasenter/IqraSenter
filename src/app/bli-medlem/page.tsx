@@ -74,7 +74,7 @@ export default function BliMedlemPage() {
           </div>
           <div className="hero-prints">
             <figure className="print wide">
-              <Image src="/images/home/hero-children-editorial.webp" alt="Elever fra helgeskolen sitter på et teppe i parken med is og vinker" width={1448} height={1086} sizes="(max-width: 1100px) 90vw, 50vw" priority />
+              <Image src="/images/editorial/sommerfest-5.webp" alt="Gutter og menn i gymsalen følger med på scenen, noen ser mot kameraet" width={2172} height={2896} sizes="(max-width: 1100px) 90vw, 50vw" priority />
             </figure>
             <figure className="print tall">
               <Image src="/images/home/portrait-editorial.webp" alt="Gutter fra helgeskolen står arm i arm i gymsalen og smiler" width={1086} height={1448} sizes="(max-width: 500px) 38vw, 20vw" priority />
@@ -120,7 +120,7 @@ export default function BliMedlemPage() {
               .
             </p>
             <figure className="faq-photo">
-              <Image src="/images/editorial/sommerfest-5.webp" alt="Gutter og menn i gymsalen følger med på scenen, noen ser mot kameraet" width={2172} height={2896} sizes="25vw" />
+              <Image src="/images/editorial/sommerfest-3.webp" alt="To barn presenterer med mikrofon på scenen ved siden av Iqras rollup" width={2172} height={2896} sizes="25vw" />
             </figure>
           </div>
           <MemberFaq />
