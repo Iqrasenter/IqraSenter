@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OG_IMAGES } from "@/lib/seo";
 import Image from "next/image";
 import avtale from "./avtale.json";
 import { SiteHeader } from "@/components/home/SiteHeader";
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
     canonical: "https://www.iqrasenter.no/foreldreavtale",
   },
   openGraph: {
+    images: OG_IMAGES,
     title: "Foreldreavtale - Iqra Senter",
     description:
       "Les foreldreavtalen og bekreft skoleplassen for ditt barn hos Iqra Senter.",

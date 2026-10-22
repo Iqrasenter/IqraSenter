@@ -74,3 +74,25 @@
   /* Støtt oss keeps its title inside the narrow left column, so it may break there. */
   .iqra-home.support-page:not(:has(.finish.a.is-home)) main h1 { white-space: normal; }
 }
+
+/* ---------- Footer: privacy, terms and cookie settings ---------- */
+.iqra-home .footer .bottom .legal-links { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+.iqra-home .footer .bottom .legal-links :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.iqra-home .footer .bottom .legal-links :is(a, button):hover { text-decoration: underline; text-underline-offset: 4px; }
+.iqra-home .footer .bottom .legal-links :is(a, button):focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
+
+/* ---------- The line under a form that points to the privacy page ---------- */
+.iqra-home .privacy-note { margin-top: 12px; font-size: 14px; line-height: 1.5; opacity: 0.85; }
+.iqra-home .privacy-note a { text-decoration: underline; text-underline-offset: 3px; }

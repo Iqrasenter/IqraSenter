@@ -28,10 +28,12 @@ export function AboutFrame() {
   return (
     <div className="frame-box" data-tint={CHAPTERS[active].id}>
       {CHAPTERS.map((c, i) => (
-        <figure className="frame" key={c.id} id={`frame-${c.id}`} role="tabpanel" aria-labelledby={`tab-${c.id}`} hidden={i !== active}>
-          <Image src={c.src} alt={c.alt} width={c.width} height={c.height} sizes="(max-width: 1340px) 96vw, 1260px" priority={i === 0} />
-          <figcaption>{c.caption}</figcaption>
-        </figure>
+        <div className="frame" key={c.id} id={`frame-${c.id}`} role="tabpanel" aria-labelledby={`tab-${c.id}`} hidden={i !== active}>
+          <figure>
+            <Image src={c.src} alt={c.alt} width={c.width} height={c.height} sizes="(max-width: 1340px) 96vw, 1260px" priority={i === 0} />
+            <figcaption>{c.caption}</figcaption>
+          </figure>
+        </div>
       ))}
       <div className="picker" role="tablist" aria-label="Velg hva du vil se">
         {CHAPTERS.map((c, i) => (

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Outfit } from "next/font/google";
 import "./globals.css";
 import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/JsonLd";
+import { CookieConsent } from "@/components/consent/CookieConsent";
 
 const geist = Geist({
   variable: "--font-geist",
@@ -61,21 +62,12 @@ export const metadata: Metadata = {
     siteName: "Iqra Senter",
     locale: "nb_NO",
     type: "website",
-    images: [
-      {
-        url: "/images/hero-children.jpg",
-        width: 1200,
-        height: 630,
-        alt: "Barn og familier hos Iqra Senter i Oslo",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Iqra Læring og Aktivitetssenter",
     description:
       "Læring, fellesskap og muligheter — for hele familien i Oslo.",
-    images: ["/images/hero-children.jpg"],
   },
   robots: {
     index: true,
@@ -110,6 +102,7 @@ export default function RootLayout({
           Gå til innhold
         </a>
         {children}
+        <CookieConsent />
       </body>
     </html>
   );
