@@ -62,7 +62,7 @@ export default function OmOssPage() {
           </div>
           <div className="school-photos">
             <figure>
-              <Image src="/images/stottoss1.webp" alt="Elever i et klasserom på helgeskolen" width={1200} height={900} sizes="(max-width: 1100px) 55vw, 30vw" />
+              <Image src="/images/editorial/stottoss1.webp" alt="Elever i et klasserom på helgeskolen" width={1200} height={900} sizes="(max-width: 1100px) 55vw, 30vw" />
             </figure>
             <figure>
               <Image src="/images/home/kurs-editorial.webp" alt="En elev skriver i notatboken sin ved pulten" width={1299} height={1211} sizes="(max-width: 1100px) 40vw, 22vw" />
@@ -81,7 +81,7 @@ export default function OmOssPage() {
             </h2>
             <p>Skogstur med niste i snøen, hyttetur med overnatting og piknik i parken. Barna kommer hjem slitne og glade.</p>
             <figure className="small-photo">
-              <Image src="/images/stottoss5.webp" alt="Barn og voksne gjør klart til piknik i parken" width={1200} height={900} sizes="(max-width: 500px) 90vw, 440px" />
+              <Image src="/images/editorial/stottoss5.webp" alt="Barn og voksne gjør klart til piknik i parken" width={1200} height={900} sizes="(max-width: 500px) 90vw, 440px" />
             </figure>
           </div>
         </section>
@@ -95,10 +95,10 @@ export default function OmOssPage() {
             <p>Vi holder kurs og seminarer for foreldre og voksne i språk, kultur, barneoppdragelse og personlig utvikling. For barna har vi Koran-konkurranse, og diplomer for innsatsen.</p>
           </div>
           <figure className="courses-photo">
-            <Image src="/images/iqrany4.webp" alt="Elever viser frem diplomene sine" width={1200} height={1600} sizes="(max-width: 760px) 45vw, 38vw" />
+            <Image src="/images/editorial/iqrany4.webp" alt="Elever viser frem diplomene sine" width={1200} height={1600} sizes="(max-width: 760px) 45vw, 38vw" />
           </figure>
           <figure className="courses-photo wide">
-            <Image src="/images/stottoss4.webp" alt="Deltakere på kurs rundt et bord med læreren" width={1200} height={900} sizes="(max-width: 760px) 45vw, 52vw" />
+            <Image src="/images/editorial/stottoss4.webp" alt="Deltakere på kurs rundt et bord med læreren" width={1200} height={900} sizes="(max-width: 760px) 45vw, 52vw" />
           </figure>
         </section>
 
@@ -134,7 +134,7 @@ export default function OmOssPage() {
         {/* Close: support or get in touch. */}
         <section className="close" aria-labelledby="close-title">
           <figure className="close-photo">
-            <Image src="/images/home/summer-editorial.webp" alt="Jenter fra helgeskolen samlet i skolegården" width={1086} height={1448} sizes="(max-width: 500px) 90vw, 480px" />
+            <Image src="/images/editorial/sommerfest-9.webp" alt="Full sal med deltakere på sommerfesten" width={2172} height={2896} sizes="(max-width: 500px) 90vw, 480px" />
           </figure>
           <div className="close-text">
             <h2 id="close-title">

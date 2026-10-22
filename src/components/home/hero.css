@@ -184,10 +184,16 @@
   .iqra-home .finish.a.is-home .header:has(.mobile-menu[open]) {
     min-height: 80px;
   }
+  /* The photographs get a fixed share of the screen and the text block sizes itself,
+     so on short phones the headline never slides up over the pictures. */
   .iqra-home .hero-d {
-    min-height: 660px;
+    height: auto;
+    min-height: 0;
+    grid-template-rows: auto auto;
   }
   .iqra-home .hero-pair {
+    height: max(360px, calc(100svh - var(--hero-offset) - 310px));
+    min-height: 0;
     grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr);
   }
   .iqra-home .hero-summer img {
