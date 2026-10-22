@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 const ITEMS = [
   { title: "Helgeskolen", text: "Koran, arabisk og islamsk etikk hver helg.", alt: "En elev skriver i en arabisk skrivebok ved pulten", src: "/images/home/kurs-editorial.webp", width: 1299, height: 1211 },
-  { title: "Korankonkurranser", text: "Barna lærer, øver og leser foran alle.", alt: "Barn og unge står på rekke i en gymsal og leser for de andre", src: "/images/stottoss2.webp", width: 1200, height: 900 },
+  { title: "Korankonkurranser", text: "Barna lærer, øver og leser foran alle.", alt: "Barn og unge står på rekke i en gymsal og leser for de andre", src: "/images/editorial/stottoss2.webp", width: 1200, height: 900 },
   { title: "Fester", text: "Eid og skoleavslutning, med hele familien.", alt: "Barn og ungdom på scenen under en fest", src: "/images/home/stage-editorial.webp", width: 1672, height: 941 },
   { title: "Turer", text: "Skogen om vinteren, parken om sommeren.", alt: "Barn sitter i snøen i skogen med varm drikke", src: "/images/home/winter-editorial.webp", width: 1448, height: 1086 },
   { title: "Fellesskap", text: "Et trygt sted der barna får venner.", alt: "Gutter står smilende på rekke foran en trevegg i gymsalen", src: "/images/home/portrait-editorial.webp", width: 1086, height: 1448 },

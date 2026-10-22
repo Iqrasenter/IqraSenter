@@ -6,9 +6,9 @@ import { useRef, useState, type KeyboardEvent } from "react";
 // The four chapters of the Om oss page. Picking one swaps the hero photo and caption,
 // and tints the frame in that chapter's field colour further down the page.
 const CHAPTERS = [
-  { id: "school", label: "Helgeskolen", caption: "Helgeskolen. Språk, kultur og Koran.", src: "/images/fritid.webp", width: 800, height: 600, alt: "Elever fra helgeskolen går sammen utenfor en solrik dag" },
+  { id: "school", label: "Helgeskolen", caption: "Helgeskolen. Språk, kultur og Koran.", src: "/images/editorial/fritid.webp", width: 1448, height: 1086, alt: "Elever fra helgeskolen går sammen utenfor en solrik dag" },
   { id: "trips", label: "Turene", caption: "Turene. Niste i snøen.", src: "/images/home/winter-editorial.webp", width: 1448, height: 1086, alt: "Barn sitter i snøen og spiser niste på tur i skogen" },
-  { id: "courses", label: "Kursene", caption: "Kursene. For barn og voksne.", src: "/images/stottoss2.webp", width: 1200, height: 900, alt: "Elever fremfører for hverandre i salen" },
+  { id: "courses", label: "Kursene", caption: "Kursene. For barn og voksne.", src: "/images/editorial/stottoss2.webp", width: 1448, height: 1086, alt: "Elever fremfører for hverandre i salen" },
   { id: "party", label: "Festene", caption: "Festene. Hele familien samlet.", src: "/images/home/hero-children-editorial.webp", width: 1448, height: 1086, alt: "Elever sitter på et teppe i parken og vinker" },
 ] as const;
 
