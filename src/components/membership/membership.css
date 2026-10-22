@@ -83,6 +83,7 @@
 .member-page .rooms { margin-top: 12px; background: var(--m-white); }
 .member-page .room { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 56px; padding: 48px; }
 .member-page .room[hidden] { display: none; }
+.member-page .room { scroll-margin-top: 84px; }
 .member-page .room.enter { animation: member-rise 0.55s var(--m-ease) both; }
 .member-page .room:focus-visible { outline: 3px solid var(--m-green); outline-offset: -3px; }
 .member-page .room-side { display: flex; flex-direction: column; gap: 14px; }
