@@ -100,7 +100,7 @@ export default function BliMedlemPage() {
             </ol>
           </div>
           <figure className="road-photo">
-            <Image src="/images/iqrany4.webp" alt="Jenter fra helgeskolen holder opp diplomene sine" width={1200} height={1600} sizes="(max-width: 1100px) 90vw, 25vw" />
+            <Image src="/images/editorial/iqrany4.webp" alt="Jenter fra helgeskolen holder opp diplomene sine" width={1200} height={1600} sizes="(max-width: 1100px) 90vw, 25vw" />
           </figure>
         </section>
 
