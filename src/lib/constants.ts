@@ -33,7 +33,7 @@ export const SERVICES = [
     title: "Helgeskole",
     description:
       "Vi tilbyr helgeskole der barn og unge kan lære språk, kultur og tradisjon på en engasjerende og praktisk måte. Helgeskolen er en flott måte å utvikle både faglige ferdigheter og sosiale nettverk på!",
-    image: "/images/fritid.webp",
+    image: "/images/editorial/fritid.webp",
     icon: "BookOpen" as const,
     size: "large" as const,
   },
@@ -107,18 +107,18 @@ export const NEWS = [
     cardExcerpt:
       "Tusen takk til alle som deltok på Iqras sommerfest! En fantastisk dag med stort oppmøte, herlig fellesskap og masse glede.",
     date: "2026-06-14",
-    image: "/images/sommerfest-1.webp",
+    image: "/images/home/stage-editorial.webp",
     gallery: [
-      { src: "/images/sommerfest-6.webp", w: 1200, h: 1600, alt: "Barn med ansiktsmaling ute på sommerfesten" },
-      { src: "/images/sommerfest-2.webp", w: 1200, h: 1600, alt: "Ansiktsmaling av et barn på sommerfesten" },
-      { src: "/images/sommerfest-1.webp", w: 1600, h: 900, alt: "Barn og ungdom fremfører på scenen under Iqras sommerfest" },
-      { src: "/images/sommerfest-4.webp", w: 1200, h: 1600, alt: "Jenter samlet ute i sommersol på sommerfesten" },
-      { src: "/images/sommerfest-3.webp", w: 1200, h: 1600, alt: "To barn presenterer med mikrofon på scenen" },
-      { src: "/images/sommerfest-5.webp", w: 1200, h: 1600, alt: "Publikum følger med under fremføringene" },
-      { src: "/images/sommerfest-7.webp", w: 1200, h: 1600, alt: "Elev synger på scenen" },
-      { src: "/images/sommerfest-9.webp", w: 1200, h: 1600, alt: "Full sal med deltakere på sommerfesten" },
-      { src: "/images/sommerfest-10.webp", w: 1114, h: 1600, alt: "Presentasjon av nye Tarbiyah-bøker på scenen" },
-      { src: "/images/sommerfest-8.webp", w: 1080, h: 622, alt: "Gjestetaler holder innlegg under sommerfesten" },
+      { src: "/images/editorial/sommerfest-6.webp", w: 2172, h: 2896, alt: "Barn med ansiktsmaling ute på sommerfesten" },
+      { src: "/images/editorial/sommerfest-2.webp", w: 2172, h: 2896, alt: "Ansiktsmaling av et barn på sommerfesten" },
+      { src: "/images/home/stage-editorial.webp", w: 1672, h: 941, alt: "Barn og ungdom fremfører på scenen under Iqras sommerfest" },
+      { src: "/images/home/summer-editorial.webp", w: 1086, h: 1448, alt: "Jenter samlet ute i sommersol på sommerfesten" },
+      { src: "/images/editorial/sommerfest-3.webp", w: 2172, h: 2896, alt: "To barn presenterer med mikrofon på scenen" },
+      { src: "/images/editorial/sommerfest-5.webp", w: 2172, h: 2896, alt: "Publikum følger med under fremføringene" },
+      { src: "/images/editorial/sommerfest-7.webp", w: 2172, h: 2896, alt: "Elev synger på scenen" },
+      { src: "/images/editorial/sommerfest-9.webp", w: 2172, h: 2896, alt: "Full sal med deltakere på sommerfesten" },
+      { src: "/images/editorial/sommerfest-10.webp", w: 2094, h: 3006, alt: "Presentasjon av nye Tarbiyah-bøker på scenen" },
+      { src: "/images/editorial/sommerfest-8.webp", w: 3304, h: 1904, alt: "Gjestetaler holder innlegg under sommerfesten" },
     ],
   },
   {
@@ -137,7 +137,7 @@ export const NEWS = [
     excerpt:
       "Ledelsen i Iqra kaller inn alle foreldre til foreldremøte. Søndag 09.02.2025 kl. 15:30 i Iqra sine lokaler.",
     date: "2025-02-05",
-    image: "/images/iqrany5.webp",
+    image: "/images/home/portrait-editorial.webp",
     imagePosition: "center 20%",
   },
   {
@@ -146,7 +146,7 @@ export const NEWS = [
     excerpt:
       "Alle deltakerne har gjort en fantastisk innsats. Gratulerer til alle som har deltatt!",
     date: "2025-01-20",
-    image: "/images/iqrany4.webp",
+    image: "/images/editorial/iqrany4.webp",
     imagePosition: "center 20%",
   },
   {
@@ -155,7 +155,7 @@ export const NEWS = [
     excerpt:
       "En inspirerende refleksjonskveld og workshop om egenskapene som er mest elsket av Allah.",
     date: "2025-01-04",
-    image: "/images/helgeskole.webp",
+    image: "/images/editorial/helgeskole.webp",
   },
 ] as const;
 

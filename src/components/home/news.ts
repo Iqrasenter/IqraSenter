@@ -40,7 +40,7 @@ export function newsBlurb(item: NewsItem, max = 150) {
 
 // Edited versions of the photos, used where a story's own picture has one.
 const EDITED_PHOTO: Record<string, { src: string; alt: string }> = {
-  "/images/sommerfest-1.webp": {
+  "/images/home/stage-editorial.webp": {
     src: "/images/home/summer-editorial.webp",
     alt: "Barn og familier samlet ute under Iqras sommerfest",
   },
