@@ -136,7 +136,7 @@ export default function OmOssPage() {
         {/* Close: support or get in touch. */}
         <section className="close" aria-labelledby="close-title">
           <figure className="close-photo">
-            <Image src="/images/home/summer-editorial.webp" alt="Jenter fra helgeskolen samlet i skolegården" width={1086} height={1448} sizes="(max-width: 500px) 90vw, 480px" />
+            <Image src="/images/editorial/sommerfest-9.webp" alt="Full sal med deltakere på sommerfesten" width={2172} height={2896} sizes="(max-width: 500px) 90vw, 480px" />
           </figure>
           <div className="close-text">
             <h2 id="close-title">

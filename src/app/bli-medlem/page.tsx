@@ -120,7 +120,7 @@ export default function BliMedlemPage() {
               .
             </p>
             <figure className="faq-photo">
-              <Image src="/images/home/summer-editorial.webp" alt="Jenter fra helgeskolen poserer under et stort tre i skolegården" width={1086} height={1448} sizes="25vw" />
+              <Image src="/images/editorial/sommerfest-5.webp" alt="Gutter og menn i gymsalen følger med på scenen, noen ser mot kameraet" width={2172} height={2896} sizes="25vw" />
             </figure>
           </div>
           <MemberFaq />
