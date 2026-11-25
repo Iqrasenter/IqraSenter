@@ -78,8 +78,8 @@ export function SiteFooter() {
             <Link href="/vilkar">Vilkår</Link>
             <CookieSettingsButton>Cookie-innstillinger</CookieSettingsButton>
           </nav>
-          <a href="https://www.idweb.no">
-            Nettsiden er laget av IDweb ↗
+          <a href="https://www.idweb.no" target="_blank" rel="noopener">
+            Laget av idweb ↗
           </a>
         </div>
       </footer>
